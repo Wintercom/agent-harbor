@@ -12,7 +12,7 @@ if [[ -n "${HARBOR_REMOTE:-}" ]]; then
 elif git remote get-url origin >/dev/null 2>&1; then
   REMOTE_URL="$(git remote get-url origin)"
 else
-  REMOTE_URL="https://github.com/Wintercom/agent-harbor.git"
+  REMOTE_URL="https://github.com/cookiybb-sketch/agent-harbor.git"
 fi
 
 if [[ ! -d .git ]]; then
@@ -52,4 +52,4 @@ fi
 echo "✓ 已推送"
 git status -sb
 git log -1 --oneline
-echo "  https://github.com/Wintercom/agent-harbor"
+echo "  https://github.com/cookiybb-sketch/agent-harbor"
