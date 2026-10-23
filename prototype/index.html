@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Harbor — 页面原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c1520;
+      --bg-elev: #132033;
+      --bg-soft: #182a40;
+      --line: rgba(140, 190, 210, 0.16);
+      --text: #e8f2f6;
+      --muted: #8aa3b5;
+      --brand: #3dcdc0;
+      --brand-dim: #2a9a90;
+      --ok: #5dce8a;
+      --warn: #e0b15a;
+      --danger: #e57373;
+      --radius: 12px;
+      --font: "Sora", system-ui, sans-serif;
+      --display: "Fraunces", Georgia, serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(900px 480px at 10% -10%, rgba(61, 205, 192, 0.18), transparent 55%),
+        radial-gradient(700px 420px at 100% 0%, rgba(40, 90, 140, 0.35), transparent 50%),
+        linear-gradient(165deg, #0a121c 0%, #0f1c2c 45%, #0c1824 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: min(1120px, 100%);
+      height: min(720px, 100%);
+      display: grid;
+      grid-template-columns: var(--nav-w, 200px) 1fr;
+      grid-template-rows: 44px 1fr;
+      background: color-mix(in srgb, var(--bg-elev) 92%, black);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+      transition: grid-template-columns 0.2s ease;
+    }
+    .shell.nav-collapsed {
+      --nav-w: 56px;
+      overflow: visible; /* 允许收缩态悬浮名浮出侧栏 */
+    }
+
+    .titlebar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      background: rgba(0, 0, 0, 0.25);
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .dots { display: flex; gap: 6px; margin-right: 8px; }
+    .dots i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .dots i:nth-child(1) { background: #ff5f57; }
+    .dots i:nth-child(2) { background: #febc2e; }
+    .dots i:nth-child(3) { background: #28c840; }
+    .titlebar strong { font-family: var(--display); font-weight: 500; letter-spacing: 0.02em; }
+    .titlebar .spacer { flex: 1; }
+    .pill {
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+
+    nav {
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      border-right: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.15);
+      min-width: 0;
+    }
+    .brand {
+      font-family: var(--display);
+      font-size: 20px;
+      margin: 4px 8px 4px;
+      white-space: nowrap;
+    }
+    .tagline {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin: 0 8px 20px;
+    }
+    nav button[data-view] {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      position: relative;
+    }
+    nav button[data-view] .nav-ico {
+      flex: 0 0 18px;
+      width: 18px;
+      text-align: center;
+      font-size: 12px;
+      opacity: 0.85;
+    }
+    nav button[data-view]:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    nav button[data-view].active { background: rgba(61, 205, 192, 0.12); color: var(--brand); }
+    /* 收缩态：悬浮显示名称浮层 */
+    .shell.nav-collapsed nav button[data-view]::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #1a2d42;
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      z-index: 40;
+      transition: opacity 0.12s ease;
+    }
+    .shell.nav-collapsed nav button[data-view]:hover::after,
+    .shell.nav-collapsed nav button[data-view]:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+    }
+    .shell.nav-collapsed .nav-toggle {
+      position: relative;
+    }
+    .shell.nav-collapsed .nav-toggle::after {
+      content: "展开侧栏";
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #1a2d42;
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      z-index: 40;
+    }
+    .shell.nav-collapsed .nav-toggle:hover::after {
+      opacity: 1;
+      visibility: visible;
+    }
+    .nav-toggle {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 8px 4px 4px;
+      text-align: center;
+    }
+    .nav-toggle:hover { color: var(--text); border-color: rgba(61, 205, 192, 0.35); }
+    .nav-foot {
+      margin-top: auto;
+      padding: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .shell.nav-collapsed .brand { font-size: 14px; margin: 4px 0; text-align: center; }
+    .shell.nav-collapsed .tagline,
+    .shell.nav-collapsed nav button[data-view] .nav-label,
+    .shell.nav-collapsed .nav-foot-text { display: none; }
+    .shell.nav-collapsed nav {
+      padding: 12px 6px;
+      align-items: stretch;
+      overflow: visible;
+      z-index: 30;
+    }
+    .shell.nav-collapsed nav button[data-view] {
+      justify-content: center;
+      padding: 10px 6px;
+      overflow: visible;
+    }
+    .shell.nav-collapsed .nav-toggle { margin: 8px 2px; overflow: visible; }
+    .shell.nav-collapsed .nav-foot { justify-content: center; padding: 10px 4px; }
+    .lamp {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 10px rgba(93, 206, 138, 0.6);
+    }
+
+    main {
+      overflow: auto;
+      padding: 28px 32px;
+      position: relative;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-size: 28px;
+      font-weight: 500;
+      margin: 0 0 6px;
+    }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+
+    .row { display: flex; align-items: center; gap: 12px; }
+    .row.spread { justify-content: space-between; }
+
+    .btn {
+      appearance: none;
+      border: 0;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      background: var(--brand);
+      color: #062a28;
+    }
+    .btn:hover { filter: brightness(1.06); }
+    .btn.ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .btn.danger { background: transparent; color: var(--danger); border: 1px solid rgba(229,115,115,0.35); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .card {
+      background: var(--bg-soft);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+    .meta { font-size: 12px; color: var(--muted); }
+    .status { font-size: 12px; font-weight: 600; }
+    .status.run { color: var(--ok); }
+    .status.stop { color: var(--muted); }
+
+    .drop {
+      border: 1.5px dashed rgba(61, 205, 192, 0.35);
+      border-radius: var(--radius);
+      padding: 36px;
+      text-align: center;
+      background: rgba(61, 205, 192, 0.04);
+      margin-bottom: 18px;
+    }
+    .drop strong { display: block; margin-bottom: 8px; }
+
+    .steps {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 22px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .steps span {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+    .steps span.on {
+      color: var(--brand);
+      border-color: rgba(61, 205, 192, 0.35);
+      background: rgba(61, 205, 192, 0.08);
+    }
+
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .agent {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      cursor: pointer;
+      background: rgba(0,0,0,0.15);
+    }
+    .agent.pick {
+      border-color: rgba(61, 205, 192, 0.55);
+      background: rgba(61, 205, 192, 0.1);
+    }
+    .agent .name { font-weight: 600; margin-bottom: 6px; }
+    .radio {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 14px 0 22px;
+      font-size: 13px;
+    }
+    .radio label {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .radio label:has(input:checked) {
+      border-color: rgba(61, 205, 192, 0.45);
+      background: rgba(61, 205, 192, 0.06);
+    }
+    .check-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
+    .check-list label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: 1fr 240px;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      height: calc(100% - 8px);
+      min-height: 520px;
+    }
+    .boundary {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      background: rgba(61, 205, 192, 0.08);
+      border: 1px solid rgba(61, 205, 192, 0.22);
+      font-size: 12px;
+    }
+    .boundary.warn {
+      background: rgba(224, 177, 90, 0.1);
+      border-color: rgba(224, 177, 90, 0.35);
+    }
+    .term {
+      background: #071018;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      color: #b7d0c8;
+      overflow: auto;
+    }
+    .term .dim { color: #5f7a86; }
+    .side-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: rgba(0,0,0,0.18);
+      font-size: 12px;
+    }
+    .side-panel h4 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .side-panel ul { margin: 0; padding-left: 16px; color: var(--muted); }
+    .side-panel li { margin-bottom: 6px; }
+    .ok { color: var(--ok); }
+    .bad { color: var(--danger); }
+
+    .modal-back {
+      position: absolute;
+      inset: 0;
+      background: rgba(4, 10, 16, 0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 5;
+    }
+    .modal {
+      width: min(420px, 100%);
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .modal h2 { font-family: var(--display); font-size: 22px; margin: 0 0 8px; font-weight: 500; }
+    .modal p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .modal code {
+      display: inline-block;
+      margin: 8px 0 16px;
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--brand);
+    }
+    .modal .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+    .hidden { display: none !important; }
+    .proto-note {
+      position: fixed;
+      left: 16px;
+      bottom: 12px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" id="app">
+    <div class="titlebar">
+      <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+      <strong>Agent Harbor</strong>
+      <span class="spacer"></span>
+      <span class="pill" id="sessionPill">无活动会话</span>
+    </div>
+
+    <nav id="sideNav">
+      <div class="brand" title="Agent Harbor">Harbor</div>
+      <p class="tagline">密钥留在本机<br />Agent 隔离运行</p>
+      <button type="button" data-view="home" class="active" data-tip="HOME" title="HOME"><span class="nav-ico">⌂</span><span class="nav-label">HOME</span></button>
+      <button type="button" data-view="wizard" data-tip="新会话" title="新会话"><span class="nav-ico">＋</span><span class="nav-label">新会话</span></button>
+      <button type="button" data-view="workbench" data-tip="工作台" title="工作台"><span class="nav-ico">▣</span><span class="nav-label">工作台</span></button>
+      <button type="button" data-view="keys" data-tip="模型" title="模型"><span class="nav-ico">◇</span><span class="nav-label">模型</span></button>
+      <button type="button" data-view="tools" data-tip="工具" title="工具"><span class="nav-ico">⚙</span><span class="nav-label">工具</span></button>
+      <button type="button" data-view="settings" data-tip="设置" title="设置"><span class="nav-ico">···</span><span class="nav-label">设置</span></button>
+      <button type="button" class="nav-toggle" id="navToggle" title="收缩/展开侧栏（⌘B）">« 收缩</button>
+      <div class="nav-foot"><span class="lamp"></span><span class="nav-foot-text">隔离就绪</span></div>
+    </nav>
+
+    <main>
+      <!-- Home -->
+      <section id="view-home">
+        <div class="row spread">
+          <div>
+            <h1>HOME</h1>
+            <p class="sub">运行中 2/2 · 同工作区禁止双开 · 同壳不同仓可并行</p>
+          </div>
+          <button class="btn" type="button" data-go="wizard">+ 新会话</button>
+        </div>
+
+        <div class="card">
+          <div class="row spread">
+            <div>
+              <h3>Claude Code · DeepSeek · ~/work/foo</h3>
+              <p class="meta">工具: Notion · 挂载: 安全副本</p>
+            </div>
+            <span class="status run">● 运行中</span>
+          </div>
+          <div class="row" style="margin-top:12px; justify-content:flex-end;">
+            <button class="btn ghost" type="button" data-go="workbench">打开工作台</button>
+            <button class="btn danger" type="button">停止</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row spread">
+            <div>
+              <h3>Claude Code · Anthropic · ~/work/bar</h3>
+              <p class="meta">工具: 无 · 挂载: 直接编辑</p>
+            </div>
+            <span class="status run">● 运行中</span>
+          </div>
+          <div class="row" style="margin-top:12px; justify-content:flex-end;">
+            <button class="btn ghost" type="button" data-go="workbench">打开工作台</button>
+            <button class="btn danger" type="button">停止</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row spread">
+            <div>
+              <h3>Codex · OpenAI · ~/work/old</h3>
+              <p class="meta">工具: 无 · 挂载: 直接编辑</p>
+            </div>
+            <span class="status stop">○ 已停止</span>
+          </div>
+          <div class="row" style="margin-top:12px; justify-content:flex-end;">
+            <button class="btn ghost" type="button">再次开始</button>
+            <button class="btn danger" type="button">销毁</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Wizard -->
+      <section id="view-wizard" class="hidden">
+        <h1>新会话</h1>
+        <p class="sub">工作区 → Agent → 模型 → 工具。凭证留在本机，隔离环境不用填 Key。</p>
+        <div class="steps">
+          <span class="on" data-step-label="1">1 工作区</span>
+          <span data-step-label="2">2 Agent</span>
+          <span data-step-label="3">3 模型</span>
+          <span data-step-label="4">4 工具</span>
+        </div>
+
+        <div id="wiz-1">
+          <div class="drop">
+            <strong>拖拽文件夹到此处</strong>
+            <span class="meta">或</span>
+            <div style="margin-top:10px"><button class="btn ghost" type="button">选择文件夹</button></div>
+          </div>
+          <p class="meta">已选示意：~/Projects/demo · 若该目录已有运行中会话将禁止开始</p>
+          <div class="radio">
+            <label><input type="radio" name="mount" checked /> <span><strong>安全副本（推荐）</strong><br /><span class="meta">在副本里改，需要时再导回原文件夹</span></span></label>
+            <label><input type="radio" name="mount" /> <span><strong>直接编辑</strong><br /><span class="meta">改动立刻落在该文件夹</span></span></label>
+          </div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn" type="button" id="wiz-next-1">下一步</button>
+          </div>
+        </div>
+
+        <div id="wiz-2" class="hidden">
+          <div class="row spread" style="margin-bottom:12px">
+            <span class="meta">选壳 · 进入本步已自动检测</span>
+            <button class="btn ghost" type="button" id="wiz-redetect">重新检测</button>
+          </div>
+          <div class="agent-grid">
+            <div class="agent pick" data-agent><div class="name">Claude Code</div><div class="meta">● 可用</div></div>
+            <div class="agent" data-agent><div class="name">Codex</div><div class="meta">● 可用</div></div>
+            <div class="agent" data-agent style="opacity:.5"><div class="name">dsh</div><div class="meta">○ 未安装 · 安装说明</div></div>
+          </div>
+          <div class="row" style="justify-content:flex-end; margin-top:18px; gap:8px;">
+            <button class="btn ghost" type="button" id="wiz-back-2">上一步</button>
+            <button class="btn" type="button" id="wiz-next-2">下一步</button>
+          </div>
+        </div>
+
+        <div id="wiz-3" class="hidden">
+          <p class="meta" style="margin-bottom:12px">选脑 · 下拉内容 =「模型」已添加项。要加新的去那边添加。</p>
+          <label class="meta" style="display:block;margin-bottom:6px">本会话模型</label>
+          <select id="wiz-model" style="width:100%;max-width:360px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit">
+            <option selected>我的 DeepSeek</option>
+            <option>公司网关</option>
+          </select>
+          <p class="meta" style="margin-top:10px"><a href="#" id="wiz-goto-add-model" style="color:var(--brand)">还没有？去添加</a></p>
+          <div class="row" style="justify-content:flex-end; gap:8px;">
+            <button class="btn ghost" type="button" id="wiz-back-3">上一步</button>
+            <button class="btn" type="button" id="wiz-next-3">下一步</button>
+          </div>
+        </div>
+
+        <div id="wiz-4" class="hidden">
+          <p class="meta" style="margin-bottom:12px">工具（MCP）可跳过。与模型无关。</p>
+          <div class="check-list">
+            <label><input type="checkbox" checked /> Notion <span class="meta" style="margin-left:auto">● 已连接</span></label>
+            <label><input type="checkbox" /> GitHub MCP <span class="meta" style="margin-left:auto">● 已连接</span></label>
+            <label><input type="checkbox" /> Slack <span class="meta" style="margin-left:auto">○ 未添加</span></label>
+          </div>
+          <p class="meta" style="margin-bottom:12px">开始前校验：运行中 &lt; 2 · 同工作区未占用（当前示意已 2/2，真实会拦截）</p>
+          <div class="row" style="justify-content:flex-end; gap:8px;">
+            <button class="btn ghost" type="button" id="wiz-back-4">上一步</button>
+            <button class="btn ghost" type="button" data-go="workbench">跳过并开始</button>
+            <button class="btn" type="button" id="wiz-start">开始运行</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Workbench -->
+      <section id="view-workbench" class="hidden">
+        <div class="workbench">
+          <div class="boundary" id="boundaryBar">
+            <div>
+              <strong>● 隔离运行中</strong>
+              · Claude Code · ~/work/foo<br />
+              <span class="meta">当前模型
+                <select id="wb-model" style="margin-left:6px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit;font-size:12px">
+                  <option>我的 DeepSeek</option>
+                  <option>公司网关</option>
+                </select>
+                · 文件: 安全副本 · 工具: 1
+              </span>
+            </div>
+            <div class="row" style="flex-wrap:wrap">
+              <select style="padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit;font-size:12px">
+                <option>切换会话: foo (当前)</option>
+                <option>bar · Anthropic</option>
+              </select>
+              <button class="btn ghost" type="button" id="btn-boundary">权限一览</button>
+              <button class="btn ghost" type="button" id="btn-perm">模拟扩权</button>
+              <button class="btn danger" type="button">停止</button>
+            </div>
+          </div>
+          <div class="term">
+            <div class="dim"># session foo · sentinel only · model via host proxy</div>
+            <div>$ claude</div>
+            <div>Claude Code ready · current model DeepSeek</div>
+            <div class="dim">MODEL_KEY=harbor_sentinel_7f3a</div>
+            <div>→ model API via proxy … ok</div>
+            <div>→ tool notion.search via mcp-gateway … ok</div>
+            <div class="bad">→ blocked example.com (awaiting permission)</div>
+            <div><span style="color:var(--brand)">▋</span></div>
+          </div>
+          <div class="side-panel">
+            <h4>本趟摘要</h4>
+            <ul>
+              <li>请求 128</li>
+              <li>拒绝 2</li>
+              <li>工具调用 15</li>
+            </ul>
+            <h4 style="margin-top:18px">最近活动</h4>
+            <ul>
+              <li><span class="ok">model API</span> OK</li>
+              <li><span class="bad">example.com</span> 拒绝</li>
+              <li><span class="ok">notion.search</span> OK</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tools -->
+      <section id="view-tools" class="hidden">
+        <div class="row spread">
+          <div>
+            <h1>工具</h1>
+            <p class="sub">MCP 扩展。认证：浏览器登录 / SSO，或 API Key。模型请去「模型」页。</p>
+          </div>
+          <button class="btn" type="button" id="btn-add-mcp">+ 添加</button>
+        </div>
+        <div class="card row spread">
+          <div><h3>GitHub</h3><p class="meta">浏览器登录 · ● 已连接</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-mcp="GitHub" data-mcp-auth="browser">编辑</button>
+            <button class="btn danger" type="button" data-del-mcp="GitHub">删除</button>
+          </div>
+        </div>
+        <div class="card row spread">
+          <div><h3>Notion</h3><p class="meta">API Key · ● 已连接</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-mcp="Notion" data-mcp-auth="apikey">编辑</button>
+            <button class="btn danger" type="button" data-del-mcp="Notion">删除</button>
+          </div>
+        </div>
+        <div class="card row spread">
+          <div><h3>公司 Wiki</h3><p class="meta">API Key · ▲ 无效 · 本机扩展</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-mcp="公司 Wiki" data-mcp-auth="apikey">编辑</button>
+            <button class="btn danger" type="button" data-del-mcp="公司 Wiki">删除</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Keys -->
+      <section id="view-keys" class="hidden">
+        <div class="row spread">
+          <div>
+            <h1>模型</h1>
+            <p class="sub">自由添加：名称 + API 地址 + Key。列表只有已添加的项；无「未配置」占位。</p>
+          </div>
+          <button class="btn" type="button" id="btn-add-key">+ 添加</button>
+        </div>
+        <div class="card row spread">
+          <div><h3>我的 DeepSeek</h3><p class="meta">api.deepseek.com</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-model="我的 DeepSeek">编辑</button>
+            <button class="btn danger" type="button" data-del-model="我的 DeepSeek">删除</button>
+          </div>
+        </div>
+        <div class="card row spread">
+          <div><h3>公司网关</h3><p class="meta">llm.corp.local</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-model="公司网关">编辑</button>
+            <button class="btn danger" type="button" data-del-model="公司网关">删除</button>
+          </div>
+        </div>
+        <div class="card row spread">
+          <div><h3>Minimax</h3><p class="meta">▲ 无效 · api.minimax.chat · 最近 401</p></div>
+          <div class="row" style="gap:8px">
+            <button class="btn ghost" type="button" data-edit-model="Minimax">编辑</button>
+            <button class="btn danger" type="button" data-del-model="Minimax">删除</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section id="view-settings" class="hidden">
+        <h1>设置</h1>
+        <p class="sub">默认偏向安全。改完即保存。没有「关闭隔离」选项。</p>
+
+        <div class="card">
+          <div class="row spread">
+            <div>
+              <h3>Agent</h3>
+              <p class="meta">预置列表始终显示 · 无自定义添加</p>
+            </div>
+            <button class="btn ghost" type="button" id="set-redetect">重新检测</button>
+          </div>
+          <div class="card" style="margin-top:12px;margin-bottom:0">
+            <div class="row spread"><span>Claude Code</span><span class="meta">● 可用</span></div>
+          </div>
+          <div class="card" style="margin-top:8px;margin-bottom:0">
+            <div class="row spread"><span>Codex</span><span class="meta">● 可用</span></div>
+          </div>
+          <div class="card" style="margin-top:8px;margin-bottom:0">
+            <div class="row spread"><span>dsh</span><span class="meta">○ 未安装 · <a href="#" style="color:var(--brand)">安装说明</a></span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>会话默认</h3>
+          <p class="meta" style="margin-bottom:12px">对下次「新会话」预填生效 · 模型/工具的增删改请去对应页</p>
+          <div class="radio">
+            <label><input type="radio" name="set-mount" checked /> <span><strong>安全副本（推荐）</strong><br /><span class="meta">在副本里改，需要时再导回</span></span></label>
+            <label><input type="radio" name="set-mount" /> <span><strong>直接编辑</strong><br /><span class="meta">改动立刻写回所选文件夹</span></span></label>
+          </div>
+          <p class="meta" style="margin:14px 0 6px">新会话默认模型（来自「模型」已添加）</p>
+          <select id="set-model-default" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit">
+            <option selected>沿用上次</option>
+            <option>每次手选</option>
+            <option>固定为：我的 DeepSeek</option>
+            <option>固定为：公司网关</option>
+          </select>
+          <p class="meta" style="margin:14px 0 6px">新会话默认勾选的工具（来自「工具」已连接）</p>
+          <select id="set-mcp-default" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit">
+            <option>沿用上次勾选</option>
+            <option>不预勾选，每次手选</option>
+            <option>始终勾选已连接工具…</option>
+          </select>
+        </div>
+
+        <div class="card">
+          <h3>网络安全</h3>
+          <p class="meta" style="margin-bottom:12px">对下次扩权申请生效 · 不提供「允许全部网站」</p>
+          <div class="radio">
+            <label><input type="radio" name="set-net" checked /> <span><strong>每次询问（推荐）</strong></span></label>
+            <label><input type="radio" name="set-net" /> <span><strong>本会话内记住我的选择</strong><br /><span class="meta">同一会话里，同一域名只问一次</span></span></label>
+            <label><input type="radio" name="set-net" /> <span><strong>本项目记住我的选择</strong><br /><span class="meta">写入该项目的长期列表</span></span></label>
+          </div>
+          <button class="btn ghost" type="button" id="btn-managed-hosts" style="margin-top:4px">管理已记住的网站…</button>
+        </div>
+
+        <div class="card">
+          <h3>结束与清理</h3>
+          <label class="row" style="gap:10px;margin:12px 0;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="set-ask-destroy" checked />
+            <span>停止会话时，询问是否清除隔离环境数据</span>
+          </label>
+          <div id="set-destroy-fallback" style="opacity:0.4;pointer-events:none">
+            <p class="meta" style="margin-bottom:8px">若关闭询问，则：</p>
+            <div class="radio">
+              <label><input type="radio" name="set-destroy-def" /> <span>停止时总是清除</span></label>
+              <label><input type="radio" name="set-destroy-def" checked /> <span>停止时总是保留（可稍后在 HOME 点「销毁」）</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>外观与语言</h3>
+          <div class="row" style="gap:16px;margin-top:12px;flex-wrap:wrap">
+            <label class="meta">语言
+              <select style="display:block;margin-top:6px;min-width:160px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit">
+                <option>跟随系统</option>
+                <option>简体中文</option>
+                <option>English</option>
+              </select>
+            </label>
+            <label class="meta">外观
+              <select style="display:block;margin-top:6px;min-width:160px;padding:8px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit">
+                <option>跟随系统</option>
+                <option disabled>浅色（即将支持）</option>
+                <option>深色</option>
+              </select>
+            </label>
+          </div>
+          <p class="meta" style="margin:16px 0 8px">侧栏（收缩后悬浮显示名称）</p>
+          <div class="radio">
+            <label><input type="radio" name="set-nav" value="expanded" checked /> <span>默认展开</span></label>
+            <label><input type="radio" name="set-nav" value="collapsed" /> <span>默认收缩</span></label>
+          </div>
+          <label class="row" style="gap:10px;margin-top:10px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="set-nav-wb" checked />
+            <span>进入工作台时自动收缩侧栏</span>
+          </label>
+        </div>
+
+        <div class="card">
+          <button type="button" class="btn ghost" id="btn-advanced-toggle" style="width:100%;justify-content:space-between;display:flex">
+            <span>高级（排障用）</span><span id="adv-chevron">▸</span>
+          </button>
+          <div id="set-advanced" class="hidden" style="margin-top:14px">
+            <label class="row" style="gap:10px;margin-bottom:12px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="set-tech" />
+              <span>在权限一览显示技术详情</span>
+            </label>
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <button class="btn ghost" type="button">导出本机诊断包</button>
+              <button class="btn ghost" type="button">打开本地日志目录</button>
+            </div>
+            <p class="meta" style="margin-top:10px">不含密钥明文。不提供关闭隔离。</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>关于</h3>
+          <p class="meta">Agent Harbor 0.1.0-proto</p>
+          <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+            <span class="meta"><span class="lamp" style="display:inline-block;margin-right:6px;vertical-align:middle"></span>隔离状态：可用</span>
+            <button class="btn ghost" type="button">重新检测</button>
+            <button class="btn ghost" type="button">检查更新</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Permission modal -->
+      <div class="modal-back hidden" id="permModal">
+        <div class="modal">
+          <h2>申请访问新地址</h2>
+          <p>会话「Claude Code · ~/work/foo」请求访问尚未授权的网站。</p>
+          <code>api.npmjs.org</code>
+          <p>用于安装依赖。拒绝后本次请求失败。<br /><span class="meta">若误点「本项目始终允许」：权限一览 → 网络 → 管理，或 设置 → 管理已记住的网站，对该域名点「撤销」。</span></p>
+          <div class="actions">
+            <button class="btn danger" type="button" data-close-modal>拒绝</button>
+            <button class="btn ghost" type="button" data-close-modal>仅本次</button>
+            <button class="btn" type="button" data-close-modal>本项目始终允许</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Boundary drawer-ish modal -->
+      <div class="modal-back hidden" id="boundaryModal">
+        <div class="modal" style="width:min(520px,100%)">
+          <h2>当前边界</h2>
+          <p><strong>文件</strong><br />可读写：~/work/foo（安全副本）<br />默认不可见：SSH 密钥、云凭证、其它项目</p>
+          <div class="row spread" style="margin:12px 0 6px;align-items:flex-start">
+            <strong>网络</strong>
+            <button class="btn ghost" type="button" id="btn-boundary-hosts" style="padding:6px 10px;font-size:12px">管理记住的网站…</button>
+          </div>
+          <div class="card" style="margin:0 0 8px">
+            <div class="row spread"><span class="meta">api.anthropic.com · 模型</span><span class="meta">系统</span></div>
+          </div>
+          <div class="card" style="margin:0 0 8px">
+            <div class="row spread">
+              <div><span>api.npmjs.org</span><br /><span class="meta">本项目始终允许 · ~/work/foo</span></div>
+              <button class="btn ghost" type="button" style="padding:6px 10px;font-size:12px">撤销</button>
+            </div>
+          </div>
+          <div class="card" style="margin:0 0 12px">
+            <div class="row spread">
+              <div><span>api.github.com</span><br /><span class="meta">本项目始终允许 · ~/work/foo</span></div>
+              <button class="btn ghost" type="button" style="padding:6px 10px;font-size:12px">撤销</button>
+            </div>
+          </div>
+          <p><strong>工具</strong><br />GitHub · Notion</p>
+          <p><strong>密钥</strong><br />由本机代为填写，隔离环境里看不到明文</p>
+          <div class="actions">
+            <button class="btn" type="button" data-close-modal>关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add MCP modal: browser OAuth OR API Key -->
+      <div class="modal-back hidden" id="mcpModal">
+        <div class="modal">
+          <h2 id="mcpModalTitle">添加工具</h2>
+          <p>MCP 自己的凭证，不是模型 Key。本机保存，Gateway 代填，不进隔离环境。换 Token / 重新授权都在此编辑。</p>
+          <label class="meta">名称</label>
+          <input style="width:100%;margin:6px 0 12px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" value="Notion" />
+          <label class="meta">地址</label>
+          <input style="width:100%;margin:6px 0 12px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" value="https://mcp.notion.com/mcp" />
+          <label class="meta" style="display:block;margin-bottom:8px">认证方式</label>
+          <div class="radio" style="margin-bottom:12px">
+            <label><input type="radio" name="mcp-auth" value="browser" checked /> <span><strong>浏览器登录 / SSO</strong><br /><span class="meta">适合 GitHub、Notion OAuth、公司 SSO</span></span></label>
+            <label><input type="radio" name="mcp-auth" value="apikey" /> <span><strong>API Key / Token</strong><br /><span class="meta">适合内网 Wiki、仅有 Token 的服务</span></span></label>
+          </div>
+          <div id="mcp-auth-browser">
+            <button class="btn" type="button" style="width:100%;margin-bottom:16px">打开浏览器登录</button>
+            <p class="meta" style="margin-bottom:16px">登录完成后自动回到本页并标记已连接。</p>
+          </div>
+          <div id="mcp-auth-apikey" class="hidden">
+            <label class="meta">API Key / Token（提交后清空）</label>
+            <input type="password" style="width:100%;margin:6px 0 16px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" placeholder="粘贴 Token" />
+          </div>
+          <div class="actions">
+            <button class="btn ghost" type="button" data-close-modal>取消</button>
+            <button class="btn" type="button" data-close-modal>保存并连接</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Configure model account modal (OpenAPI only) -->
+      <div class="modal-back hidden" id="keyModal">
+        <div class="modal">
+          <h2 id="keyModalTitle">添加模型</h2>
+          <p>名称 + API 地址 + Key。可直接添加任意模型；快捷芯片仅填默认地址。</p>
+          <label class="meta">名称</label>
+          <input id="key-name" style="width:100%;margin:6px 0 12px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" placeholder="例如：我的 DeepSeek" />
+          <label class="meta">API 地址</label>
+          <input id="key-baseurl" style="width:100%;margin:6px 0 8px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" placeholder="https://api.example.com/v1" />
+          <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <button type="button" class="btn ghost" data-preset="deepseek" style="padding:6px 10px;font-size:12px">DeepSeek 默认</button>
+            <button type="button" class="btn ghost" data-preset="anthropic" style="padding:6px 10px;font-size:12px">Anthropic 默认</button>
+            <button type="button" class="btn ghost" data-preset="openai" style="padding:6px 10px;font-size:12px">OpenAI 默认</button>
+          </div>
+          <label class="meta">API Key（提交后清空）</label>
+          <input type="password" style="width:100%;margin:6px 0 16px;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0a121a;color:var(--text);font:inherit" placeholder="粘贴 Key" />
+          <div class="actions">
+            <button class="btn ghost" type="button" data-close-modal>取消</button>
+            <button class="btn" type="button" data-close-modal>保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete model confirm -->
+      <div class="modal-back hidden" id="delKeyModal">
+        <div class="modal">
+          <h2>删除模型？</h2>
+          <p id="delKeyMsg">将清除保存在本机的 API Key。不影响「工具」页配置。</p>
+          <div class="actions">
+            <button class="btn ghost" type="button" data-close-modal>取消</button>
+            <button class="btn danger" type="button" data-close-modal>确认删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete tool confirm -->
+      <div class="modal-back hidden" id="delMcpModal">
+        <div class="modal">
+          <h2>删除工具？</h2>
+          <p id="delMcpMsg">将清除该 MCP 在本机的凭证。不影响「模型」页配置。</p>
+          <div class="actions">
+            <button class="btn ghost" type="button" data-close-modal>取消</button>
+            <button class="btn danger" type="button" data-close-modal>确认删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Managed hosts modal -->
+      <div class="modal-back hidden" id="hostsModal">
+        <div class="modal" style="width:min(480px,100%)">
+          <h2>已记住的网站</h2>
+          <p>全机汇总。本项目项须标工作区路径。撤销后下次访问会重新询问。</p>
+          <div class="card" style="margin:12px 0">
+            <div class="row spread">
+              <div>
+                <strong>api.npmjs.org</strong><br />
+                <span class="meta">本项目 · 允许 · ~/work/foo</span>
+              </div>
+              <button class="btn ghost" type="button">撤销</button>
+            </div>
+          </div>
+          <div class="card" style="margin:12px 0">
+            <div class="row spread">
+              <div>
+                <strong>api.github.com</strong><br />
+                <span class="meta">本项目 · 允许 · ~/work/bar</span>
+              </div>
+              <button class="btn ghost" type="button">撤销</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row spread">
+              <div>
+                <strong>example.com</strong><br />
+                <span class="meta">本会话 · 拒绝 · Claude Code · ~/work/foo</span>
+              </div>
+              <button class="btn ghost" type="button">撤销</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button" data-close-modal>关闭</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <p class="proto-note">原型示意 · 详见 docs/PAGE-DESIGN.md / docs/ARCHITECTURE.md</p>
+
+  <script>
+    const views = ["home", "wizard", "workbench", "tools", "keys", "settings"];
+    const navBtns = [...document.querySelectorAll("nav [data-view]")];
+    const sessionPill = document.getElementById("sessionPill");
+    const shell = document.getElementById("app");
+    const navToggle = document.getElementById("navToggle");
+
+    function preferredNavCollapsed() {
+      try { return localStorage.getItem("harbor-nav-collapsed") === "1"; } catch (e) { return false; }
+    }
+    function autoCollapseOnWorkbench() {
+      const el = document.getElementById("set-nav-wb");
+      return !el || el.checked;
+    }
+    function syncNavRadiosFromPref() {
+      const collapsed = preferredNavCollapsed();
+      const radio = document.querySelector('input[name="set-nav"][value="' + (collapsed ? "collapsed" : "expanded") + '"]');
+      if (radio) radio.checked = true;
+    }
+    function setNavCollapsed(on, persist) {
+      shell.classList.toggle("nav-collapsed", !!on);
+      if (navToggle) navToggle.textContent = on ? "»" : "« 收缩";
+      if (persist) {
+        try { localStorage.setItem("harbor-nav-collapsed", on ? "1" : "0"); } catch (e) {}
+        syncNavRadiosFromPref();
+      }
+    }
+    setNavCollapsed(preferredNavCollapsed(), false);
+    syncNavRadiosFromPref();
+    if (navToggle) {
+      navToggle.onclick = () => setNavCollapsed(!shell.classList.contains("nav-collapsed"), true);
+    }
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setNavCollapsed(!shell.classList.contains("nav-collapsed"), true);
+      }
+    });
+    document.querySelectorAll('input[name="set-nav"]').forEach((el) => {
+      el.addEventListener("change", () => {
+        setNavCollapsed(el.value === "collapsed", true);
+      });
+    });
+
+    function showView(name) {
+      // 工作台可按设置自动收窄；其它页恢复侧栏默认偏好
+      if (name === "workbench" && autoCollapseOnWorkbench()) setNavCollapsed(true, false);
+      else setNavCollapsed(preferredNavCollapsed(), false);
+      views.forEach((v) => {
+        document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
+      });
+      navBtns.forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+      if (name === "workbench") sessionPill.textContent = "Claude Code · 运行中";
+      if (name === "home") sessionPill.textContent = "无活动会话";
+      if (name === "wizard") setWizardStep(1);
+    }
+
+    navBtns.forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
+    document.querySelectorAll("[data-go]").forEach((b) => {
+      b.addEventListener("click", () => showView(b.dataset.go));
+    });
+
+    function setWizardStep(n) {
+      [1, 2, 3, 4].forEach((i) => {
+        document.getElementById("wiz-" + i).classList.toggle("hidden", i !== n);
+        document.querySelector('[data-step-label="' + i + '"]').classList.toggle("on", i === n);
+      });
+    }
+    document.getElementById("wiz-next-1").onclick = () => setWizardStep(2);
+    document.getElementById("wiz-next-2").onclick = () => setWizardStep(3);
+    document.getElementById("wiz-next-3").onclick = () => setWizardStep(4);
+    document.getElementById("wiz-back-2").onclick = () => setWizardStep(1);
+    document.getElementById("wiz-back-3").onclick = () => setWizardStep(2);
+    document.getElementById("wiz-back-4").onclick = () => setWizardStep(3);
+    document.getElementById("wiz-start").onclick = () => {
+      alert("示意：当前运行中已达 2/2，真实产品会拦截并提示先停止一个会话。");
+    };
+    function toastRedetect() {
+      alert("已更新检测结果（原型示意）");
+    }
+    document.getElementById("wiz-redetect").onclick = toastRedetect;
+    document.getElementById("set-redetect").onclick = toastRedetect;
+    document.querySelectorAll("[data-agent]").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll("[data-agent]").forEach((x) => x.classList.remove("pick"));
+        if (el.style.opacity) return;
+        el.classList.add("pick");
+      });
+    });
+
+    const permModal = document.getElementById("permModal");
+    const boundaryModal = document.getElementById("boundaryModal");
+    const mcpModal = document.getElementById("mcpModal");
+    const keyModal = document.getElementById("keyModal");
+    const hostsModal = document.getElementById("hostsModal");
+    const boundaryBar = document.getElementById("boundaryBar");
+
+    const delKeyModal = document.getElementById("delKeyModal");
+    const presetMap = {
+      deepseek: { name: "我的 DeepSeek", url: "https://api.deepseek.com/v1" },
+      anthropic: { name: "Anthropic", url: "https://api.anthropic.com" },
+      openai: { name: "OpenAI", url: "https://api.openai.com/v1" },
+    };
+    function openKeyModal(name, isEdit) {
+      const title = document.getElementById("keyModalTitle");
+      const nameEl = document.getElementById("key-name");
+      const base = document.getElementById("key-baseurl");
+      if (title) title.textContent = isEdit ? "编辑模型" : "添加模型";
+      if (nameEl) nameEl.value = name || "";
+      if (base) base.value = isEdit ? base.value : "";
+      keyModal.classList.remove("hidden");
+    }
+    function openDelKey(name) {
+      const msg = document.getElementById("delKeyMsg");
+      if (msg) msg.textContent = "将删除「" + name + "」及其本机 API Key。不影响工具。";
+      delKeyModal.classList.remove("hidden");
+    }
+    document.getElementById("btn-perm").onclick = () => {
+      boundaryBar.classList.add("warn");
+      permModal.classList.remove("hidden");
+    };
+    document.getElementById("btn-boundary").onclick = () => boundaryModal.classList.remove("hidden");
+    const btnBoundaryHosts = document.getElementById("btn-boundary-hosts");
+    if (btnBoundaryHosts) {
+      btnBoundaryHosts.onclick = () => {
+        boundaryModal.classList.add("hidden");
+        hostsModal.classList.remove("hidden");
+      };
+    }
+    const delMcpModal = document.getElementById("delMcpModal");
+    function syncMcpAuthUI() {
+      const mode = (document.querySelector('input[name="mcp-auth"]:checked') || {}).value || "browser";
+      const br = document.getElementById("mcp-auth-browser");
+      const ak = document.getElementById("mcp-auth-apikey");
+      if (br) br.classList.toggle("hidden", mode !== "browser");
+      if (ak) ak.classList.toggle("hidden", mode !== "apikey");
+    }
+    document.querySelectorAll('input[name="mcp-auth"]').forEach((el) => {
+      el.addEventListener("change", syncMcpAuthUI);
+    });
+    function openMcpModal(name, auth, isEdit) {
+      const title = document.getElementById("mcpModalTitle");
+      if (title) title.textContent = isEdit ? "编辑工具" : "添加工具";
+      const mode = auth || "browser";
+      const radio = document.querySelector('input[name="mcp-auth"][value="' + mode + '"]');
+      if (radio) radio.checked = true;
+      syncMcpAuthUI();
+      mcpModal.classList.remove("hidden");
+    }
+    function openDelMcp(name) {
+      const msg = document.getElementById("delMcpMsg");
+      if (msg) msg.textContent = "将删除「" + name + "」及其本机凭证。不影响「模型」页配置。";
+      delMcpModal.classList.remove("hidden");
+    }
+    document.getElementById("btn-add-mcp").onclick = () => openMcpModal("", "browser", false);
+    document.querySelectorAll("[data-edit-mcp]").forEach((b) => {
+      b.addEventListener("click", () =>
+        openMcpModal(b.getAttribute("data-edit-mcp"), b.getAttribute("data-mcp-auth"), true)
+      );
+    });
+    document.querySelectorAll("[data-del-mcp]").forEach((b) => {
+      b.addEventListener("click", () => openDelMcp(b.getAttribute("data-del-mcp")));
+    });
+    document.getElementById("btn-add-key").onclick = () => openKeyModal("", false);
+    const wizAdd = document.getElementById("wiz-goto-add-model");
+    if (wizAdd) {
+      wizAdd.addEventListener("click", (e) => {
+        e.preventDefault();
+        showView("keys");
+        openKeyModal("", false);
+      });
+    }
+    document.querySelectorAll("[data-edit-model]").forEach((b) => {
+      b.addEventListener("click", () => openKeyModal(b.getAttribute("data-edit-model"), true));
+    });
+    document.querySelectorAll("[data-del-model]").forEach((b) => {
+      b.addEventListener("click", () => {
+        if (b.disabled) return;
+        openDelKey(b.getAttribute("data-del-model"));
+      });
+    });
+    document.querySelectorAll("[data-preset]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const p = presetMap[b.getAttribute("data-preset")];
+        if (!p) return;
+        const nameEl = document.getElementById("key-name");
+        const base = document.getElementById("key-baseurl");
+        if (nameEl && !nameEl.value) nameEl.value = p.name;
+        if (base) base.value = p.url;
+      });
+    });
+    document.getElementById("btn-managed-hosts").onclick = () => hostsModal.classList.remove("hidden");
+    document.querySelectorAll("[data-close-modal]").forEach((b) => {
+      b.addEventListener("click", () => {
+        permModal.classList.add("hidden");
+        boundaryModal.classList.add("hidden");
+        mcpModal.classList.add("hidden");
+        keyModal.classList.add("hidden");
+        delKeyModal.classList.add("hidden");
+        delMcpModal.classList.add("hidden");
+        hostsModal.classList.add("hidden");
+        boundaryBar.classList.remove("warn");
+      });
+    });
+
+    const askDestroy = document.getElementById("set-ask-destroy");
+    const destroyFallback = document.getElementById("set-destroy-fallback");
+    function syncDestroyFallback() {
+      const on = askDestroy.checked;
+      destroyFallback.style.opacity = on ? "0.4" : "1";
+      destroyFallback.style.pointerEvents = on ? "none" : "auto";
+    }
+    askDestroy.addEventListener("change", syncDestroyFallback);
+
+    const adv = document.getElementById("set-advanced");
+    const advBtn = document.getElementById("btn-advanced-toggle");
+    const chev = document.getElementById("adv-chevron");
+    advBtn.addEventListener("click", () => {
+      const open = adv.classList.toggle("hidden");
+      chev.textContent = open ? "▸" : "▾";
+    });
+  </script>
+</body>
+</html>
