@@ -2,8 +2,7 @@
 
 桌面 Agent 安全沙箱产品设计包：密钥留在本机、Agent 隔离运行。
 
-仓库：https://github.com/cookiybb-sketch/agent-harbor  
-（原目标 `Wintercom/agent-harbor` 当前账号仅只读；有写权限后可改 `origin` 再推）
+仓库：https://github.com/Wintercom/agent-harbor
 
 可浏览原型（不接真 Runtime）：打开 [`prototype/index.html`](./prototype/index.html)（若有缓存请强制刷新）。
 
