@@ -7,7 +7,7 @@
 | 文档版本 | v1.0 |
 | 更新日期 | 2026-10-23 |
 | 产品 | Agent Harbor |
-| 仓库 | https://github.com/Wintercom/agent-harbor.git |
+| 仓库 | https://github.com/liyufei916/agent-harbor.git |
 | 关联 | `DESIGN.md`（产品总纲）、`PAGE-DESIGN.md`（页面） |
 
 本文只讲**架构逻辑**：谁可信、请求怎么走、会话怎么活、密钥为什么进不了沙箱。不写页面控件细节。

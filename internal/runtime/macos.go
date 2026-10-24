@@ -1,0 +1,365 @@
+//go:build darwin
+
+package runtime
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+)
+
+// MacOS 当前只开放严格单进程模式，内核拒绝 fork/posix_spawn。
+// 没有未经验证的“允许子进程”开关；此限制可能使部分 Agent 工具不可用。
+type MacOS struct {
+	mu      sync.Mutex
+	entries map[string]*entry
+}
+
+type entry struct {
+	mu                       sync.Mutex
+	handle                   Handle
+	root, workspace, profile string
+	readOnly                 map[string]bool
+	process                  *macProcess
+	attempted, destroyed     bool
+}
+
+var _ Runtime = (*MacOS)(nil)
+
+func NewMacOS() *MacOS { return &MacOS{entries: make(map[string]*entry)} }
+
+func (r *MacOS) Health(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return runtimeError("CANCELLED")
+	}
+	// 当前只在这条 OS/CPU 主线上实测，未知环境失败关闭。
+	release, err := syscall.Sysctl("kern.osrelease")
+	if err != nil || !strings.HasPrefix(release, "25.") || runtime.GOARCH != "arm64" || os.Geteuid() == 0 || os.Geteuid() != os.Getuid() || os.Getegid() != os.Getgid() {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	root, err := os.MkdirTemp("/private/tmp", "agent-harbor-health-")
+	if err != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	defer os.RemoveAll(root)
+	allowed := filepath.Join(root, "allowed")
+	if err := os.Mkdir(allowed, 0700); err != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	outside := filepath.Join(root, "denied.txt")
+	if err := os.WriteFile(outside, []byte("harbor-health-fixture"), 0600); err != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	inside := filepath.Join(allowed, "allowed.txt")
+	if err := os.WriteFile(inside, []byte("harbor-health-fixture"), 0600); err != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil)
+	if err != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	if strings.Contains(profile, "(allow default)") || !strings.Contains(profile, "(deny default)") || !strings.Contains(profile, "(deny process-fork)") || strings.Contains(profile, "(allow process-fork)") {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-p", profile, "/usr/bin/true")
+	cmd.Dir, cmd.Env = allowed, []string{"HOME=" + allowed, "PATH=/usr/bin:/bin"}
+	if cmd.Run() != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	positive := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/cat", inside)
+	positive.Dir, positive.Env = cmd.Dir, cmd.Env
+	output, err := positive.Output()
+	if err != nil || string(output) != "harbor-health-fixture" {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	negative := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-p", profile, "/bin/cat", outside)
+	negative.Dir, negative.Env = cmd.Dir, cmd.Env
+	output, err = negative.Output()
+	exit, ok := err.(*exec.ExitError)
+	// 规则编译失败、崩溃、超时都不是权限拒绝的证据。
+	if !ok || exit.ExitCode() != 1 || len(output) != 0 || probeCtx.Err() != nil {
+		return runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	return nil
+}
+
+func (r *MacOS) Create(ctx context.Context, spec RuntimeSpec) (Handle, error) {
+	return r.create(ctx, spec, false)
+}
+
+func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Handle, error) {
+	if err := r.Health(ctx); err != nil {
+		return Handle{}, err
+	}
+	if spec.SessionID == "" || spec.MountMode != "direct" || (!offline && len(spec.AllowedTCP) == 0) || len(spec.ReadOnlyPaths) == 0 {
+		return Handle{}, runtimeError("INVALID_ARGUMENT")
+	}
+	workspace, err := canonicalPath(spec.Workspace)
+	if err != nil {
+		return Handle{}, err
+	}
+	info, err := os.Stat(workspace)
+	if err != nil || !info.IsDir() || forbiddenWorkspace(workspace) {
+		return Handle{}, runtimeError("WORKSPACE_DENIED")
+	}
+	readOnly := make([]string, 0, len(spec.ReadOnlyPaths))
+	for _, path := range spec.ReadOnlyPaths {
+		resolved, err := canonicalPath(path)
+		if err != nil || within(workspace, resolved) {
+			return Handle{}, runtimeError("INVALID_ARGUMENT")
+		}
+		readOnly = append(readOnly, resolved)
+	}
+	root, err := os.MkdirTemp("/private/tmp", "agent-harbor-session-")
+	if err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	owned := false
+	defer func() {
+		if !owned {
+			_ = os.RemoveAll(root)
+		}
+	}()
+	home := filepath.Join(root, "home")
+	if err := os.Mkdir(home, 0700); err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	if err := os.Mkdir(filepath.Join(home, "tmp"), 0700); err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP)
+	if err != nil {
+		return Handle{}, err
+	}
+	profilePath := filepath.Join(root, "sandbox.sb")
+	if err := os.WriteFile(profilePath, []byte(profile), 0600); err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	// 每次 Create 均实际编译并应用本次参数生成的规则。
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-f", profilePath, "/usr/bin/true")
+	cmd.Dir, cmd.Env = workspace, []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
+	if err := cmd.Run(); err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	if ctx.Err() != nil {
+		return Handle{}, runtimeError("CANCELLED")
+	}
+	var id [32]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	handle := Handle{ID: hex.EncodeToString(id[:]), PrivateHome: home}
+	e := &entry{handle: handle, root: root, workspace: workspace, profile: profilePath, readOnly: make(map[string]bool)}
+	for _, path := range readOnly {
+		e.readOnly[path] = true
+	}
+	r.mu.Lock()
+	r.entries[handle.ID] = e
+	r.mu.Unlock()
+	owned = true
+	return handle, nil
+}
+
+func forbiddenWorkspace(path string) bool {
+	for _, base := range []string{"/System", "/usr", "/bin", "/sbin", "/etc", "/private/etc", "/var", "/private/var", "/Library", "/opt"} {
+		if path == base || within(path, base) || within(base, path) {
+			return true
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return true
+	}
+	home, err = canonicalPath(home)
+	if err != nil || path == home || within(path, home) {
+		return true
+	}
+	for _, relative := range []string{".ssh", ".aws", ".config", ".kube", ".claude", ".codex", ".gnupg", ".azure", ".docker", "Library"} {
+		if within(filepath.Join(home, relative), path) {
+			return true
+		}
+	}
+	return path == "/" || path == "/Users" || path == "/private" || path == "/private/tmp"
+}
+
+func (r *MacOS) lookup(handle Handle) (*entry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e := r.entries[handle.ID]
+	if e == nil || e.handle.PrivateHome != handle.PrivateHome {
+		return nil, runtimeError("INVALID_ARGUMENT")
+	}
+	return e, nil
+}
+
+func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, output func(contracts.OutputData)) (Process, error) {
+	e, err := r.lookup(handle)
+	if err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if ctx.Err() != nil {
+		return nil, runtimeError("CANCELLED")
+	}
+	if e.destroyed || e.attempted {
+		return nil, runtimeError("INVALID_ARGUMENT")
+	}
+	command, err := canonicalPath(launch.Command)
+	if err != nil || !e.readOnly[command] {
+		return nil, runtimeError("AGENT_UNSUPPORTED")
+	}
+	for _, arg := range launch.Args {
+		if strings.ContainsRune(arg, 0) {
+			return nil, runtimeError("INVALID_ARGUMENT")
+		}
+	}
+	env, err := launchEnvironment(handle.PrivateHome, launch.Env)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateConfigFiles(launch.ConfigFiles); err != nil {
+		return nil, err
+	}
+	// 单次尝试：失败后只能 Destroy，不能复用半写入的 HOME。
+	e.attempted = true
+	if err := writeConfigFiles(handle.PrivateHome, launch.ConfigFiles); err != nil {
+		return nil, err
+	}
+	if ctx.Err() != nil {
+		return nil, runtimeError("CANCELLED")
+	}
+	args := append([]string{"-f", e.profile, command}, launch.Args...)
+	cmd := exec.Command("/usr/bin/sandbox-exec", args...)
+	cmd.Dir, cmd.Env, cmd.Stdin = e.workspace, env, bytes.NewReader(launch.Stdin)
+	stdout, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		return nil, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	stderr, stderrWriter, err := os.Pipe()
+	if err != nil {
+		stdout.Close()
+		stdoutWriter.Close()
+		return nil, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	cmd.Stdout, cmd.Stderr = stdoutWriter, stderrWriter
+	if err := cmd.Start(); err != nil {
+		stdout.Close()
+		stdoutWriter.Close()
+		stderr.Close()
+		stderrWriter.Close()
+		return nil, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	stdoutWriter.Close()
+	stderrWriter.Close()
+	p := &macProcess{cmd: cmd, done: make(chan struct{}), rootDone: make(chan struct{})}
+	e.process = p
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() { defer readers.Done(); defer stdout.Close(); readOutput(stdout, "stdout", output) }()
+	go func() { defer readers.Done(); defer stderr.Close(); readOutput(stderr, "stderr", output) }()
+	go func() {
+		err := cmd.Wait()
+		close(p.rootDone)
+		readers.Wait()
+		p.mu.Lock()
+		p.result = Exit{Code: -1, Cancelled: p.cancelled}
+		if cmd.ProcessState != nil {
+			p.confirmed = true
+			p.result.Code = cmd.ProcessState.ExitCode()
+		}
+		if err != nil {
+			p.result.Err = runtimeError("AGENT_EXIT_FAILED")
+		}
+		p.mu.Unlock()
+		close(p.done)
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			p.kill(true)
+		case <-p.rootDone:
+		}
+	}()
+	return p, nil
+}
+
+func (r *MacOS) Destroy(ctx context.Context, handle Handle) error {
+	e, err := r.lookup(handle)
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.destroyed {
+		return nil
+	}
+	if e.process != nil {
+		e.process.kill(true)
+		select {
+		case <-e.process.done:
+		case <-ctx.Done():
+			return runtimeError("CLEANUP_FAILED")
+		}
+		e.process.mu.Lock()
+		confirmed := e.process.confirmed
+		e.process.mu.Unlock()
+		if !confirmed {
+			return runtimeError("CLEANUP_FAILED")
+		}
+	}
+	if ctx.Err() != nil {
+		return runtimeError("CLEANUP_FAILED")
+	}
+	if err := os.RemoveAll(e.root); err != nil {
+		return runtimeError("CLEANUP_FAILED")
+	}
+	if _, err := os.Lstat(e.root); !os.IsNotExist(err) {
+		return runtimeError("CLEANUP_FAILED")
+	}
+	e.destroyed = true
+	// 保留句柄墓碑以维持 Destroy 幂等；释放 profile、路径和进程引用，避免会话元数据累积。
+	e.root, e.workspace, e.profile = "", "", ""
+	e.readOnly = nil
+	e.process = nil
+	return nil
+}
+
+type macProcess struct {
+	mu             sync.Mutex
+	cmd            *exec.Cmd
+	done, rootDone chan struct{}
+	result         Exit
+	cancelled      bool
+	confirmed      bool
+}
+
+func (p *macProcess) kill(cancelled bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case <-p.rootDone:
+		return
+	default:
+	}
+	if err := p.cmd.Process.Kill(); err == nil {
+		p.cancelled = cancelled
+	}
+}
+
+func (p *macProcess) Wait() Exit { <-p.done; p.mu.Lock(); defer p.mu.Unlock(); return p.result }

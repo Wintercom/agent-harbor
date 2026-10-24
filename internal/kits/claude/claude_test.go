@@ -1,0 +1,229 @@
+//go:build darwin
+
+package claude
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/kits"
+	"github.com/liyufei916/agent-harbor/internal/runtime"
+)
+
+const sentinel = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func input() kits.KitInput {
+	return kits.KitInput{Task: "特殊字符 ' \" $(touch never)\n中文", PrivateHome: "/private/test home", ModelBaseURL: "http://127.0.0.1:41001/model", MCPURL: "http://127.0.0.1:41002/mcp", Sentinel: sentinel}
+}
+
+func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
+	k, err := New("/usr/bin/true", "fixed-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, err := k.Build(context.Background(), input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(launch.Stdin) != input().Task {
+		t.Fatal("任务正文被改写")
+	}
+	args := strings.Join(launch.Args, " ")
+	if strings.Contains(args, input().Task) || strings.Contains(args, sentinel) {
+		t.Fatal("任务或令牌进入命令行")
+	}
+	for _, flag := range []string{"--bare", "--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts none", "--tools Read,Write,Edit"} {
+		if !strings.Contains(args, flag) {
+			t.Fatalf("缺少限制参数 %s", flag)
+		}
+	}
+	if launch.Env["ANTHROPIC_API_KEY"] != sentinel || launch.Env["ANTHROPIC_BASE_URL"] != input().ModelBaseURL {
+		t.Fatal("模型未指向 Gate")
+	}
+	if len(launch.ConfigFiles) != 2 {
+		t.Fatal("配置文件缺失")
+	}
+	var mcp struct {
+		Servers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(launch.ConfigFiles[0].Content, &mcp); err != nil {
+		t.Fatal(err)
+	}
+	server := mcp.Servers["harbor"]
+	if len(mcp.Servers) != 1 || server.Type != "http" || server.URL != input().MCPURL || server.Headers["Authorization"] != "Bearer "+sentinel {
+		t.Fatal("MCP 配置不符合 Gate 契约")
+	}
+}
+
+func TestBuildRejectsInvalidInput(t *testing.T) {
+	k, _ := New("/usr/bin/true", "fixed-model")
+	for _, change := range []func(*kits.KitInput){
+		func(i *kits.KitInput) { i.Task = "" }, func(i *kits.KitInput) { i.Task = strings.Repeat("x", 32769) },
+		func(i *kits.KitInput) { i.PrivateHome = "../home" }, func(i *kits.KitInput) { i.ModelBaseURL = "https://provider.example" },
+		func(i *kits.KitInput) { i.MCPURL = "http://127.0.0.1:41002/mcp?key=value" }, func(i *kits.KitInput) { i.Sentinel = "short" },
+		func(i *kits.KitInput) { i.Sentinel = sentinel + "\n" },
+	} {
+		i := input()
+		change(&i)
+		if _, err := k.Build(context.Background(), i); err == nil {
+			t.Fatal("接受非法 Kit 输入")
+		}
+	}
+}
+
+func TestDetectFailsClosed(t *testing.T) {
+	k, _ := New(filepath.Join(t.TempDir(), "missing"), "model")
+	info, err := k.Detect(context.Background())
+	if err != nil || info.Agent.Available || len(info.ReadOnlyPaths) != 0 {
+		t.Fatal("缺少 CLI 却报告可用")
+	}
+	k, _ = New("/usr/bin/true", "model")
+	for _, inspect := range []func(context.Context, string, []string) (string, error){
+		func(context.Context, string, []string) (string, error) {
+			return "", errors.New("不能公开的内部错误")
+		},
+		func(context.Context, string, []string) (string, error) { return "0.0.0 (Claude Code)", nil },
+		func(_ context.Context, _ string, args []string) (string, error) {
+			if args[0] == "--version" {
+				return SupportedVersion + " (Claude Code)", nil
+			}
+			return "old-help", nil
+		},
+	} {
+		k.inspect = inspect
+		info, err := k.Detect(context.Background())
+		if err != nil || info.Agent.Available || strings.Contains(info.Agent.Reason, "内部错误") {
+			t.Fatal("检测失败未关闭或泄漏原始错误")
+		}
+	}
+}
+
+func TestInstalledCLIInStrictRuntime(t *testing.T) {
+	if os.Getenv("HARBOR_TEST_CLAUDE") != "1" {
+		t.Skip("设置 HARBOR_TEST_CLAUDE=1 才检测本机真实 CLI；不访问模型或 MCP")
+	}
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := New(path, "local-detection-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := k.Detect(context.Background())
+	if err != nil || !info.Agent.Available {
+		help, helpErr := k.inspect(context.Background(), path, []string{"--bare", "--help"})
+		t.Logf("受限帮助检测：字节=%d 错误=%v", len(help), helpErr)
+		for _, flag := range []string{"--bare", "--print", "--strict-mcp-config", "--mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts", "--permission-mode", "--disable-slash-commands", "--tools"} {
+			if !strings.Contains(help, flag) {
+				t.Logf("帮助缺少参数：%s", flag)
+			}
+		}
+		t.Fatalf("受限 CLI 检测未通过：%+v %v", info, err)
+	}
+	t.Logf("本机 CLI 受限检测通过：%s", info.Agent.Version)
+}
+
+func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
+	if os.Getenv("HARBOR_TEST_CLAUDE") != "1" {
+		t.Skip("设置 HARBOR_TEST_CLAUDE=1 检测无网络非交互启动")
+	}
+	t.Helper()
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := os.MkdirTemp("/private/tmp", "harbor-cli-diagnose-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(workspace)
+	r := runtime.NewMacOS()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	handle, err := r.Create(ctx, runtime.RuntimeSpec{SessionID: "help-diagnose", Workspace: workspace, MountMode: "direct", AllowedTCP: []string{"127.0.0.1:1"}, ReadOnlyPaths: []string{path}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, stop := context.WithTimeout(context.Background(), time.Second)
+		defer stop()
+		if err := r.Destroy(cleanup, handle); err != nil {
+			t.Error(err)
+		}
+	}()
+	var mu sync.Mutex
+	var output strings.Builder
+	k, err := New(path, "local-detection-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := input()
+	i.Task = "Return OK"
+	i.PrivateHome = handle.PrivateHome
+	i.ModelBaseURL = "http://127.0.0.1:1"
+	i.MCPURL = "http://127.0.0.1:1/mcp"
+	launch, err := k.Build(ctx, i)
+	if err != nil {
+		t.Fatal(err)
+	}
+	process, err := r.Exec(ctx, handle, launch, func(data contracts.OutputData) {
+		mu.Lock()
+		defer mu.Unlock()
+		output.WriteString(data.Text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exit := process.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	text := output.String()
+	for _, failure := range []string{"unknown option", "Failed to format a number", "SyntaxError", "unrecognized option", "Cannot use settings file", "Refusing to read a file", "EPERM:", "EACCES:"} {
+		if strings.Contains(text, failure) {
+			t.Fatalf("非交互参数或启动不兼容：%s", failure)
+		}
+	}
+	if strings.Contains(text, sentinel) {
+		t.Fatal("Agent 原始输出回显 Sentinel；需补充 Gate/输出边界过滤验证")
+	}
+	if strings.TrimSpace(text) == "" {
+		t.Fatalf("非交互启动没有输出：退出=%+v", exit)
+	}
+	if exit.Code == 0 {
+		t.Fatal("无上游时不应报告任务成功")
+	}
+	initialized := false
+	for _, line := range strings.Split(text, "\n") {
+		var event struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			Model   string `json:"model"`
+			Version string `json:"claude_code_version"`
+			Source  string `json:"apiKeySource"`
+		}
+		if json.Unmarshal([]byte(line), &event) == nil && event.Type == "system" && event.Subtype == "init" {
+			if event.Model != "local-detection-only" || event.Version != SupportedVersion || event.Source != "ANTHROPIC_API_KEY" {
+				t.Fatal("CLI 初始化配置不符合启动规格")
+			}
+			initialized = true
+		}
+	}
+	if !initialized {
+		t.Fatal("未收到结构化初始化事件，不能判为非交互启动通过")
+	}
+	t.Logf("无真实上游启动探测完成：退出码=%d，取消=%v，输出字节=%d；不代表模型/MCP 兼容通过", exit.Code, exit.Cancelled, len(text))
+}

@@ -6,7 +6,7 @@
 |---|---|
 | 文档版本 | v1.1 |
 | 更新日期 | 2026-10-23 |
-| 仓库 | https://github.com/Wintercom/agent-harbor.git |
+| 仓库 | https://github.com/liyufei916/agent-harbor.git |
 | 依据 | `DESIGN.md`（含 §7.4 / §7.6 分期隔离）· `ARCHITECTURE.md` · `PAGE-DESIGN.md` · `SPIKE-3D3P.md` |
 
 按依赖排序。**落地主线：一期工作区+降权 → 二期容器；Gate/策略/UI 契约不变。**

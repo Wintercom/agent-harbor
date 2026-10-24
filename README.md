@@ -1,8 +1,8 @@
 # Agent Harbor
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。当前已建立设计文档与模块目录骨架，尚未提供可运行的应用代码及构建命令。
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。当前已实现共享契约、会话编排、严格单进程 macOS Runtime 与 Claude Kit，桌面应用及真实模型/MCP 集成仍待完成。研发 A 的实现、运行命令与验证边界见 [开发记录](docs/DEV-A.md)。
 
-仓库：https://github.com/Wintercom/agent-harbor
+仓库：https://github.com/liyufei916/agent-harbor
 
 可浏览原型（不接真 Runtime）：打开 [`prototype/index.html`](./prototype/index.html)（若有缓存请强制刷新）。
 
@@ -34,9 +34,9 @@ agent-harbor/
 
 模块职责、依赖和测试约定见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排与技术集成，B 负责 Gate/Policy/Secrets、Wails 绑定及构建，C 负责产品、前端与演示。单元测试就近放置，跨模块检查放在 [security](security/README.md)。
 
-Go/Wails 目录骨架及说明已迁移。根入口 main.go/app.go、go.mod、wails.json、前端依赖与生成绑定尚未实现；不创建空业务代码或虚假启动命令。目标文件结构及迁移映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
+Go/Wails 目录骨架及说明已迁移。已加入最小 go.mod；根入口 main.go/app.go、wails.json、前端依赖与生成绑定尚未实现；不创建空业务代码或虚假启动命令。目标文件结构及迁移映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
 
-三人并行开发先读 [模块设计](docs/MODULE-DESIGN.md)，再按 [接口契约](docs/CONTRACT.md) 实现与接入；各自使用同契约替身解除对其他模块实现的等待。当前替身与工程仍待实现，真实环境/接入见 [实施决策](docs/DECISIONS.md)，集成通过情况按 [验收清单](docs/ACCEPTANCE.md) 记录。
+三人并行开发先读 [模块设计](docs/MODULE-DESIGN.md)，再按 [接口契约](docs/CONTRACT.md) 实现与接入；各自使用同契约替身解除对其他模块实现的等待。A 的编排测试替身已实现，B/C 的替身与桌面工程仍待实现，真实环境/接入见 [实施决策](docs/DECISIONS.md)，集成通过情况按 [验收清单](docs/ACCEPTANCE.md) 记录。
 
 当前两天版：单一 macOS 环境、一个真实 Agent、一个模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
 
@@ -53,7 +53,7 @@ Go/Wails 目录骨架及说明已迁移。根入口 main.go/app.go、go.mod、wa
 HARBOR_NO_COMMIT=1 ./scripts/github-push.sh
 ```
 
-默认远程：`https://github.com/Wintercom/agent-harbor.git`，分支 `main`。可用环境变量覆盖：`HARBOR_REMOTE`、`HARBOR_BRANCH`。
+默认远程：`https://github.com/liyufei916/agent-harbor.git`，分支 `main`。可用环境变量覆盖：`HARBOR_REMOTE`、`HARBOR_BRANCH`。
 
 ## 文档怎么读
 
