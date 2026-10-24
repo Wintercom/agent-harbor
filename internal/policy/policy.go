@@ -18,6 +18,7 @@ var (
 	ErrUnknownProfile   = errors.New("policy: unknown profile")
 	ErrKindMismatch     = errors.New("policy: account kind mismatch")
 	ErrMissingMCP       = errors.New("policy: mcp required")
+	ErrHostMismatch     = errors.New("policy: account host mismatch")
 )
 
 // EndpointRule 绑定固定 origin 与允许路径。
@@ -89,6 +90,9 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if req.MCP.Kind != "mcp" || req.MCP.ID == "" {
 		return PolicySnapshot{}, ErrMissingMCP
 	}
+	if !sameHost(req.Model.Host, modelProf.Host) || !sameHost(req.MCP.Host, mcpProf.Host) {
+		return PolicySnapshot{}, ErrHostMismatch
+	}
 	return PolicySnapshot{
 		Workspace: ws,
 		MountMode: "direct",
@@ -157,12 +161,25 @@ func PathAllowed(rule EndpointRule, path string) bool {
 		path = path[:i]
 	}
 	for _, p := range rule.Paths {
-		if p == "/" || p == "" {
-			return true
+		if p == "" {
+			continue
+		}
+		// 单独的 "/" 只表示根路径，不能变成全路径放行。
+		if p == "/" {
+			if path == "/" {
+				return true
+			}
+			continue
 		}
 		if strings.HasPrefix(path, p) {
 			return true
 		}
 	}
 	return false
+}
+
+func sameHost(got, want string) bool {
+	got = strings.ToLower(strings.TrimSpace(got))
+	want = strings.ToLower(strings.TrimSpace(want))
+	return got != "" && got == want
 }

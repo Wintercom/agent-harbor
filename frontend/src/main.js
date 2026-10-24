@@ -35,6 +35,8 @@ const ctx = {
   },
 };
 
+let sessionView;
+
 function syncBadge() {
   if (api.isMock()) {
     badge.textContent = "模拟模式";
@@ -45,26 +47,37 @@ function syncBadge() {
   }
 }
 
-api.useMock();
-const params = new URLSearchParams(location.search);
-if (params.get("scenario")) {
-  api.setMockScenario(params.get("scenario"));
-}
-if (params.get("live") === "1") {
-  try {
-    api.useLive();
-  } catch (e) {
-    console.warn("live transport 不可用，保持 mock:", e.message || e);
-    api.useMock();
+function isWailsShell() {
+  if (location.protocol === "wails:" || location.hostname === "wails.localhost") {
+    return true;
   }
+  return typeof window !== "undefined" && !!window._wails;
 }
-syncBadge();
 
-document.querySelectorAll(".tab").forEach((btn) => {
-  btn.addEventListener("click", () => ctx.showTab(btn.getAttribute("data-tab")));
-});
+async function boot() {
+  api.useMock();
+  const params = new URLSearchParams(location.search);
+  if (params.get("scenario")) {
+    api.setMockScenario(params.get("scenario"));
+  }
+  const wantLive = params.get("live") === "1" || (params.get("live") !== "0" && !params.get("scenario") && isWailsShell());
+  if (wantLive) {
+    try {
+      await api.useLive();
+    } catch (e) {
+      console.warn("live transport 不可用，保持 mock:", e.message || e);
+      api.useMock();
+    }
+  }
+  syncBadge();
 
-mountSetup(setupRoot, ctx);
-const sessionView = mountSession(sessionRoot, ctx);
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => ctx.showTab(btn.getAttribute("data-tab")));
+  });
 
-ctx.showTab("setup");
+  mountSetup(setupRoot, ctx);
+  sessionView = mountSession(sessionRoot, ctx);
+  ctx.showTab("setup");
+}
+
+boot();

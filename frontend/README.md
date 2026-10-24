@@ -32,6 +32,6 @@ cd frontend && npm install && npm run build
 wails3 dev
 ```
 
-页面只经 `src/api.js` 调用业务方法。浏览器独立开发使用 `mock-api.js`，勿导入 bindings。B 生成绑定后，在 `api.js` 的 `createLiveTransport()` 接入 `bindings/.../desktopapi.js`，再 `useLive()` 或 `?live=1`。事件名固定 `harbor:event`。
+页面只经 `src/api.js` 调用业务方法。浏览器独立开发使用 `mock-api.js`，勿手改 bindings。`createLiveTransport()` 动态加载 `bindings/github.com/liyufei916/agent-harbor/internal/desktop/desktopapi.js`，并用 `@wailsio/runtime` 的 `Events.On('harbor:event')` 转发契约事件。桌面壳或 `?live=1` 走真实绑定；绑定尚未生成时回退 mock。`?scenario=` 与 `?live=0` 保持模拟。
 
 准确方法见 [CONTRACT.md](../docs/CONTRACT.md)。两天范围见 [MVP-2D3P.md](../docs/MVP-2D3P.md)。

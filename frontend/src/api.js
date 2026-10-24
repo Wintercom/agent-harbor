@@ -34,14 +34,41 @@ async function call(method, ...args) {
   }
 }
 
+const LIVE_BINDING =
+  "../bindings/github.com/liyufei916/agent-harbor/internal/desktop/desktopapi.js";
+
+function unwrapEvent(ev) {
+  if (ev && Object.prototype.hasOwnProperty.call(ev, "data")) {
+    return ev.data;
+  }
+  return ev;
+}
+
 /**
- * B 接入：Wails v3 生成目录为 frontend/bindings/（勿手改）。
- * 生成后在此 import DesktopAPI，并用 EventsOn('harbor:event', ...) 转发。
+ * 真实桌面通道。绑定由 wails3 generate 生成，不要手改。
+ * 事件名固定为 harbor:event，回调收到契约 Event 本身。
  */
-export function createLiveTransport() {
-  throw new Error(
-    "请接入 frontend/bindings/.../desktopapi.js 后实现 createLiveTransport()；当前请用 mock 或等 B 生成绑定"
-  );
+export async function createLiveTransport() {
+  const api = await import(/* @vite-ignore */ LIVE_BINDING);
+  const runtime = await import("@wailsio/runtime");
+  const Events = runtime.Events;
+  if (!api.ListAgents || !Events || typeof Events.On !== "function") {
+    throw new Error("Wails 绑定不完整");
+  }
+  return {
+    listAgents: () => api.ListAgents(),
+    selectWorkspace: () => api.SelectWorkspace(),
+    connectModel: (input) => api.ConnectModel(input),
+    connectMcp: (input) => api.ConnectMcp(input),
+    createSession: (spec) => api.CreateSession(spec),
+    getSession: (id) => api.GetSession(id),
+    stopSession: (id) => api.StopSession(id),
+    onEvent(callback) {
+      return Events.On("harbor:event", (ev) => {
+        callback(unwrapEvent(ev));
+      });
+    },
+  };
 }
 
 export function useMock() {
@@ -49,8 +76,8 @@ export function useMock() {
   mode = "mock";
 }
 
-export function useLive() {
-  transport = createLiveTransport();
+export async function useLive() {
+  transport = await createLiveTransport();
   mode = "live";
 }
 

@@ -20,7 +20,7 @@
 - **桌面采用 Wails**：前端使用简单 HTML/CSS/JavaScript 和团队熟悉的工具，不为两个页面额外引入复杂框架。Go 方法绑定与事件通道由研发实现，前端只调用受限的业务能力。
 - **Python 用于安全验收与演示辅助**，不再并行建设一套 Python 业务后端，避免增加跨语言进程通信与打包成本。
 - Go 后端统一使用 context 传播取消与超时；启动外部程序采用明确的可执行文件、参数与净化环境，不拼接 shell 命令。流式输出、进程树清理及失败关闭属于核心实现要求。
-- 技术栈已替代此前 Electron + TypeScript 方案。目录骨架现为 `internal/{contracts,orchestrator,runtime,kits,gate,policy,secrets}/`、`frontend/`、`build/`，保留 `security/` 与 `demos/`；旧 src 骨架已移除。根 main.go/app.go、Go/Wails 配置与业务实现尚待初始化，不再建立重复 cmd/harbor 入口。详细目标文件及历史映射见 [Go/Wails 目录设计](docs/DIRECTORY-STRUCTURE.md)。
+- 技术栈已替代此前 Electron + TypeScript 方案。目录骨架现为 `internal/{contracts,orchestrator,runtime,kits,gate,policy,secrets,desktop}/`、`frontend/`、`build/`，保留 `security/` 与 `demos/`；旧 src 骨架已移除。根 `main.go` 是薄入口，桌面绑定在 `internal/desktop`，Wails v3 配置在 `build/`。不再建立重复 cmd/harbor 入口。详细目标文件及历史映射见 [Go/Wails 目录设计](docs/DIRECTORY-STRUCTURE.md)。
 
 ### 团队分工
 
@@ -41,7 +41,7 @@
 - 不因赶工删除真实 Agent、唯一认证 MCP、操作系统强制隔离、凭据外置或可靠清理；静态原型、curl 成功、模拟 MCP 不能冒充核心闭环验收。
 - 首小时冻结目标环境、Agent/模型/MCP 组合、接口与演示任务；随后验证隔离、上游接入、Wails 构建/绑定/事件。首日结束前三人完成真实联调，第二天下午冻结功能并回归。
 - 决策、接口和验收入口已建立：[DECISIONS.md](docs/DECISIONS.md)、[CONTRACT.md](docs/CONTRACT.md)、[ACCEPTANCE.md](docs/ACCEPTANCE.md)。版本、外部接入与隔离能力仍须实测，当前真实验证均待执行，不能凭设计推定通过。
-- 并行开发采用同契约替身：C 使用浏览器独立 mock transport，A 注入 Gate/Policy/Catalog/Runtime/Kit fake，B 用 fake SessionService 测桌面桥。替身当前待实现，不能进入真实验收或作为生产降级。接口变更先同步契约与所有受影响的真实/替身实现。
+- 并行开发采用同契约替身：C 使用浏览器独立 mock transport，A 注入 Gate/Policy/Catalog/Runtime/Kit fake，B 用 fake SessionService 测桌面桥。C 的浏览器 mock、A 的测试替身和 B 的桌面桥测试已经落地。替身不能进入真实验收或作为生产降级。接口变更先同步契约与所有受影响的真实/替身实现。
 - Runtime.Create 在本版同时配置工作区、私有 HOME 与网络端口，不另设 MountWorkspace。Stop 异步确认清理；failed 且 cleanupComplete=true 释放锁，cleanupComplete=false 保留锁并允许重试清理。具体超时与幂等语义见接口契约，优先于下文长期 Runtime 摘要。
 
 ## 项目架构知识
@@ -82,7 +82,7 @@ Agent Harbor 是安全优先的桌面 Agent 沙箱：在隔离环境中运行 Cl
 | Runtime | 创建隔离环境、挂载工作区、强制网络路径、执行与销毁；不解释业务策略 |
 | Agent Kit | Agent 启动命令与无密钥配置模板，由编排层在启动时注入；默认不修改 Agent 源码 |
 
-当前模块导航见 [Go 后端](internal/README.md) 和 [桌面前端](frontend/README.md)，各目录 README 已同步 Go/Wails 与三人分工。当前只有目录与说明文档，尚无运行实现。长期文档中的根级 `runtime/`、`host-services/`、`proxy/`、`app/` 等也是目录草案，不应建立重复组件。
+当前模块导航见 [Go 后端](internal/README.md) 和 [桌面前端](frontend/README.md)，各目录 README 已同步 Go/Wails 与三人分工。控制面 Gate、Policy、Secrets、桌面绑定，以及编排与 Runtime 已有实现；真实模型与 MCP 上游仍须联调，不能把单测当成验收通过。长期文档中的根级 `runtime/`、`host-services/`、`proxy/`、`app/` 等也是目录草案，不应建立重复组件。
 
 ### 完整 V1 会话与请求主路径
 

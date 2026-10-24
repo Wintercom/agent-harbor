@@ -29,8 +29,10 @@ func TestSentinelLength(t *testing.T) {
 }
 
 func TestModelProxyRewriteAndDeny(t *testing.T) {
+	var gotAuth string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, r.Header.Get("Authorization"))
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "echo "+r.Header.Get("Authorization"))
 	}))
 	defer origin.Close()
 
@@ -51,7 +53,7 @@ func TestModelProxyRewriteAndDeny(t *testing.T) {
 
 	pol := policy.NewBuilder(map[string]policy.FixedProfile{
 		policy.ProfileDemoModel: {
-			ID: policy.ProfileDemoModel, Kind: "model", Origin: origin.URL, Paths: []string{"/"}, Host: "127.0.0.1",
+			ID: policy.ProfileDemoModel, Kind: "model", Origin: origin.URL, Paths: []string{"/v1/"}, Host: "127.0.0.1",
 		},
 		policy.ProfileDemoMCP: {
 			ID: policy.ProfileDemoMCP, Kind: "mcp", Origin: origin.URL, Paths: []string{"/mcp"}, Host: "127.0.0.1",
@@ -62,7 +64,7 @@ func TestModelProxyRewriteAndDeny(t *testing.T) {
 	var audits []contracts.AuditData
 	bind, err := h.Start(ctx, GateSpec{
 		SessionID:      "sess1",
-		Policy:         policy.PolicySnapshot{Model: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/"}}, MCP: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/mcp"}}, MCPID: mcpID},
+		Policy:         policy.PolicySnapshot{Model: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/v1/"}}, MCP: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/mcp"}}, MCPID: mcpID},
 		ModelAccountID: modelID,
 		MCPAccountID:   mcpID,
 	}, func(a contracts.AuditData) { audits = append(audits, a) }, nil)
@@ -79,8 +81,14 @@ func TestModelProxyRewriteAndDeny(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if string(body) != "Bearer sk-real-key" {
-		t.Fatalf("rewrite failed: %q", body)
+	if gotAuth != "Bearer sk-real-key" {
+		t.Fatalf("upstream auth=%q", gotAuth)
+	}
+	if strings.Contains(string(body), "sk-real-key") || strings.Contains(string(body), bind.Sentinel) {
+		t.Fatalf("response leaked credentials: %q", body)
+	}
+	if len(audits) == 0 || audits[0].Tool != auditToolModel || audits[0].Result != "allowed" {
+		t.Fatalf("audit=%+v", audits)
 	}
 
 	req2, _ := http.NewRequest(http.MethodGet, bind.ModelBaseURL+"/v1/chat", nil)
@@ -175,5 +183,156 @@ func TestConnectModelWithLocalUpstream(t *testing.T) {
 	})
 	if err != ErrUpstreamAuth {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRedactorSplitsSecret(t *testing.T) {
+	red := newSecretRedactor([]string{"sk-real-key"})
+	var out []byte
+	out = append(out, red.Push([]byte("echo sk-rea"))...)
+	out = append(out, red.Push([]byte("l-key tail"))...)
+	out = append(out, red.Flush()...)
+	if strings.Contains(string(out), "sk-real-key") || !strings.Contains(string(out), redactedText) {
+		t.Fatalf("out=%q", out)
+	}
+}
+
+func TestMCPFiltersToolsListAndCall(t *testing.T) {
+	var upstreamCalls int
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.Header.Get("Authorization") != "Bearer mcp-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("Mcp-Session-Id") != "sess-up" {
+			t.Errorf("missing session header")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "tools/list") {
+			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"list_resources"},{"name":"delete_all"}]}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":2,"result":{"ok":true}}`)
+	}))
+	defer origin.Close()
+
+	store := secrets.NewStore()
+	ctx := context.Background()
+	modelID, err := store.Put(ctx, contracts.AccountInfo{
+		Kind: "model", Name: "m", ProfileID: policy.ProfileDemoModel, Host: "127.0.0.1",
+	}, []byte("sk-real-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mcpID, err := store.Put(ctx, contracts.AccountInfo{
+		Kind: "mcp", Name: "t", ProfileID: policy.ProfileDemoMCP, Host: "127.0.0.1",
+	}, []byte("mcp-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := policy.NewBuilder(map[string]policy.FixedProfile{
+		policy.ProfileDemoModel: {ID: policy.ProfileDemoModel, Kind: "model", Origin: origin.URL, Paths: []string{"/v1/"}, Host: "127.0.0.1"},
+		policy.ProfileDemoMCP:   {ID: policy.ProfileDemoMCP, Kind: "mcp", Origin: origin.URL, Paths: []string{"/mcp"}, Host: "127.0.0.1", Tools: []string{"list_resources"}},
+	})
+	h := New(store, pol)
+	bind, err := h.Start(ctx, GateSpec{
+		SessionID: "mcp1",
+		Policy: policy.PolicySnapshot{
+			Model: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/v1/"}},
+			MCP:   policy.EndpointRule{Origin: origin.URL, Paths: []string{"/mcp"}},
+			MCPID: mcpID,
+			Tools: []string{"list_resources"},
+		},
+		ModelAccountID: modelID,
+		MCPAccountID:   mcpID,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Revoke(ctx, "mcp1")
+
+	listReq, _ := http.NewRequest(http.MethodPost, bind.MCPURL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	listReq.Header.Set("Authorization", "Bearer "+bind.Sentinel)
+	listReq.Header.Set("Content-Type", "application/json")
+	listReq.Header.Set("Mcp-Session-Id", "sess-up")
+	listResp, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listBody, _ := io.ReadAll(listResp.Body)
+	_ = listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK || !strings.Contains(string(listBody), "list_resources") || strings.Contains(string(listBody), "delete_all") {
+		t.Fatalf("status=%d body=%s", listResp.StatusCode, listBody)
+	}
+
+	callReq, _ := http.NewRequest(http.MethodPost, bind.MCPURL, strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"delete_all"}}`))
+	callReq.Header.Set("Authorization", "Bearer "+bind.Sentinel)
+	callReq.Header.Set("Content-Type", "application/json")
+	callResp, err := http.DefaultClient.Do(callReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = callResp.Body.Close()
+	if callResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403 got %d", callResp.StatusCode)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("denied tool reached upstream: %d", upstreamCalls)
+	}
+}
+
+func TestModelProxyIdleTimeout(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		time.Sleep(300 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer origin.Close()
+
+	store := secrets.NewStore()
+	ctx := context.Background()
+	modelID, _ := store.Put(ctx, contracts.AccountInfo{
+		Kind: "model", Name: "m", ProfileID: policy.ProfileDemoModel, Host: "127.0.0.1",
+	}, []byte("sk-real-key"))
+	mcpID, _ := store.Put(ctx, contracts.AccountInfo{
+		Kind: "mcp", Name: "t", ProfileID: policy.ProfileDemoMCP, Host: "127.0.0.1",
+	}, []byte("mcp-secret"))
+	pol := policy.NewBuilder(map[string]policy.FixedProfile{
+		policy.ProfileDemoModel: {ID: policy.ProfileDemoModel, Kind: "model", Origin: origin.URL, Paths: []string{"/v1/"}, Host: "127.0.0.1"},
+		policy.ProfileDemoMCP:   {ID: policy.ProfileDemoMCP, Kind: "mcp", Origin: origin.URL, Paths: []string{"/mcp"}, Host: "127.0.0.1"},
+	})
+	h := New(store, pol)
+	h.idleTimeout = 40 * time.Millisecond
+	h.totalTimeout = time.Second
+	bind, err := h.Start(ctx, GateSpec{
+		SessionID: "idle1",
+		Policy: policy.PolicySnapshot{
+			Model: policy.EndpointRule{Origin: origin.URL, Paths: []string{"/v1/"}},
+			MCP:   policy.EndpointRule{Origin: origin.URL, Paths: []string{"/mcp"}},
+			MCPID: mcpID,
+		},
+		ModelAccountID: modelID,
+		MCPAccountID:   mcpID,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Revoke(ctx, "idle1")
+
+	req, _ := http.NewRequest(http.MethodGet, bind.ModelBaseURL+"/v1/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+bind.Sentinel)
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
 	}
 }

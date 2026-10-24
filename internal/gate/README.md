@@ -8,10 +8,12 @@
 |---|---|
 | `gate.go` | Start、Revoke、会话绑定、监听器及在途请求管理 |
 | `model_proxy.go` | 固定模型 HTTPS 上游的流式反向代理，代填模型凭据 |
-| `mcp_gateway.go` | MCP 入口转发、Sentinel 校验与工具白名单 |
+| `mcp_gateway.go` | Streamable HTTP MCP 入口：JSON-RPC、会话头、工具白名单 |
+| `stream.go` | 单次请求 60 秒空闲（有数据则重置）与 10 分钟总超时 |
+| `redact.go` | 响应分块中抹掉 Sentinel 与真实凭据 |
 | `sentinel.go` | 至少 32 字节安全随机令牌的生成与校验 |
 | `connections.go` | ConnectModel / ConnectMcp：先探测再写入 Secrets |
-| `gate_test.go` | 反代改写、撤销、连接探测 |
+| `gate_test.go` | 反代改写、工具过滤、空闲超时、撤销、连接探测 |
 
 ## 依赖与边界
 
@@ -24,4 +26,4 @@
 
 ## 对接契约
 
-[CONTRACT.md](../../docs/CONTRACT.md) 定义 GateSpec、GateBinding、Connections。装配见根目录 `app.go` / `WireSessionService`。并行边界见 [MODULE-DESIGN.md](../../docs/MODULE-DESIGN.md)。
+[CONTRACT.md](../../docs/CONTRACT.md) 定义 GateSpec、GateBinding、Connections。装配见 `internal/desktop` 的 `AttachOrchestrator`。并行边界见 [MODULE-DESIGN.md](../../docs/MODULE-DESIGN.md)。

@@ -54,8 +54,22 @@ func (d *DesktopAPI) SelectWorkspace() contracts.WorkspaceResponse {
 	return contracts.WorkspaceResponse{Path: path}
 }
 
+func (d *DesktopAPI) rejectIfBusy() *contracts.AppError {
+	if d.app.sessionBusy() {
+		return contracts.NewAppError(contracts.ErrSessionBusy, "已有会话进行中", false)
+	}
+	return nil
+}
+
+func (d *DesktopAPI) noteSnapshot(snap contracts.SessionSnapshot) {
+	d.app.noteSessionState(snap.State, snap.CleanupComplete)
+}
+
 // ConnectModel 测试并保存模型账号。
 func (d *DesktopAPI) ConnectModel(in contracts.ConnectInput) contracts.AccountResponse {
+	if err := d.rejectIfBusy(); err != nil {
+		return contracts.AccountResponse{Error: err}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	meta, err := d.app.conn.ConnectModel(ctx, in)
@@ -67,6 +81,9 @@ func (d *DesktopAPI) ConnectModel(in contracts.ConnectInput) contracts.AccountRe
 
 // ConnectMcp 测试并保存 MCP 账号。
 func (d *DesktopAPI) ConnectMcp(in contracts.ConnectInput) contracts.AccountResponse {
+	if err := d.rejectIfBusy(); err != nil {
+		return contracts.AccountResponse{Error: err}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	meta, err := d.app.conn.ConnectMcp(ctx, in)
@@ -84,6 +101,7 @@ func (d *DesktopAPI) CreateSession(spec contracts.SessionSpec) contracts.Session
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
+	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
 }
 
@@ -95,6 +113,7 @@ func (d *DesktopAPI) GetSession(id string) contracts.SessionResponse {
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
+	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
 }
 
@@ -106,6 +125,7 @@ func (d *DesktopAPI) StopSession(id string) contracts.SessionResponse {
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
+	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
 }
 

@@ -1,7 +1,9 @@
 package gate
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -58,14 +60,21 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := hostOfOrigin(rt.spec.Policy.MCP.Origin)
+	switch r.Method {
+	case http.MethodGet, http.MethodPost, http.MethodDelete:
+	default:
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolMCP, Result: "denied"})
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	tok, ok := parseBearerSentinel(r.Header.Get("Authorization"))
-	if !ok || tok != rt.sentinel {
-		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "denied"})
+	if !ok || !sentinelMatch(tok, rt.sentinel) {
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolMCP, Result: "denied"})
 		http.Error(w, "invalid sentinel", http.StatusUnauthorized)
 		return
 	}
-	if !policy.PathAllowed(rt.spec.Policy.MCP, "/mcp") {
-		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "denied"})
+	if !policy.PathAllowed(rt.spec.Policy.MCP, r.URL.Path) {
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolMCP, Result: "denied"})
 		http.Error(w, "path not allowed", http.StatusForbidden)
 		return
 	}
@@ -75,9 +84,18 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad body", http.StatusBadRequest)
 		return
 	}
-	tool := extractToolName(body)
-	if tool != "" && len(rt.spec.Policy.Tools) > 0 && !toolAllowed(rt.spec.Policy.Tools, tool) {
-		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: tool, Result: "denied"})
+	method, tool, parsed := parseMCPRequest(body)
+	auditTool := auditToolMCP
+	if tool != "" {
+		auditTool = tool
+	}
+	if r.Method == http.MethodPost && len(bytes.TrimSpace(body)) > 0 && !parsed {
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolMCP, Result: "denied"})
+		http.Error(w, "invalid json-rpc", http.StatusBadRequest)
+		return
+	}
+	if method == "tools/call" && !toolAllowed(rt.spec.Policy.Tools, tool) {
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "denied"})
 		http.Error(w, "tool not allowed", http.StatusForbidden)
 		return
 	}
@@ -87,33 +105,64 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "credential missing", http.StatusBadGateway)
 		return
 	}
+	ctx, cancel := g.h.upstreamContext(r.Context())
+	defer cancel()
 	upstreamURL := strings.TrimRight(rt.spec.Policy.MCP.Origin, "/") + "/mcp"
-	upstream, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, strings.NewReader(string(body)))
+	upstream, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "bad upstream", http.StatusBadGateway)
 		return
 	}
-	ct := r.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/json"
-	}
-	upstream.Header.Set("Content-Type", ct)
+	copyMCPHeaders(upstream.Header, r.Header)
 	upstream.Header.Set("Authorization", "Bearer "+string(key))
+	upstream.Header.Set("Accept-Encoding", "identity")
 
 	resp, err := g.h.client.Do(upstream)
 	if err != nil {
-		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: tool, Result: "failed"})
-		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "failed"})
+		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
+	g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "allowed"})
+	secrets := []string{rt.sentinel, string(key)}
+	if method == "tools/list" {
+		if err := g.writeFilteredList(w, resp, rt.spec.Policy.Tools, secrets); err != nil {
+			if streamTimeoutStatus(err) == http.StatusGatewayTimeout {
+				g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "failed"})
+			}
+		}
+		return
+	}
+	idle, total := g.h.streamTimeouts()
+	if err := writeRelay(w, resp, secrets, idle, total); err != nil && streamTimeoutStatus(err) == http.StatusGatewayTimeout {
+		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "failed"})
+	}
+}
+
+func (g *mcpGateway) writeFilteredList(w http.ResponseWriter, resp *http.Response, allow, secrets []string) error {
 	defer resp.Body.Close()
-	g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: tool, Result: "allowed"})
+	idle, total := g.h.streamTimeouts()
+	reader := &deadlineReader{r: resp.Body, idle: idle, deadline: time.Now().Add(total)}
+	raw, err := io.ReadAll(io.LimitReader(reader, 2<<20))
+	if err != nil && len(raw) == 0 {
+		http.Error(w, "upstream timeout", streamTimeoutStatus(err))
+		return err
+	}
+	filtered := filterToolsPayload(raw, allow)
+	red := newSecretRedactor(secrets)
+	out := append(red.Push(filtered), red.Flush()...)
 	copyHeaders(w.Header(), resp.Header)
+	scrubHeaders(w.Header(), secrets)
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, werr := w.Write(out)
+	return werr
 }
 
 func toolAllowed(allow []string, tool string) bool {
+	if tool == "" {
+		return false
+	}
 	for _, a := range allow {
 		if a == tool {
 			return true
@@ -122,26 +171,115 @@ func toolAllowed(allow []string, tool string) bool {
 	return false
 }
 
-// extractToolName 从 JSON-RPC tools/call 粗提取工具名；解析失败返回空。
-func extractToolName(body []byte) string {
-	const marker = `"name"`
-	s := string(body)
-	if !strings.Contains(s, "tools/call") {
-		return ""
+func parseMCPRequest(body []byte) (method, tool string, ok bool) {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return "", "", true
 	}
-	i := strings.Index(s, marker)
-	if i < 0 {
-		return ""
+	var msg struct {
+		JSONRPC string `json:"jsonrpc"`
+		Method  string `json:"method"`
+		Params  struct {
+			Name string `json:"name"`
+		} `json:"params"`
 	}
-	rest := s[i+len(marker):]
-	j := strings.Index(rest, `"`)
-	if j < 0 {
-		return ""
+	if err := json.Unmarshal(body, &msg); err != nil || msg.JSONRPC != "2.0" || msg.Method == "" {
+		return "", "", false
 	}
-	rest = rest[j+1:]
-	k := strings.Index(rest, `"`)
-	if k < 0 {
-		return ""
+	return msg.Method, msg.Params.Name, true
+}
+
+func filterToolsPayload(body []byte, allow []string) []byte {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return body
 	}
-	return rest[:k]
+	if bytes.Contains(body, []byte("data:")) && bytes.Contains(body, []byte("\n")) {
+		return filterSSETools(body, allow)
+	}
+	filtered, ok := filterJSONTools(body, allow)
+	if !ok {
+		return body
+	}
+	return filtered
+}
+
+func filterJSONTools(body []byte, allow []string) ([]byte, bool) {
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, false
+	}
+	if !filterToolsValue(v, allow) {
+		return nil, false
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func filterToolsValue(v any, allow []string) bool {
+	msg, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	res, ok := msg["result"].(map[string]any)
+	if !ok {
+		return false
+	}
+	tools, ok := res["tools"].([]any)
+	if !ok {
+		return false
+	}
+	kept := make([]any, 0, len(tools))
+	for _, item := range tools {
+		tm, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := tm["name"].(string)
+		if toolAllowed(allow, name) {
+			kept = append(kept, item)
+		}
+	}
+	res["tools"] = kept
+	return true
+}
+
+func filterSSETools(body []byte, allow []string) []byte {
+	parts := bytes.Split(body, []byte("\n"))
+	for i, line := range parts {
+		trimmed := bytes.TrimSpace(line)
+		if !bytes.HasPrefix(trimmed, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("data:")))
+		filtered, ok := filterJSONTools(payload, allow)
+		if !ok {
+			continue
+		}
+		parts[i] = append([]byte("data: "), filtered...)
+	}
+	return bytes.Join(parts, []byte("\n"))
+}
+
+func copyMCPHeaders(dst, src http.Header) {
+	for _, name := range []string{
+		"Content-Type",
+		"Accept",
+		"Mcp-Session-Id",
+		"Mcp-Protocol-Version",
+		"Last-Event-ID",
+	} {
+		if v := src.Get(name); v != "" {
+			dst.Set(name, v)
+		}
+	}
+	if dst.Get("Content-Type") == "" {
+		dst.Set("Content-Type", "application/json")
+	}
+	if dst.Get("Accept") == "" {
+		dst.Set("Accept", "application/json, text/event-stream")
+	}
 }

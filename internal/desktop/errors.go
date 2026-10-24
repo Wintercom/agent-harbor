@@ -34,6 +34,8 @@ func mapError(err error) *contracts.AppError {
 		return contracts.NewAppError(contracts.ErrOrchestratorUnavailable, "编排服务尚未就绪", false)
 	case errors.Is(err, policy.ErrInvalidWorkspace):
 		return contracts.NewAppError(contracts.ErrWorkspaceDenied, "工作区不被允许", false)
+	case errors.Is(err, policy.ErrHostMismatch):
+		return contracts.NewAppError(contracts.ErrInvalidArgument, "账号与固定上游不一致", false)
 	}
 	switch err.Error() {
 	case contracts.ErrInvalidArgument:
