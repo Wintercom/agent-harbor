@@ -1,6 +1,15 @@
 # Agent Harbor
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地共享契约、会话编排、macOS Runtime 与 Claude Kit（见 [开发记录](docs/DEV-A.md)）；研发 B 已落地 Gate / Policy / Secrets 与 Wails v3 桌面桥。真实模型/MCP 联调与产品页面仍待完成。
+[![CI](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Wails](https://img.shields.io/badge/Wails-v3-DF0000?logo=wails&logoColor=white)](https://v3.wails.io/)
+[![Frontend](https://img.shields.io/badge/frontend-HTML%2FCSS%2FJavaScript-E34F26?logo=html5&logoColor=white)](frontend/README.md)
+[![Security checks](https://img.shields.io/badge/security%20checks-Python-3776AB?logo=python&logoColor=white)](security/README.md)
+[![Unit coverage](https://img.shields.io/badge/unit%20coverage-59.2%25-blue)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
+
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地共享契约、会话编排、严格单进程 macOS Runtime 与 Claude Kit（见 [开发记录](docs/DEV-A.md)）；研发 B 已落地 Gate / Policy / Secrets 与 Wails v3 桌面桥。真实模型/MCP 联调与产品页面仍待完成。
+
+徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。`main` 文档曾确认 Wails v2 基线；本分支桌面工程按 Wails v3 初始化，合入前需与团队确认版本决策。
 
 仓库：https://github.com/liyufei916/agent-harbor
 

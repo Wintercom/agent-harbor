@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go checks (macOS)
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+
+      - name: Check repository diff
+        run: git diff --check
+
+      - name: Run tests with race detector
+        run: go test -race ./...
+
+      - name: Generate unit coverage
+        run: |
+          go test -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-unit-coverage
+          path: |
+            coverage.out
+            coverage-summary.txt
+          retention-days: 7
+
+      - name: Run vet
+        run: go vet ./...
+
+  python:
+    name: Security evidence checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile security helpers
+        run: python -m py_compile security/checks.py security/seatbelt_probe.py security/test_checks.py
+
+      - name: Test security helpers
+        run: python -m unittest discover -s security -p 'test_*.py'
+
+      - name: Validate example report
+        run: python security/checks.py security/fixtures/acceptance.example.json

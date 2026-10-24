@@ -113,3 +113,19 @@ Health 现在还会检查生成的 SBPL 文本本身必须包含 `deny default`�
 新增 `security/checks.py` 和 `test_checks.py`：对后续 I1–I11 的脱敏 JSON 证据执行格式、唯一编号、状态、环境、通过证据和明显凭据模式检查。该脚本只校验证据，不把 fake、文档或诊断结果升级为真实通过。
 
 共享 `contracts.Event.Validate` 已加入：事件必须有非空 session/seq，且只包含与 type 对应的一个载荷；state 的水位必须匹配，输出流限定 stdout/stderr 并拒绝 NUL，审计结果和错误字段也经过形状检查。事件队列在入队前丢弃非法事件，避免结构错误进入 Wails/UI。
+
+## 2026-10-24：覆盖率验证稳定性修复
+
+覆盖率模式会让 Runtime 的探针进程收到 Go 的 `GOCOVERDIR` 提示；该提示不是探针业务输出。测试回调现在过滤固定的 `warning: GOCOVERDIR not set` 行，避免 `go test -cover` 因工具链诊断噪声误报，同时仍保留真实 stdout/stderr 和退出结果校验。
+
+本轮独立验证：
+
+```sh
+go test -race ./...
+go test -race -tags harbor_platform ./internal/runtime ./internal/orchestrator
+go test -cover ./internal/contracts ./internal/kits ./internal/kits/claude ./internal/orchestrator ./internal/runtime
+go vet ./...
+git diff --check
+```
+
+以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
