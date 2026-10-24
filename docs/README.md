@@ -10,6 +10,8 @@
 | [ACCEPTANCE.md](ACCEPTANCE.md) | 独立开发检查、真实集成/安全步骤与证据格式 |
 | [DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md) | 当前 Go/Wails 目录、三人职责、依赖与迁移映射 |
 | [MVP-2D3P.md](MVP-2D3P.md) | 当前优先阅读：两天范围、架构、分工、接口、排期和验收 |
+| [DEV-A.md](DEV-A.md) | 研发 A：契约/编排/Runtime/Kit 实现与证据 |
+| [DEV-C.md](DEV-C.md) | 产品 C：前端 mock 两页、D4 场景与接入说明 |
 | [DESIGN.md](DESIGN.md) | 产品定位、威胁模型与长期范围 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 控制/执行面、组件边界与完整会话契约 |
 | [PAGE-DESIGN.md](PAGE-DESIGN.md) | 完整桌面页面与交互设计 |
