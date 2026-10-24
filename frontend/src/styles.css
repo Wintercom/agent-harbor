@@ -1,8 +1,9 @@
+:root {
   --bg: #0c1520;
   --panel: #132033;
-  --line: rgba(140, 190, 210, 0.18);
-  --text: #e8f2f6;
-  --muted: #8aa3b5;
+  --line: rgba(140, 190, 210, 0.28);
+  --text: #f2f8fb;
+  --muted: #a8c0d0;
   --brand: #3dcdc0;
   --ok: #5dce8a;
   --warn: #e0b15a;

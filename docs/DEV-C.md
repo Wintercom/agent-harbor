@@ -48,6 +48,7 @@ python3 -m http.server 5173
 - 手工走通：连接（任意非空 Key，提交后清空）→ 选工作区 → 开始 → 工作台看状态/输出/审计 → 停止。
 - 场景下拉或 query 覆盖四失败路径。
 - `node --check` 已对各 `.js` 做过语法检查（无打包测试套件）。
+- **2026-10-24 晚**：浏览器脚本自测 — normal 闭环（输出+MCP audit→stopped）；auth / busy / isolation（CreateSession `ISOLATION_UNAVAILABLE`）/ cleanup（停两次）均符合预期。含 `:root` 样式修复与交互打磨。
 
 **D4 状态**：**通过（mock 独立检查）**，证据表见 [ACCEPTANCE.md §4.1](ACCEPTANCE.md#412026-10-24-d4-证据产品-c--mock)。不得记为真实闭环通过。
 
@@ -61,9 +62,11 @@ python3 -m http.server 5173
 
 ### 本轮交互打磨
 
-- 连接前校验空显示名 / 空 Key，避免无意义请求。
-- 工作台：`cleanupComplete=false` 时提示再点停止；`stopped` 提示可回配置再开。
-- `demos/README.md` 增加三分钟评审话术。
+- 连接前校验空显示名 / 空 Key，避免无意义请求；**校验失败不清空 Key**，仅在真正提交后清空。
+- 「开始」未就绪时列出缺少项（Agent / 模型 / MCP / 工作区 / 任务）；连接中禁用按钮。
+- 默认任务文案固定为非敏感 D4 演示脚本（见 `DEMO_TASK` / demos README）。
+- 工作台：`cleanupComplete=false` 时提示再点停止；`stopped` 提示可回配置再开；进行中回配置给出提示。
+- `demos/README.md` 三分钟话术 + 固定任务文案。
 
 ### B 接入说明
 

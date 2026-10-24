@@ -1,12 +1,16 @@
 import * as api from "../api.js";
 
+/** 评审 / D4 固定演示任务（非敏感） */
+export const DEMO_TASK =
+  "在工作区创建或覆盖 hello.txt，写入一行 Hello from Agent Harbor mock。然后用已连接的 MCP 做一次只读 search，把查询结论用两句话总结。不要修改其它文件，不要请求扩权。";
+
 /**
  * 配置页：连接模型/MCP、选工作区、任务、启动
  */
 export function mountSetup(root, ctx) {
   root.innerHTML = `
     <h2>配置</h2>
-    <p class="sub">凭据提交后立即清空；成功只保留账号引用。profileId 固定为 demo-model / demo-mcp。</p>
+    <p class="sub">凭据仅在提交连接时清空；成功只保留账号引用。profileId 固定为 demo-model / demo-mcp。</p>
     <div class="grid">
       <section class="card">
         <h3>Agent</h3>
@@ -26,7 +30,7 @@ export function mountSetup(root, ctx) {
             <option value="cleanup">cleanupComplete=false</option>
           </select>
         </label>
-        <p class="meta">对应验收 D4 四个失败场景 + 正常流。</p>
+        <p class="meta">对应验收 D4 四个失败场景 + 正常流。切 auth 后需重新点连接。</p>
       </section>
       <section class="card">
         <h3>模型连接</h3>
@@ -37,7 +41,7 @@ export function mountSetup(root, ctx) {
           <input id="model-profile" value="demo-model" readonly />
         </label>
         <label class="field">API Key（提交后清空）
-          <input id="model-key" type="password" placeholder="粘贴测试 Key" autocomplete="off" />
+          <input id="model-key" type="password" placeholder="任意非空测试 Key" autocomplete="off" />
         </label>
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-model">连接模型</button>
@@ -53,7 +57,7 @@ export function mountSetup(root, ctx) {
           <input id="mcp-profile" value="demo-mcp" readonly />
         </label>
         <label class="field">API Key / Token（提交后清空）
-          <input id="mcp-key" type="password" placeholder="粘贴测试 Token" autocomplete="off" />
+          <input id="mcp-key" type="password" placeholder="任意非空测试 Token" autocomplete="off" />
         </label>
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-mcp">连接 MCP</button>
@@ -69,7 +73,7 @@ export function mountSetup(root, ctx) {
         <span class="meta" id="ws-path">未选择</span>
       </div>
       <label class="field">任务（将发给 Agent）
-        <textarea id="task">请在工作区写一个 hello.txt，并用 MCP 做一次只读查询后总结结果。</textarea>
+        <textarea id="task">${DEMO_TASK}</textarea>
       </label>
       <div class="actions">
         <button type="button" class="btn primary" id="btn-start" disabled>开始运行</button>
@@ -91,16 +95,32 @@ export function mountSetup(root, ctx) {
     task: root.querySelector("#task"),
     start: root.querySelector("#btn-start"),
     msg: root.querySelector("#setup-msg"),
+    btnModel: root.querySelector("#btn-connect-model"),
+    btnMcp: root.querySelector("#btn-connect-mcp"),
+    btnWs: root.querySelector("#btn-pick-ws"),
   };
 
+  function startBlockReason() {
+    const missing = [];
+    // isolation 场景 Agent 会标不可用，仍允许点「开始」以便展示 CreateSession 的 ISOLATION_UNAVAILABLE
+    if (!ctx.state.agentAvailable && api.getMockScenario() !== "isolation") {
+      missing.push("可用 Agent");
+    }
+    if (!ctx.state.modelAccount) missing.push("模型连接");
+    if (!ctx.state.mcpAccount) missing.push("MCP 连接");
+    if (!ctx.state.workspace) missing.push("工作区");
+    if (!els.task.value.trim()) missing.push("任务");
+    return missing;
+  }
+
   function refreshStart() {
-    const ok =
-      ctx.state.agentAvailable &&
-      ctx.state.modelAccount &&
-      ctx.state.mcpAccount &&
-      ctx.state.workspace &&
-      els.task.value.trim().length > 0;
-    els.start.disabled = !ok;
+    const missing = startBlockReason();
+    els.start.disabled = missing.length > 0;
+    if (missing.length) {
+      els.msg.textContent = `开始前还需：${missing.join("、")}`;
+    } else if (!els.msg.querySelector(".bad") && !els.msg.querySelector(".ok")) {
+      els.msg.textContent = "就绪，可开始运行";
+    }
   }
 
   async function refreshAgents() {
@@ -128,90 +148,122 @@ export function mountSetup(root, ctx) {
   els.scenario.value = api.getMockScenario();
   els.scenario.onchange = () => {
     api.setMockScenario(els.scenario.value);
-    els.msg.textContent = `已切换场景：${els.scenario.value}`;
+    const tip =
+      els.scenario.value === "auth"
+        ? "已切 auth：请重新连接模型/MCP 以看到 AUTH_FAILED"
+        : `已切换场景：${els.scenario.value}`;
+    els.msg.textContent = tip;
     refreshAgents();
   };
 
   root.querySelector("#btn-refresh-agents").onclick = refreshAgents;
 
-  root.querySelector("#btn-connect-model").onclick = async () => {
+  els.btnModel.onclick = async () => {
     const key = els.modelKey.value;
     const name = els.modelName.value.trim();
-    els.modelKey.value = "";
     if (!name || !key) {
       els.modelStatus.innerHTML = `<span class="bad">请填写显示名与 API Key</span>`;
       return;
     }
-    const res = await api.connectModel({
-      profileId: "demo-model",
-      name,
-      apiKey: key,
-    });
-    if (res.error) {
-      ctx.state.modelAccount = null;
-      els.modelStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
-    } else {
-      ctx.state.modelAccount = res.account;
-      els.modelStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+    els.btnModel.disabled = true;
+    try {
+      const res = await api.connectModel({
+        profileId: "demo-model",
+        name,
+        apiKey: key,
+      });
+      els.modelKey.value = "";
+      if (res.error) {
+        ctx.state.modelAccount = null;
+        els.modelStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+      } else {
+        ctx.state.modelAccount = res.account;
+        els.modelStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+      }
+    } finally {
+      els.btnModel.disabled = false;
+      refreshStart();
     }
-    refreshStart();
   };
 
-  root.querySelector("#btn-connect-mcp").onclick = async () => {
+  els.btnMcp.onclick = async () => {
     const key = els.mcpKey.value;
     const name = els.mcpName.value.trim();
-    els.mcpKey.value = "";
     if (!name || !key) {
       els.mcpStatus.innerHTML = `<span class="bad">请填写显示名与 Token</span>`;
       return;
     }
-    const res = await api.connectMcp({
-      profileId: "demo-mcp",
-      name,
-      apiKey: key,
-    });
-    if (res.error) {
-      ctx.state.mcpAccount = null;
-      els.mcpStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
-    } else {
-      ctx.state.mcpAccount = res.account;
-      els.mcpStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+    els.btnMcp.disabled = true;
+    try {
+      const res = await api.connectMcp({
+        profileId: "demo-mcp",
+        name,
+        apiKey: key,
+      });
+      els.mcpKey.value = "";
+      if (res.error) {
+        ctx.state.mcpAccount = null;
+        els.mcpStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+      } else {
+        ctx.state.mcpAccount = res.account;
+        els.mcpStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+      }
+    } finally {
+      els.btnMcp.disabled = false;
+      refreshStart();
     }
-    refreshStart();
   };
 
-  root.querySelector("#btn-pick-ws").onclick = async () => {
-    const res = await api.selectWorkspace();
-    if (res.error) {
-      els.wsPath.innerHTML = `<span class="bad">${res.error.message}</span>`;
-      ctx.state.workspace = "";
-    } else if (res.cancelled) {
-      els.wsPath.textContent = "已取消";
-    } else {
-      ctx.state.workspace = res.path;
-      els.wsPath.textContent = res.path;
+  els.btnWs.onclick = async () => {
+    els.btnWs.disabled = true;
+    try {
+      const res = await api.selectWorkspace();
+      if (res.error) {
+        els.wsPath.innerHTML = `<span class="bad">${res.error.message}</span>`;
+        ctx.state.workspace = "";
+      } else if (res.cancelled) {
+        els.wsPath.textContent = "已取消";
+      } else {
+        ctx.state.workspace = res.path;
+        els.wsPath.textContent = res.path;
+      }
+    } finally {
+      els.btnWs.disabled = false;
+      refreshStart();
     }
-    refreshStart();
   };
 
-  els.task.oninput = refreshStart;
+  els.task.oninput = () => {
+    els.msg.textContent = "";
+    refreshStart();
+  };
 
   els.start.onclick = async () => {
-    els.msg.textContent = "创建会话…";
-    const res = await api.createSession({
-      workspace: ctx.state.workspace,
-      agentId: ctx.state.agentId || "claude",
-      modelAccountId: ctx.state.modelAccount.id,
-      mcpIds: [ctx.state.mcpAccount.id],
-      task: els.task.value.trim(),
-    });
-    if (res.error) {
-      els.msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+    const missing = startBlockReason();
+    if (missing.length) {
+      els.msg.innerHTML = `<span class="bad">无法开始：缺少 ${missing.join("、")}</span>`;
       return;
     }
-    ctx.state.sessionId = res.session.sessionId;
-    ctx.onSessionCreated(res.session);
-    els.msg.innerHTML = `<span class="ok">已进入 ${res.session.state}</span>`;
+    els.start.disabled = true;
+    els.msg.textContent = "创建会话…";
+    try {
+      const res = await api.createSession({
+        workspace: ctx.state.workspace,
+        agentId: ctx.state.agentId || "claude",
+        modelAccountId: ctx.state.modelAccount.id,
+        mcpIds: [ctx.state.mcpAccount.id],
+        task: els.task.value.trim(),
+      });
+      if (res.error) {
+        els.msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+        return;
+      }
+      ctx.state.sessionId = res.session.sessionId;
+      ctx.onSessionCreated(res.session);
+      els.msg.innerHTML = `<span class="ok">已进入 ${res.session.state}</span>`;
+    } finally {
+      refreshStart();
+    }
   };
 
   refreshAgents();

@@ -119,7 +119,14 @@ export function mountSession(root, ctx) {
     if (res.session) renderSnapshot(res.session);
   };
 
-  root.querySelector("#btn-to-setup").onclick = () => ctx.showTab("setup");
+  root.querySelector("#btn-to-setup").onclick = () => {
+    const s = ctx.state.lastSnapshot;
+    if (s && ["provisioning", "running", "stopping"].includes(s.state)) {
+      els.hint.classList.remove("hidden");
+      els.hint.textContent = "会话仍在进行。可继续看输出，或先点「停止」再回配置开新任务。";
+    }
+    ctx.showTab("setup");
+  };
 
   return {
     resetForNewSession(snapshot) {
@@ -128,6 +135,8 @@ export function mountSession(root, ctx) {
       els.output.textContent = "";
       els.audit.innerHTML = "";
       els.error.textContent = "";
+      els.hint.classList.add("hidden");
+      els.hint.textContent = "";
       renderSnapshot(snapshot);
     },
     destroy() {

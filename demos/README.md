@@ -11,7 +11,7 @@
 |---|---|---|
 | 0:00 | 指顶栏徽章与 direct 警告 | 凭据只在宿主机、会改原文件 |
 | 0:20 | 模型/MCP 各填任意 Key → 连接 | 输入框清空；状态显示账号 id/host，无 Key 回显 |
-| 0:50 | 选择工作区 → 开始运行 | 自动切到工作台；状态 provisioning→running |
+| 0:50 | 工作区 → 确认默认任务文案 → 开始 | 任务为固定非敏感脚本；切到工作台 provisioning→running |
 | 1:20 | 指输出与审计列表 | 有文本输出；MCP `allowed` 审计 |
 | 1:50 | 等自动 stopped，或点停止 | 终态 stopped；可回配置再开 |
 | 2:10 | 场景切「认证失败」再连模型 | 明确 `AUTH_FAILED`，不进入会话 |
@@ -31,9 +31,15 @@ python3 -m http.server 5173
 
 1. 配置页连接模型与 MCP（任意非空 Key，提交后清空）。
 2. 选择工作区（mock 固定 `/demo/project`）。
-3. 填写任务 → 开始运行 → 自动切到工作台。
+3. 使用默认任务（或同义非敏感文案）→ 开始运行 → 自动切到工作台。
 4. 观察 provisioning → running → 输出 / MCP audit → stopped。
 5. 用场景下拉验证四失败路径。
+
+### 固定演示任务（可复制）
+
+```
+在工作区创建或覆盖 hello.txt，写入一行 Hello from Agent Harbor mock。然后用已连接的 MCP 做一次只读 search，把查询结论用两句话总结。不要修改其它文件，不要请求扩权。
+```
 
 详情与文件清单见 [DEV-C.md](../docs/DEV-C.md)。
 
