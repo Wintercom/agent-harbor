@@ -34,6 +34,20 @@ jobs:
       - name: Run tests with race detector
         run: go test -race ./...
 
+      - name: Generate unit coverage
+        run: |
+          go test -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tee coverage-summary.txt
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-unit-coverage
+          path: |
+            coverage.out
+            coverage-summary.txt
+          retention-days: 7
+
       - name: Run vet
         run: go vet ./...
 
