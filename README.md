@@ -1,42 +1,49 @@
 # Agent Harbor
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。当前已建立设计文档与模块目录骨架，尚未提供可运行的应用代码及构建命令。
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。控制面（Gate / Policy / Secrets / Wails v3 桌面桥）已由研发 B 落地；编排、隔离与页面仍待 A / C。
 
 仓库：https://github.com/Wintercom/agent-harbor
 
 可浏览原型（不接真 Runtime）：打开 [`prototype/index.html`](./prototype/index.html)（若有缓存请强制刷新）。
 
+## 研发 B：开发与构建命令
+
+前置：Go 1.26+（`go.mod` 会自动拉 toolchain）、[Wails v3 CLI](https://v3.wails.io/zh-cn/quick-start/why-wails/)（`go install github.com/wailsapp/wails/v3/cmd/wails3@latest`）、Node ≥16。
+
+```bash
+# 单元测试（gate / policy / secrets / 桌面桥）
+go test ./internal/gate ./internal/policy ./internal/secrets .
+go test ./internal/...
+
+# 生成前端绑定（输出 frontend/bindings，勿手改）
+wails3 generate bindings ./...
+
+# 前端构建（产物 frontend/dist，供 Go embed）
+cd frontend && npm install && npm run build && cd ..
+
+# 开发模式 / 打包
+wails3 dev
+wails3 build
+```
+
+A 注入编排：在 `main.go` 调用 `WireSessionService(host, factory)` 与 `host.SetAgentDetector(...)`。固定上游可用环境变量 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN`。
+
 ## 目录
 
 ```text
 agent-harbor/
-├── README.md
-├── AGENTS.md                 通用规范与当前开发基线
-├── CLAUDE.md                 Claude Code 规范入口
-├── internal/                 Go 后端模块；各目录已有 README
-│   ├── contracts/            A/B 确定、C 核对：DTO、事件与错误码
-│   ├── orchestrator/         A：会话编排、装配、回滚与清理
-│   ├── runtime/              A：操作系统隔离与进程管理
-│   ├── kits/claude/          A：首个真实 Agent 适配
-│   ├── gate/                 B：模型代理与 MCP Gateway
-│   ├── policy/               B：固定授权策略
-│   └── secrets/              B：宿主机内存凭据
-├── frontend/                 C：Wails 桌面前端
-│   └── src/
-│       └── views/            配置页与工作台
-├── build/                    B：Wails 构建资源说明
-├── security/                 A 主责：跨模块安全验收
-├── demos/                    C：演示流程
-├── docs/                     架构、目录设计与交付方案
-├── scripts/                  现有仓库维护脚本
-└── prototype/                保留静态 UI 原型
+├── main.go / app.go / bindings.go   B：Wails v3 启动与 DesktopAPI
+├── go.mod / Taskfile.yml            B：模块与任务
+├── internal/
+│   ├── contracts/                   DTO（B 先行可编译；A 主改）
+│   ├── gate/ policy/ secrets/       B：已实现
+│   ├── orchestrator/ runtime/ kits/ A：待实现
+├── frontend/                        C 页面 + B 构建/绑定
+├── build/                           B：Wails v3 平台资源
+├── security/ demos/ docs/ scripts/ prototype/
 ```
 
-模块职责、依赖和测试约定见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排与技术集成，B 负责 Gate/Policy/Secrets、Wails 绑定及构建，C 负责产品、前端与演示。单元测试就近放置，跨模块检查放在 [security](security/README.md)。
-
-Go/Wails 目录骨架及说明已迁移。根入口 main.go/app.go、go.mod、wails.json、前端依赖与生成绑定尚未实现；不创建空业务代码或虚假启动命令。目标文件结构及迁移映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
-
-三人并行开发先读 [模块设计](docs/MODULE-DESIGN.md)，再按 [接口契约](docs/CONTRACT.md) 实现与接入；各自使用同契约替身解除对其他模块实现的等待。当前替身与工程仍待实现，真实环境/接入见 [实施决策](docs/DECISIONS.md)，集成通过情况按 [验收清单](docs/ACCEPTANCE.md) 记录。
+模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令证据见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
 当前两天版：单一 macOS 环境、一个真实 Agent、一个模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
 

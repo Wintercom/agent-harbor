@@ -1,6 +1,6 @@
 # Go 控制面模块
 
-本目录是单一 Go module 中的内部业务包，运行于可信宿主机进程，不拆分微服务。当前只有模块说明，尚无 Go 实现、依赖或可运行构建。
+本目录是单一 Go module 中的内部业务包，运行于可信宿主机进程，不拆分微服务。`gate` / `policy` / `secrets` / `contracts` DTO 已由研发 B 落地；`orchestrator` / `runtime` / `kits` 仍待研发 A。
 
 | 模块 | 负责人 | 职责 |
 |---|---|---|
@@ -14,7 +14,7 @@
 
 ## 入口与依赖
 
-根目录 main.go（待实现）负责 Wails 启动、窗口与资源嵌入，app.go（待实现）负责前端方法绑定、输入校验和事件适配，由 B 维护。A 负责业务装配及编排，B 将其接入 Wails 生命周期。只绑定最小业务对象，内部服务字段不导出，不直接绑定 Runtime、Secrets 或 Gate。
+根目录 `main.go` 负责 Wails v3 启动与资源嵌入，`app.go` / `bindings.go` 负责 DesktopAPI、错误转换与事件桥接，由 B 维护。A 通过 `WireSessionService` / `SetAgentDetector` 注入编排与检测，不直接改 Wails 初始化。只绑定 DesktopAPI，不直接绑定 Runtime、Secrets 或 Gate。
 
 Orchestrator 调用 Policy、Gate、Kit、Runtime；Gate 经授权后解析 Secrets，连接测试也由 Gate 完成。Kit 不读取 Secrets，Runtime 不解释账号与 MCP 授权。Gate/Runtime 通过注入回调报告事件，不反向导入 orchestrator。contracts 不依赖业务层或 Wails。
 

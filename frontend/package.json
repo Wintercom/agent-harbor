@@ -1,0 +1,21 @@
+{
+  "name": "agent-harbor-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --mode production",
+    "build:dev": "vite build --minify false --mode development",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@wailsio/runtime": "latest"
+  },
+  "devDependencies": {
+    "vite": "^4.5.5"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
