@@ -1,5 +1,7 @@
 # Agent Harbor — 架构逻辑设计
 
+> 本文保留完整产品架构。当前 Go/Wails 两天版的模块边界以 [MODULE-DESIGN.md](MODULE-DESIGN.md) 为准，准确接口与简化生命周期以 [CONTRACT.md](CONTRACT.md) 为准；不能将本文全部能力纳入两天交付。
+
 | 项 | 内容 |
 |---|---|
 | 文档版本 | v1.0 |
