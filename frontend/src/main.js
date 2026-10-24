@@ -1,28 +1,70 @@
 /**
- * 页面装配入口。产品 C 在此挂载配置页与工作台，并通过 api.js 调用绑定。
- * 研发 B 仅提供可构建桌面壳；生成绑定目录为 frontend/bindings/（勿手改）。
+ * 页面装配入口（产品 C）。
+ * 默认 mock；Wails v3 绑定目录为 frontend/bindings/（B 生成，勿手改）。
  */
+import * as api from "./api.js";
+import { mountSetup } from "./views/setup.js";
+import { mountSession } from "./views/session.js";
 
-const status = document.getElementById('status')
+const badge = document.getElementById("mode-badge");
+const setupRoot = document.getElementById("view-setup");
+const sessionRoot = document.getElementById("view-session");
 
-status.textContent =
-  '桌面壳已就绪。\n' +
-  '产品 C：实现 src/api.js、src/mock-api.js 与 views/。\n' +
-  '研发 B：wails3 generate bindings ./... && npm run build\n' +
-  '联调：仓库根目录执行 wails3 dev'
+const ctx = {
+  state: {
+    agentId: "claude",
+    agentAvailable: false,
+    modelAccount: null,
+    mcpAccount: null,
+    workspace: "",
+    sessionId: "",
+    lastSnapshot: null,
+  },
+  showTab(name) {
+    document.querySelectorAll(".tab").forEach((t) => {
+      t.classList.toggle("on", t.getAttribute("data-tab") === name);
+    });
+    setupRoot.classList.toggle("hidden", name !== "setup");
+    sessionRoot.classList.toggle("hidden", name !== "session");
+  },
+  onSessionCreated(snapshot) {
+    ctx.state.sessionId = snapshot.sessionId;
+    ctx.state.lastSnapshot = snapshot;
+    sessionView.resetForNewSession(snapshot);
+    ctx.showTab("session");
+  },
+};
 
-async function probeDesktopBinding() {
-  try {
-    const mod = await import(
-      /* @vite-ignore */ '../bindings/github.com/liyufei916/agent-harbor/desktopapi.js'
-    )
-    if (typeof mod.AppInfo === 'function') {
-      const info = await mod.AppInfo()
-      status.textContent = 'DesktopAPI 可用:\n' + JSON.stringify(info, null, 2)
-    }
-  } catch {
-    // 浏览器预览或尚未生成绑定时保持占位文案。
+function syncBadge() {
+  if (api.isMock()) {
+    badge.textContent = "模拟模式";
+    badge.className = "badge mock";
+  } else {
+    badge.textContent = "真实绑定";
+    badge.className = "badge live";
   }
 }
 
-probeDesktopBinding()
+api.useMock();
+const params = new URLSearchParams(location.search);
+if (params.get("scenario")) {
+  api.setMockScenario(params.get("scenario"));
+}
+if (params.get("live") === "1") {
+  try {
+    api.useLive();
+  } catch (e) {
+    console.warn("live transport 不可用，保持 mock:", e.message || e);
+    api.useMock();
+  }
+}
+syncBadge();
+
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => ctx.showTab(btn.getAttribute("data-tab")));
+});
+
+mountSetup(setupRoot, ctx);
+const sessionView = mountSession(sessionRoot, ctx);
+
+ctx.showTab("setup");

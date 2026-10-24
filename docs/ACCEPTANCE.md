@@ -9,7 +9,7 @@
 | D1 | A/B | 将契约 Go 类型落地、编译各包 | 无循环导入；DTO/方法名与契约一致，能生成绑定 |
 | D2 | A | 用 fake Gate/Runtime/Kit/Catalog 驱动编排 | 正常、准备失败、取消竞争、清理失败均有确定状态和锁行为 |
 | D3 | B | 用 fake SessionService 接入 Wails 方法及事件 | 所有 Response.error、固定事件名和 JSON 字段符合契约，不把原始 error 交给 UI |
-| D4 | C | 普通浏览器使用 mock transport | 两页、正常及四个失败场景可操作，显式模拟标记，无 wailsjs 导入依赖 |
+| D4 | C | 普通浏览器使用 mock transport | 两页、正常及四个失败场景可操作，显式模拟标记，无 wailsjs 导入依赖；实现与操作见 [DEV-C.md](DEV-C.md) |
 | D5 | B | 对受控模型/MCP 上游进行流、认证、超时/取消检查 | 正常保留流；401、断流、撤销、未知目标正确处理；不自动重试非幂等工具 |
 
 ## 2. 真实核心闭环与安全检查
@@ -41,9 +41,35 @@ D1–D5 支持并行开发与联调；I1–I11 支持本次真实闭环判断。
 - D1：Go 共享类型及消费接口编译通过；Wails 绑定尚未生成，完整 D1 待 B 接续。
 - D2：通过；`go test -race ./...` 验证同契约替身编排，`go vet ./...` 通过。
 - I4/I5：仅完成诊断模板七项探测，生产 Runtime 尚未实现，完整验收仍待执行。
-- D3–D5、I1–I11 的真实集成项：待执行。
+- D3、D5、I1–I11 的真实集成项：待执行。
 
 环境、命令、证据范围和下一步详见 [研发 A 开发记录](DEV-A.md)，不得将诊断模板或 fake 计入真实 Agent 核心闭环。
+
+## 4.1 2026-10-24 D4 证据（产品 C / mock）
+
+| 字段 | 内容 |
+|---|---|
+| 编号 / 状态 | **D4 / 通过（mock 独立检查）** |
+| 时间 | 2026-10-24 |
+| 负责人 | 产品 C |
+| 工作树 | `frontend/` mock 两页 + `docs/DEV-C.md`（合入含 B Wails v3 壳的 main） |
+| 环境 | 本机浏览器 + `python3 -m http.server 5173`；无 wailsjs |
+| 上游 | 无真实模型/MCP（固定 mock 数据） |
+| 操作 | 见下表五场景 |
+| 预期 | 两页可操作；显式「模拟模式」；正常流与四失败可复现 |
+| 实际 | 与预期一致（浏览器手工） |
+| 证据 | [DEV-C.md](DEV-C.md)、[demos/README.md](../demos/README.md) 三分钟话术；页面顶栏 mock 徽章 |
+| 下一步 | 等 B 生成绑定后切 live，再执行 I1；本项不得记入真实闭环通过 |
+
+| 场景 | 操作摘要 | 实际结果 |
+|---|---|---|
+| normal | 连接模型+MCP → 选工作区 → 开始 | provisioning→running→输出/audit→stopped |
+| auth | 场景=认证失败 → 连接模型 | `AUTH_FAILED`；Key 已清空；无会话 |
+| busy | 场景=SESSION_BUSY → 已连接后开始 | `SESSION_BUSY`；不进入 running |
+| isolation | 场景=隔离不可用 → 开始 | `ISOLATION_UNAVAILABLE`；Agent 显示不可用 |
+| cleanup | 场景=cleanup → 开始后停止，再停一次 | 首次 failed 且 cleanupComplete=false + 提示重试；再次停止后 stopped |
+
+**口径**：D4 仅为独立 UI/协议检查通过；**不是** I1–I11 真实闭环通过。
 
 ## 5. 2026-10-24 第二批执行记录
 

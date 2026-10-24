@@ -1,0 +1,101 @@
+# 产品 / 前端 C 开发记录
+
+## 2026-10-24：浏览器 mock 两页与 D4 骨架
+
+本轮按 [MODULE-DESIGN.md](MODULE-DESIGN.md) §5 与 [CONTRACT.md](CONTRACT.md) §1 落地前端手写实现，**不依赖 Wails / wailsjs**。当前可做独立 UI/协议验收（ACCEPTANCE **D4**），不是真实桌面闭环，也不能冒充 I1–I11 通过。
+
+### 已落地
+
+| 路径 | 说明 |
+|---|---|
+| `frontend/index.html` | 配置 / 工作台入口；顶栏「模拟模式」徽章 |
+| `frontend/src/main.js` | 切页装配；默认 `useMock()`；支持 `?scenario=` |
+| `frontend/src/api.js` | 页面对外 camelCase API；框架异常映射为 `INTERNAL_ERROR`；预留 `createLiveTransport()` / `useLive()` |
+| `frontend/src/mock-api.js` | 同契约 mock transport；固定 Agent/模型/MCP/工作区；事件结构对齐 `harbor:event` 载荷 |
+| `frontend/src/styles.css` | 两页共用样式 |
+| `frontend/src/views/setup.js` | 连接模型/MCP（提交清空 Key）、选工作区、任务、开始；未就绪禁用启动；场景下拉 |
+| `frontend/src/views/session.js` | 状态 pill、stdout 文本输出（1 MiB 截断）、审计列表、停止 / 清理失败重试、回配置 |
+| `demos/README.md` | 补充 mock 演示步骤 |
+
+固定 mock 数据（与模块设计一致）：
+
+- Agent `id=claude`
+- 模型 `id=mock-model`，`profileId=demo-model`
+- MCP `id=mock-mcp`，`profileId=demo-mcp`
+- 工作区 `/demo/project`
+- `mcpIds` 长度强制为 1
+
+场景覆盖：
+
+| 场景 | 用途 |
+|---|---|
+| `normal` | provisioning → running → output → MCP allowed 审计 → stopping → stopped |
+| `auth` | ConnectModel / ConnectMcp 返回 `AUTH_FAILED` |
+| `busy` | CreateSession 返回 `SESSION_BUSY` |
+| `isolation` | CreateSession（及 Agent 不可用）`ISOLATION_UNAVAILABLE` |
+| `cleanup` | 用户 Stop 后 `failed` 且 `cleanupComplete=false`；再次 Stop 模拟清理重试成功 |
+
+### 实际验证
+
+```sh
+cd frontend
+python3 -m http.server 5173
+# 浏览器打开 http://127.0.0.1:5173/
+# 可选：http://127.0.0.1:5173/?scenario=auth
+```
+
+- 使用本地 HTTP，避免 `file://` 阻断 ES module。
+- 手工走通：连接（任意非空 Key，提交后清空）→ 选工作区 → 开始 → 工作台看状态/输出/审计 → 停止。
+- 场景下拉或 query 覆盖四失败路径。
+- `node --check` 已对各 `.js` 做过语法检查（无打包测试套件）。
+
+**D4 状态**：**通过（mock 独立检查）**，证据表见 [ACCEPTANCE.md §4.1](ACCEPTANCE.md#412026-10-24-d4-证据产品-c--mock)。不得记为真实闭环通过。
+
+### 契约字段核对（CONTRACT §1）
+
+| 页面已用 | 结论 |
+|---|---|
+| AgentInfo、ConnectInput、AccountInfo、SessionSpec/Snapshot、Responses、Event 四类载荷 | 已对齐，无额外字段需求 |
+| 错误码 AUTH_FAILED / SESSION_BUSY / ISOLATION_UNAVAILABLE / SESSION_NOT_FOUND / INVALID_ARGUMENT / CLEANUP_FAILED / INTERNAL_ERROR | mock 与 UI 已展示；正式码表以契约为准 |
+| 当前无缺口提案 | 不改 CONTRACT；live 联调若缺字段再提 A |
+
+### 本轮交互打磨
+
+- 连接前校验空显示名 / 空 Key，避免无意义请求。
+- 工作台：`cleanupComplete=false` 时提示再点停止；`stopped` 提示可回配置再开。
+- `demos/README.md` 增加三分钟评审话术。
+
+### B 接入说明
+
+- 远程 `main` 已含 B 的 Wails v3 壳、`frontend/package.json`（Vite）、`dist/` 占位与 Gate/Policy/Secrets。
+- 绑定目录为 `frontend/bindings/`（不是旧文案中的 wailsjs）。生成后在 `api.js` 的 `createLiveTransport()` 接入，再 `useLive()` 或 `?live=1`。
+- **视图方法名与字段不要改**；transport 可替换。
+- 真实模式须显示「真实绑定」，禁止把 mock 计入 I1–I11。
+- 预览：`cd frontend && npm run dev`，或 `python3 -m http.server`。
+
+### 明确未做
+
+- Wails 工程、生成绑定、真实凭据与上游
+- 完整 PAGE-DESIGN（HOME / 设置 / 扩权 / 双会话 / PTY）
+- 自动 E2E 测试脚本、`demos/run.sh`
+- 修改 `internal/`、Gate、Runtime、契约字段（页面需求已按现有 CONTRACT 对齐，无新增字段提案）
+
+### 后续顺序
+
+1. ~~D4 证据~~ 已记入 ACCEPTANCE §4.1。
+2. 将本分支前端与文档推到 `origin`（当前 GitHub CLI token 若失效需先 `gh auth refresh`）。
+3. 与 B 对齐绑定生成后切换 live transport；联调 I1（关 mock 真连）。
+4. 准备非敏感演示目录与任务文案，配合 A/B 冲 I2 / I8 / I10 / I11。
+5. 需要新 UI 字段时先提 CONTRACT，再改 api/mock/视图。
+
+---
+
+## 分工备忘（C）
+
+| 负责 | 目录 |
+|---|---|
+| 配置页、工作台、样式与交互 | `frontend/index.html`、`frontend/src/**` |
+| 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js` |
+| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项 |
+
+不修改桌面 Go 入口与会话状态机；不手改 `frontend/wailsjs/`。
