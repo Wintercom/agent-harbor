@@ -12,9 +12,7 @@
 
 ```text
 agent-harbor/
-├── main.go                      # B：Wails v3 启动、窗口配置、前端资源嵌入
-├── app.go                       # B：控制面装配、HostDeps、错误映射
-├── bindings.go                  # B：DesktopAPI（唯一 Wails Service）
+├── main.go                      # B：Wails v3 启动、窗口与资源嵌入（薄入口）
 ├── go.mod                       # B：单一 Go module
 ├── go.sum
 ├── Taskfile.yml                 # B：wails3 task / dev / build
@@ -49,9 +47,10 @@ agent-harbor/
 │   ├── policy/                  # B：工作区、固定目标与工具授权快照
 │   │   ├── policy.go
 │   │   └── policy_test.go
-│   └── secrets/                 # B：仅宿主机内存凭据
-│       ├── store.go
-│       └── store_test.go
+│   ├── secrets/                 # B：仅宿主机内存凭据
+│   │   ├── store.go
+│   │   └── store_test.go
+│   └── desktop/                 # B：DesktopAPI、错误转换、注入 A 的编排
 │
 ├── frontend/                    # C：配置与工作台；B 配合绑定生成/构建
 │   ├── index.html

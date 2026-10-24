@@ -11,10 +11,11 @@
 | [gate](gate/README.md) | B | 模型流式反向代理与 MCP Gateway |
 | [policy](policy/README.md) | B | 工作区与固定出站授权 |
 | [secrets](secrets/README.md) | B | 宿主机内存凭据 |
+| [desktop](desktop/) | B | 桌面绑定、错误转换，并注入 A 的编排 |
 
 ## 入口与依赖
 
-根目录 `main.go` 负责 Wails v3 启动与资源嵌入，`app.go` / `bindings.go` 负责 DesktopAPI、错误转换与事件桥接，由 B 维护。A 通过 `WireSessionService` / `SetAgentDetector` 注入编排与检测，不直接改 Wails 初始化。只绑定 DesktopAPI，不直接绑定 Runtime、Secrets 或 Gate。
+根目录 `main.go` 只负责 Wails v3 启动、资源嵌入和窗口。`internal/desktop` 负责 DesktopAPI、错误转换，并在 `AttachOrchestrator` 中注入 A 的 Runtime、Claude Kit 与 Orchestrator。只绑定 DesktopAPI，不直接绑定 Runtime、Secrets 或 Gate。
 
 Orchestrator 调用 Policy、Gate、Kit、Runtime；Gate 经授权后解析 Secrets，连接测试也由 Gate 完成。Kit 不读取 Secrets，Runtime 不解释账号与 MCP 授权。Gate/Runtime 通过注入回调报告事件，不反向导入 orchestrator。contracts 不依赖业务层或 Wails。
 
