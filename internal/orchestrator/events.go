@@ -33,7 +33,9 @@ func newEventQueue(sink func(contracts.Event)) *eventQueue {
 }
 
 func (q *eventQueue) push(e contracts.Event) {
-	if e.Validate() != nil { return }
+	if e.Validate() != nil {
+		return
+	}
 	q.mu.Lock()
 	if q.closed {
 		q.mu.Unlock()
