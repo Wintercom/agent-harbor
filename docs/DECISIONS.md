@@ -1,6 +1,6 @@
 # 两天版实施决策
 
-已定：Go 主业务、Wails v2、简单 HTML/CSS/JavaScript、Python 验收辅助；单应用、单会话、单任务、direct 演示工作区、宿主机内存凭据；Claude Code 优先，一个固定模型组合和一个远程 Streamable HTTP 认证 MCP。详细边界以 AGENTS.md 为准。
+已定：Go 主业务、Wails v2、简单 HTML/CSS/JavaScript、Python 验收辅助；单应用、单会话、单任务、direct 演示工作区、宿主机内存凭据；Claude Code 优先，一个固定模型组合和一个远程 Streamable HTTP 认证 MCP。Wails v3 当前仍处于测试阶段，本项目本轮不采用；如未来切换，须单独完成绑定、事件、构建和退出清理验证后再修改基线。详细边界以 AGENTS.md 为准。
 
 接口基线为 [CONTRACT.md](CONTRACT.md) v1，模块与并行执行规则为 [MODULE-DESIGN.md](MODULE-DESIGN.md)。首次创建 Go module 建议使用 `github.com/liyufei916/agent-harbor`，与仓库地址保持一致；依赖版本需真实构建后记录，不把检查文档的机器版本当团队统一环境。
 
