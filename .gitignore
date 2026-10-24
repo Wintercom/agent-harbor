@@ -24,3 +24,7 @@
 # Python 验收脚本缓存
 __pycache__/
 *.pyc
+
+# 演示工作区运行产物（保留 README；Agent 可覆盖 hello.txt）
+/demos/workspace/**
+!/demos/workspace/README.md

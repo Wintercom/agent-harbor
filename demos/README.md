@@ -43,12 +43,27 @@ python3 -m http.server 5173
 
 详情与文件清单见 [DEV-C.md](../docs/DEV-C.md)。
 
+## 专用演示工作区（C 已准备）
+
+| 项 | 值 |
+|---|---|
+| 目录 | [`demos/workspace/`](workspace/) |
+| 用途 | 真实演示 / I2 选工作区；允许改写 `hello.txt` |
+| 自检 | 仓库根执行 `./demos/verify-workspace.sh` |
+| mock | 仍固定返回 `/demo/project`，**不写**本目录 |
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+./demos/verify-workspace.sh
+# 输出中的 abspath 供桌面「选择工作区」粘贴（勿提交个人路径为默认值）
+```
+
 ## 真实演示（待应用可运行）
 
 1. 关闭 mock，连接已登记真实模型与只读认证 MCP。
-2. 选择专用非敏感目录；说明 direct 会改原文件。
-3. 启动真实 Agent，展示输出、工具调用与隔离边界。
+2. 选择 `demos/workspace` 的绝对路径；说明 direct 会改原文件。
+3. 启动真实 Agent，展示输出、工具调用与隔离边界；期望出现/更新 `hello.txt`。
 4. 配合 `security/` 展示越界拒绝。
-5. 停止后第二轮再跑。
+5. 停止后第二轮再跑（可再跑 `verify-workspace.sh` 确认可写）。
 
 排期以 [MVP-2D3P.md](../docs/MVP-2D3P.md) 为准；验收项见 [ACCEPTANCE.md](../docs/ACCEPTANCE.md)。

@@ -88,8 +88,14 @@ python3 -m http.server 5173
 1. ~~D4 证据~~ 已记入 ACCEPTANCE §4.1。
 2. 将本分支前端与文档推到 `origin`（当前 GitHub CLI token 若失效需先 `gh auth refresh`）。
 3. 与 B 对齐绑定生成后切换 live transport；联调 I1（关 mock 真连）。
-4. 准备非敏感演示目录与任务文案，配合 A/B 冲 I2 / I8 / I10 / I11。
+4. ~~准备非敏感演示目录与任务文案~~ → `demos/workspace/` + `verify-workspace.sh` + 固定任务；配合 A/B 冲 I2 / I8 / I10 / I11。
 5. 需要新 UI 字段时先提 CONTRACT，再改 api/mock/视图。
+
+### 演示工作区（2026-10-24）
+
+- 路径：`demos/workspace/`（运行产物 `hello.txt` 已 gitignore；说明见该目录 README）。
+- 自检：`./demos/verify-workspace.sh`（可写、可覆盖、无敏感文件名）。
+- mock 选择工作区仍为 `/demo/project`；live 选本目录绝对路径。
 
 ---
 
