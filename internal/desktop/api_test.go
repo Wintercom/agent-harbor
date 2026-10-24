@@ -34,6 +34,30 @@ func TestCreateSessionForwardsInjectedService(t *testing.T) {
 	}
 }
 
+func TestConnectRejectedWhileSessionBusy(t *testing.T) {
+	app := NewApp()
+	app.forwardEvent(contracts.Event{
+		Type:  contracts.EventTypeStateChanged,
+		State: &contracts.SessionSnapshot{State: contracts.StateRunning},
+	})
+	api := NewDesktopAPI(app)
+	model := api.ConnectModel(contracts.ConnectInput{ProfileID: "demo-model", Name: "n", APIKey: "secret"})
+	mcp := api.ConnectMcp(contracts.ConnectInput{ProfileID: "demo-mcp", Name: "n", APIKey: "secret"})
+	if model.Error == nil || model.Error.Code != contracts.ErrSessionBusy || model.Account != nil {
+		t.Fatalf("model=%+v", model)
+	}
+	if mcp.Error == nil || mcp.Error.Code != contracts.ErrSessionBusy {
+		t.Fatalf("mcp=%+v", mcp)
+	}
+	app.forwardEvent(contracts.Event{
+		Type:  contracts.EventTypeStateChanged,
+		State: &contracts.SessionSnapshot{State: contracts.StateStopped, CleanupComplete: true},
+	})
+	if app.sessionBusy() {
+		t.Fatal("stopped session should release connect")
+	}
+}
+
 func TestMapErrorPassesPublicAppError(t *testing.T) {
 	src := contracts.NewAppError(contracts.ErrSessionBusy, "已有会话正在准备、运行或等待清理。", false)
 	got := mapError(src)

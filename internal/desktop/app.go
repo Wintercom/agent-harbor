@@ -33,10 +33,11 @@ type App struct {
 	gate    *gate.Harbor
 	conn    *gate.Connections
 
-	mu       sync.Mutex
-	sessions SessionService
-	agents   AgentDetector
-	ready    bool
+	mu        sync.Mutex
+	sessions  SessionService
+	agents    AgentDetector
+	ready     bool
+	busyState bool
 }
 
 // NewApp 创建 Gate、Policy 与内存凭据。编排在 AttachOrchestrator 中注入。
@@ -89,6 +90,32 @@ func (a *App) orchestratorReady() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.ready
+}
+
+// noteSessionState 记录编排层是否仍占用唯一会话。
+// 准备、运行、清理，以及清理未完成的失败，都拒绝重新连接账号。
+func (a *App) noteSessionState(state string, cleanupComplete bool) {
+	busy := state == contracts.StateProvisioning || state == contracts.StateRunning || state == contracts.StateStopping
+	if state == contracts.StateFailed && !cleanupComplete {
+		busy = true
+	}
+	a.mu.Lock()
+	a.busyState = busy
+	a.mu.Unlock()
+}
+
+func (a *App) sessionBusy() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.busyState
+}
+
+// forwardEvent 先记下会话占用，再发到前端。
+func (a *App) forwardEvent(ev contracts.Event) {
+	if ev.Type == contracts.EventTypeStateChanged && ev.State != nil {
+		a.noteSessionState(ev.State.State, ev.State.CleanupComplete)
+	}
+	a.EmitHarborEvent(ev)
 }
 
 // EmitHarborEvent 把契约事件发到前端固定通道。

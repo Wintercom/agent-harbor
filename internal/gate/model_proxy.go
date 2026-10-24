@@ -2,7 +2,6 @@ package gate
 
 import (
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -57,12 +56,12 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	host := hostOfOrigin(rt.spec.Policy.Model.Origin)
 	if !policy.PathAllowed(rt.spec.Policy.Model, r.URL.Path) {
-		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "denied"})
+		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
 		http.Error(w, "path not allowed", http.StatusForbidden)
 		return
 	}
 	if !p.authorize(r, rt) {
-		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "denied"})
+		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
 		http.Error(w, "invalid sentinel", http.StatusUnauthorized)
 		return
 	}
@@ -72,48 +71,56 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad upstream", http.StatusBadGateway)
 		return
 	}
-	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, r.Body)
+	ctx, cancel := p.h.upstreamContext(r.Context())
+	defer cancel()
+	outReq, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, r.Body)
 	if err != nil {
 		http.Error(w, "bad request", http.StatusBadGateway)
 		return
 	}
 	copyHeaders(outReq.Header, r.Header)
-	if err := p.injectModelKey(outReq, rt); err != nil {
+	outReq.Header.Set("Accept-Encoding", "identity")
+	key, err := p.h.secrets.Resolve(r.Context(), rt.spec.ModelAccountID)
+	if err != nil {
 		http.Error(w, "credential missing", http.StatusBadGateway)
 		return
 	}
+	p.applyModelKey(outReq, string(key))
 
 	resp, err := p.h.client.Do(outReq)
 	if err != nil {
-		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "failed"})
-		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "failed"})
+		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
-	defer resp.Body.Close()
-	p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: "", Result: "allowed"})
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	if blockedRedirect(resp, host) {
+		resp.Body.Close()
+		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
+		http.Error(w, "redirect blocked", http.StatusBadGateway)
+		return
+	}
+	p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "allowed"})
+	idle, total := p.h.streamTimeouts()
+	if err := writeRelay(w, resp, []string{rt.sentinel, string(key)}, idle, total); err != nil {
+		if streamTimeoutStatus(err) == http.StatusGatewayTimeout {
+			p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "failed"})
+		}
+	}
 }
 
 func (p *modelProxy) authorize(r *http.Request, rt *sessionRuntime) bool {
-	if tok, ok := parseBearerSentinel(r.Header.Get("Authorization")); ok && tok == rt.sentinel {
+	if tok, ok := parseBearerSentinel(r.Header.Get("Authorization")); ok && sentinelMatch(tok, rt.sentinel) {
 		return true
 	}
 	for _, name := range []string{"X-Api-Key", "Api-Key", "x-api-key"} {
-		if looksLikeSentinel(r.Header.Get(name)) && strings.TrimSpace(r.Header.Get(name)) == rt.sentinel {
+		if looksLikeSentinel(r.Header.Get(name)) && sentinelMatch(strings.TrimSpace(r.Header.Get(name)), rt.sentinel) {
 			return true
 		}
 	}
 	return false
 }
 
-func (p *modelProxy) injectModelKey(req *http.Request, rt *sessionRuntime) error {
-	key, err := p.h.secrets.Resolve(req.Context(), rt.spec.ModelAccountID)
-	if err != nil {
-		return err
-	}
-	keyStr := string(key)
+func (p *modelProxy) applyModelKey(req *http.Request, keyStr string) {
 	if auth := req.Header.Get("Authorization"); looksLikeSentinel(auth) {
 		req.Header.Set("Authorization", "Bearer "+keyStr)
 	}
@@ -122,11 +129,27 @@ func (p *modelProxy) injectModelKey(req *http.Request, rt *sessionRuntime) error
 			req.Header.Set(name, keyStr)
 		}
 	}
-	// 若客户端未带 sentinel 头但已通过 authorize，仍确保上游有 Bearer
 	if req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer "+keyStr)
 	}
-	return nil
+}
+
+func blockedRedirect(resp *http.Response, allowedHost string) bool {
+	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+		return false
+	}
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return false
+	}
+	u, err := url.Parse(loc)
+	if err != nil {
+		return true
+	}
+	if u.Host == "" {
+		return false
+	}
+	return !strings.EqualFold(u.Hostname(), allowedHost)
 }
 
 func hostOfOrigin(origin string) string {

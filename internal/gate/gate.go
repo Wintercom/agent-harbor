@@ -16,6 +16,11 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/secrets"
 )
 
+const (
+	auditToolModel = "model"
+	auditToolMCP   = "mcp"
+)
+
 var (
 	ErrSessionExists   = errors.New("gate: session already started")
 	ErrSessionNotFound = errors.New("gate: session not found")
@@ -52,11 +57,13 @@ type sessionRuntime struct {
 
 // Harbor 是控制面出站闸口。
 type Harbor struct {
-	mu       sync.Mutex
-	secrets  *secrets.Store
-	policy   *policy.Builder
-	client   *http.Client
-	sessions map[string]*sessionRuntime
+	mu           sync.Mutex
+	secrets      *secrets.Store
+	policy       *policy.Builder
+	client       *http.Client
+	sessions     map[string]*sessionRuntime
+	idleTimeout  time.Duration
+	totalTimeout time.Duration
 }
 
 // New 创建 Gate；policy 用于查找固定 profile（连接测试）。
@@ -65,7 +72,8 @@ func New(store *secrets.Store, pol *policy.Builder) *Harbor {
 		secrets: store,
 		policy:  pol,
 		client: &http.Client{
-			Timeout: 120 * time.Second,
+			// 会话流量用单次请求的空闲与总超时，避免 Client.Timeout 在流式响应中途掐断。
+			Timeout: 0,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},

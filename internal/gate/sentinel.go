@@ -2,6 +2,7 @@ package gate
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"strings"
 )
@@ -36,4 +37,11 @@ func parseBearerSentinel(value string) (token string, ok bool) {
 func looksLikeSentinel(value string) bool {
 	_, ok := parseBearerSentinel(value)
 	return ok
+}
+
+func sentinelMatch(got, want string) bool {
+	if want == "" || len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }

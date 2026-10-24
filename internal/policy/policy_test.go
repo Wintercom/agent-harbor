@@ -64,6 +64,43 @@ func TestPathAllowed(t *testing.T) {
 	if PathAllowed(rule, "/admin") {
 		t.Fatal("expected deny")
 	}
+	root := EndpointRule{Paths: []string{"/"}}
+	if !PathAllowed(root, "/") || PathAllowed(root, "/v1/models") {
+		t.Fatal("root path must not allow every path")
+	}
+}
+
+func TestBuildRejectsHostMismatch(t *testing.T) {
+	dir := t.TempDir()
+	b := NewBuilder(map[string]FixedProfile{
+		ProfileDemoModel: {
+			ID: ProfileDemoModel, Kind: "model",
+			Origin: "https://api.example.test", Paths: []string{"/v1/"}, Host: "api.example.test",
+		},
+		ProfileDemoMCP: {
+			ID: ProfileDemoMCP, Kind: "mcp",
+			Origin: "https://mcp.example.test", Paths: []string{"/mcp"}, Host: "mcp.example.test",
+		},
+	})
+	_, err := b.Build(context.Background(), PolicyRequest{
+		Workspace: dir,
+		AgentID:   "claude",
+		Model:     contracts.AccountInfo{ID: "m1", Kind: "model", ProfileID: ProfileDemoModel, Host: "evil.example"},
+		MCP:       contracts.AccountInfo{ID: "t1", Kind: "mcp", ProfileID: ProfileDemoMCP, Host: "mcp.example.test"},
+	})
+	if err != ErrHostMismatch {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDefaultProfilesAreNotAllowAll(t *testing.T) {
+	for id, profile := range DefaultProfiles() {
+		for _, path := range profile.Paths {
+			if path == "/" || path == "" {
+				t.Fatalf("%s allows every path via %q", id, path)
+			}
+		}
+	}
 }
 
 func TestNormalizeSymlink(t *testing.T) {

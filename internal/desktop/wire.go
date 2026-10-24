@@ -37,7 +37,7 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 		Catalog: a.secrets,
 		Policy:  a.policy,
 		Gate:    a.gate,
-	}, a.EmitHarborEvent, orchestrator.Timeouts{})
+	}, a.forwardEvent, orchestrator.Timeouts{})
 	if err != nil {
 		return err
 	}
