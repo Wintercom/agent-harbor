@@ -9,3 +9,13 @@
 !.env.example
 /tmp/
 /_agent-harbor-probe/
+
+# Go/Wails 生成产物；build 中的图标与配置仍可提交
+/build/bin/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/wailsjs/
+
+# Python 验收脚本缓存
+__pycache__/
+*.pyc

@@ -1,0 +1,34 @@
+# Go 控制面模块
+
+本目录是单一 Go module 中的内部业务包，运行于可信宿主机进程，不拆分微服务。当前只有模块说明，尚无 Go 实现、依赖或可运行构建。
+
+| 模块 | 负责人 | 职责 |
+|---|---|---|
+| [contracts](contracts/README.md) | A 首次落地、B 复核、C 核对 | 前端 DTO、事件和错误码 |
+| [orchestrator](orchestrator/README.md) | A | 单会话、任务生命周期、集成、回滚和清理 |
+| [runtime](runtime/README.md) | A | 操作系统隔离、受限进程与清理 |
+| [kits](kits/README.md) | A | Agent 无真实凭据启动适配 |
+| [gate](gate/README.md) | B | 模型流式反向代理与 MCP Gateway |
+| [policy](policy/README.md) | B | 工作区与固定出站授权 |
+| [secrets](secrets/README.md) | B | 宿主机内存凭据 |
+
+## 入口与依赖
+
+根目录 main.go（待实现）负责 Wails 启动、窗口与资源嵌入，app.go（待实现）负责前端方法绑定、输入校验和事件适配，由 B 维护。A 负责业务装配及编排，B 将其接入 Wails 生命周期。只绑定最小业务对象，内部服务字段不导出，不直接绑定 Runtime、Secrets 或 Gate。
+
+Orchestrator 调用 Policy、Gate、Kit、Runtime；Gate 经授权后解析 Secrets，连接测试也由 Gate 完成。Kit 不读取 Secrets，Runtime 不解释账号与 MCP 授权。Gate/Runtime 通过注入回调报告事件，不反向导入 orchestrator。contracts 不依赖业务层或 Wails。
+
+## 安全与测试
+
+- 不开放 HTTP 管理端口，不向 Agent 暴露桌面控制通道。
+- 前端不直接调用系统命令或文件 API；只加载本地受信资源，控制导航与 CSP。
+- GateBinding、Sentinel 和 Runtime handle 留在后端，不出现在公开 DTO 或事件中。
+- 所有任务通过 context 传播取消与超时；应用退出也须撤销会话授权并清理进程树。
+- Agent 输出和 MCP 返回值视为不可信数据，不在宿主机执行代码。
+- 单元测试与 Go 源码就近放置为 *_test.go；跨模块检查放 [security](../security/README.md)。
+
+完整结构见[目录设计](../docs/DIRECTORY-STRUCTURE.md)，执行顺序见[两天方案](../docs/MVP-2D3P.md)。
+
+## 并行开发入口
+
+先读 [MODULE-DESIGN.md](../docs/MODULE-DESIGN.md) 的职责、资源所有权、替身与文件归属，再按 [CONTRACT.md](../docs/CONTRACT.md) 实现准确签名；不依赖对方真实实现才能开始。真实联调前仍须通过 [ACCEPTANCE.md](../docs/ACCEPTANCE.md) 的检查点，当前工程和替身均待实现。

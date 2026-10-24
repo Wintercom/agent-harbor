@@ -1,5 +1,7 @@
 # Agent Harbor — 下一步工作实现列表
 
+> 本文是长期分期列表。当前两天版按 [MODULE-DESIGN.md](MODULE-DESIGN.md) 的分工与替身并行开发，接口按 [CONTRACT.md](CONTRACT.md)，实际验收按 [ACCEPTANCE.md](ACCEPTANCE.md)；历史目录和接口示意不覆盖当前基线。
+
 | 项 | 内容 |
 |---|---|
 | 文档版本 | v1.1 |
