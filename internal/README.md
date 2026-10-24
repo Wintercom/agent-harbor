@@ -1,6 +1,6 @@
 # Go 控制面模块
 
-本目录是单一 Go module 中的内部业务包，运行于可信宿主机进程，不拆分微服务。当前只有模块说明，尚无 Go 实现、依赖或可运行构建。
+本目录是单一 Go module 中的内部业务包，运行于可信宿主机进程，不拆分微服务。当前已落地契约、编排及测试，已加入严格单进程 macOS Runtime、Claude Kit 和显式 Kit Registry；完整应用及真实上游集成尚未完成。详见 [研发 A 开发记录](../docs/DEV-A.md)。
 
 | 模块 | 负责人 | 职责 |
 |---|---|---|
@@ -31,4 +31,4 @@ Orchestrator 调用 Policy、Gate、Kit、Runtime；Gate 经授权后解析 Secr
 
 ## 并行开发入口
 
-先读 [MODULE-DESIGN.md](../docs/MODULE-DESIGN.md) 的职责、资源所有权、替身与文件归属，再按 [CONTRACT.md](../docs/CONTRACT.md) 实现准确签名；不依赖对方真实实现才能开始。真实联调前仍须通过 [ACCEPTANCE.md](../docs/ACCEPTANCE.md) 的检查点，当前工程和替身均待实现。
+先读 [MODULE-DESIGN.md](../docs/MODULE-DESIGN.md) 的职责、资源所有权、替身与文件归属，再按 [CONTRACT.md](../docs/CONTRACT.md) 实现准确签名；不依赖对方真实实现才能开始。真实联调前仍须通过 [ACCEPTANCE.md](../docs/ACCEPTANCE.md) 的检查点，A 的编排测试替身已实现，其余工程和真实集成仍待完成。

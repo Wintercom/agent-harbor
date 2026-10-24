@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-REMOTE_URL="${HARBOR_REMOTE:-https://github.com/cookiybb-sketch/agent-harbor.git}"
+REMOTE_URL="${HARBOR_REMOTE:-https://github.com/liyufei916/agent-harbor.git}"
 BRANCH="${HARBOR_BRANCH:-main}"
 
 if [[ ! -d .git ]]; then

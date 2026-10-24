@@ -5,7 +5,7 @@
 | 文档版本 | v0.2 |
 | 更新日期 | 2026-10-23 |
 | 产品 | Agent Harbor |
-| 仓库 | https://github.com/Wintercom/agent-harbor.git |
+| 仓库 | https://github.com/liyufei916/agent-harbor.git |
 | 关联 | `DESIGN.md`（完整产品）；本文是 **3 人 × 3 天** 的可交付竖切 |
 | 目标 | 用 AI 编程在 3 天内做出**可演示**的安全主路径，验证「密钥不进沙箱」是否成立 |
 

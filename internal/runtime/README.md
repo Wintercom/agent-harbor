@@ -1,13 +1,13 @@
 # 隔离运行时
 
-负责人：A。两天版只实现已验证目标 macOS 上的 Seatbelt / sandbox-exec 后端；本目录尚无已验证的 profile 或运行实现。
+负责人：A。两天版只实现已验证目标 macOS 上的 Seatbelt / sandbox-exec 后端；已实现严格单进程 Runtime、默认拒绝的 Seatbelt profile 和真实系统探针测试。Health 会验证授权与拒绝边界；准备/会话计时器均失败关闭。当前禁止创建后代，不支持 Bash/外部 git；仍需真实 Agent/上游联调。详细证据及限制见 [研发 A 开发记录](../../docs/DEV-A.md)。
 
-## 建议文件（尚未实现）
+## 当前文件
 
 | 文件 | 职责 |
 |---|---|
 | `runtime.go` | Health、Create、Exec、Destroy、Process.Wait 与受限句柄 |
-| `macos.go` | macOS 能力检查、私有 HOME、profile 参数化及进程树管理 |
+| `macos.go` | macOS 能力检查、私有 HOME、严格单进程执行与清理 |
 | `sandbox.sb` | 默认拒绝的系统强制规则；仅按确定的授权参数开放必要资源 |
 
 两天版将工作区授权及私有 HOME 配置合并进 Create，不再单独暴露 MountWorkspace；这是可见/可写范围配置，不意味着真实文件系统挂载。未来后端需保持同等语义。
@@ -32,3 +32,5 @@
 ## 对接契约
 
 精确类型与方法以 [CONTRACT.md](../../docs/CONTRACT.md) 为准：RuntimeSpec 输入 AllowedTCP 与只读运行路径，Handle 返回 PrivateHome；Runtime 定义 LaunchSpec，Kit 生成其内容，Runtime 校验并写入 ConfigFiles。Destroy 幂等且确认进程树结束及磁盘清理后才返回；Wait 必须排空最终输出。并行替身与所有权见 [MODULE-DESIGN.md](../../docs/MODULE-DESIGN.md)。
+
+Destroy 成功后保留不可执行的幂等句柄墓碑，同时释放 profile、工作区、私有目录、只读路径和进程引用；重复 Destroy 返回成功，已销毁句柄不能再次 Exec。

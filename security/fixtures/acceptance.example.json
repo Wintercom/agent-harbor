@@ -1,0 +1,30 @@
+{
+  "checks": [
+    {
+      "id": "I4",
+      "status": "待执行",
+      "time": "2026-10-24T00:00:00Z",
+      "environment": {
+        "os": "macOS 26.7",
+        "arch": "arm64",
+        "agent": "claude 2.1.292"
+      },
+      "operation": "读取工作区外的脱敏 fixture",
+      "expected": "请求被操作系统拒绝",
+      "actual": "待执行"
+    },
+    {
+      "id": "I5",
+      "status": "待执行",
+      "time": "2026-10-24T00:00:00Z",
+      "environment": {
+        "os": "macOS 26.7",
+        "arch": "arm64",
+        "agent": "claude 2.1.292"
+      },
+      "operation": "访问 Gate 端口与其他回环端口",
+      "expected": "仅授权端口可达",
+      "actual": "待执行"
+    }
+  ]
+}

@@ -2,12 +2,13 @@
 
 负责人：研发 A 首次落地、B 复核并生成绑定，产品 C 核对页面需求。准确方法、类型、JSON 与语义见 [CONTRACT.md](../../docs/CONTRACT.md)，共享文件规则见 [MODULE-DESIGN.md](../../docs/MODULE-DESIGN.md)。
 
-## 建议文件（尚未实现）
+## 当前文件
 
 | 文件 | 内容 |
 |---|---|
 | dto.go | Agent 能力、连接请求与脱敏结果、SessionSpec、会话状态 |
-| events.go | 前端事件名、可序列化载荷和错误码 |
+| events.go | 可序列化事件载荷与纯数据 Validate 校验 |
+| errors.go | AppError 的 error 接口、会话状态和固定事件名 |
 
 Go 定义是边界数据的来源，前端通过 Wails 生成绑定及模型使用，不另手写一套不一致的类型。GateBinding、LaunchSpec、Runtime handle 等内部接口归相应后端包，不进入前端公开数据模型。
 
