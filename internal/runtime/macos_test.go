@@ -202,7 +202,14 @@ func runProbe(t *testing.T, r *MacOS, spec RuntimeSpec, args ...string) (Exit, s
 	})
 	var mu sync.Mutex
 	var output strings.Builder
-	process, err := r.Exec(ctx, handle, LaunchSpec{Command: probePath, Args: append([]string{"--harbor-runtime-probe"}, args...)}, func(data contracts.OutputData) { mu.Lock(); defer mu.Unlock(); output.WriteString(data.Text) })
+	process, err := r.Exec(ctx, handle, LaunchSpec{Command: probePath, Args: append([]string{"--harbor-runtime-probe"}, args...)}, func(data contracts.OutputData) {
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.Contains(data.Text, "warning: GOCOVERDIR not set") {
+			return
+		}
+		output.WriteString(data.Text)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
