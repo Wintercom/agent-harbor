@@ -122,9 +122,10 @@ Health 现在还会检查生成的 SBPL 文本本身必须包含 `deny default`�
 
 ```sh
 go test -race ./...
+go test -race -tags harbor_platform ./internal/runtime ./internal/orchestrator
 go test -cover ./internal/contracts ./internal/kits ./internal/kits/claude ./internal/orchestrator ./internal/runtime
 go vet ./...
 git diff --check
 ```
 
-以上检查均通过。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
+以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
