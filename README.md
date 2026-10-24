@@ -35,13 +35,14 @@ wails3 dev
 wails3 build
 ```
 
-A 注入编排：在 `main.go` 调用 `WireSessionService(host, factory)` 与 `host.SetAgentDetector(...)`。固定上游可用环境变量 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN`。
+启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude Kit 与 Orchestrator。固定上游可用 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN`；Claude 模型名可用 `HARBOR_CLAUDE_MODEL`，可执行文件可用 `HARBOR_CLAUDE_BIN`。
 
 ## 目录
 
 ```text
 agent-harbor/
-├── main.go / app.go / bindings.go   B：Wails v3 启动与 DesktopAPI
+├── main.go                          B：Wails v3 薄入口
+├── internal/desktop/                B：DesktopAPI，并注入 A 的编排
 ├── go.mod / Taskfile.yml            B：模块与任务
 ├── internal/
 │   ├── contracts/                   DTO（A 主改，B 复核绑定）

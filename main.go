@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/desktop"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -18,12 +19,14 @@ func init() {
 }
 
 func main() {
-	host := NewApp()
-	api := NewDesktopAPI(host)
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
 
-	// 研发 A 就绪后在此注入：
-	// WireSessionService(host, orchestrator.New)
-	// host.SetAgentDetector(...)
+	host := desktop.NewApp()
+	if err := host.AttachOrchestrator(appCtx); err != nil {
+		log.Fatal(err)
+	}
+	api := desktop.NewDesktopAPI(host)
 
 	app := application.New(application.Options{
 		Name:        "Agent Harbor",
@@ -52,9 +55,10 @@ func main() {
 	})
 
 	app.OnShutdown(func() {
+		cancelApp()
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		if err := host.shutdown(ctx); err != nil {
+		if err := host.Shutdown(ctx); err != nil {
 			log.Printf("shutdown: %v", err)
 		}
 	})

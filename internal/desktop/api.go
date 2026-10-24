@@ -1,4 +1,4 @@
-package main
+package desktop
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// DesktopAPI 是唯一绑定到 Wails 的业务服务（研发 B）。
+// DesktopAPI 是唯一绑定到 Wails 的业务服务。
 // 方法返回统一 Response，不把原始 Go error 交给前端。
 type DesktopAPI struct {
 	app *App
@@ -25,7 +25,7 @@ func (d *DesktopAPI) ListAgents() contracts.AgentsResponse {
 	if det == nil {
 		return contracts.AgentsResponse{Agents: []contracts.AgentInfo{}}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	list, err := det.ListAgents(ctx)
 	if err != nil {
@@ -76,7 +76,7 @@ func (d *DesktopAPI) ConnectMcp(in contracts.ConnectInput) contracts.AccountResp
 	return contracts.AccountResponse{Account: &meta}
 }
 
-// CreateSession 转发至编排层。
+// CreateSession 转发给编排层。
 func (d *DesktopAPI) CreateSession(spec contracts.SessionSpec) contracts.SessionResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -109,11 +109,11 @@ func (d *DesktopAPI) StopSession(id string) contracts.SessionResponse {
 	return contracts.SessionResponse{Session: &snap}
 }
 
-// AppInfo 供诊断显示接线状态（不含密钥）。
+// AppInfo 供诊断显示接线状态，不含密钥。
 func (d *DesktopAPI) AppInfo() map[string]string {
 	orch := "unavailable"
-	if _, ok := d.app.sessionRef().(UnavailableSession); !ok {
-		orch = "injected"
+	if d.app.orchestratorReady() {
+		orch = "wired"
 	}
 	return map[string]string{
 		"product":      "Agent Harbor",
