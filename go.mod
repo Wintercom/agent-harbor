@@ -1,4 +1,4 @@
-module github.com/Wintercom/agent-harbor
+module github.com/liyufei916/agent-harbor
 
 go 1.26.0
 

@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
-	"github.com/Wintercom/agent-harbor/internal/policy"
-	"github.com/Wintercom/agent-harbor/internal/secrets"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/secrets"
 )
 
 // 连接流程错误，由 app.go 映射为公开 AppError。

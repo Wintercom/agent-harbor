@@ -11,10 +11,13 @@
 /_agent-harbor-probe/
 
 # Go/Wails 生成产物；build 中的图标与配置仍可提交
+/bin/
 /build/bin/
 /frontend/node_modules/
 /frontend/dist/
+/frontend/bindings/
 /frontend/wailsjs/
+.task/
 
 # Python 验收脚本缓存
 __pycache__/

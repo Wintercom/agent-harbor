@@ -2,10 +2,14 @@
 
 负责人：研发 A，兼技术集成负责人。唯一负责会话生命周期，供受限 Wails 绑定调用；依赖 Policy、Gate、Kit 和 Runtime，不直接读取真实凭据。
 
-## 建议文件（尚未实现）
+## 当前实现
 
 - `session.go`：会话状态、单会话锁、Create、Get、Stop 和 Shutdown。
-- `events.go`：汇总状态、输出、审计和安全错误，向 UI 发布共享契约事件。
+- `events.go`：串行事件分发、输出限额、UTF-8 分块与 Sentinel 流式过滤。
+- `ports.go`：注入消费接口；`errors.go`：固定公开错误模板。
+- `session_test.go` / `events_test.go`：同契约替身测试。
+
+构造入口为 `New(appContext, Dependencies, sink, Timeouts)`，应用退出调用 `Shutdown`；集成及限制见 [开发记录](../../docs/DEV-A.md)。真实提供方尚未装配。
 
 ## 启动与停止
 
@@ -24,3 +28,6 @@
 测试重点：并发创建拒绝、各启动步骤失败回滚、重复停止幂等、Agent 正常/异常退出、Gate 致命故障以及清理失败阻止新会话。上游单次认证错误不应自动扩大授权。
 
 精确接口、事件/快照和取消竞争规则见 [CONTRACT.md](../../docs/CONTRACT.md)。A 首先用 fake Gate/Policy/Catalog/Runtime/Kit 独立开发，再接真实组件；共享文件与集成检查点见 [MODULE-DESIGN.md](../../docs/MODULE-DESIGN.md)。
+
+
+当前回归保证：准备超时不会取消已 running 会话，会话总时限从 Create 起覆盖 provisioning；事件队列按 sessionId+seq 截断，避免多会话重复水位死循环。

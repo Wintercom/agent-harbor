@@ -1,0 +1,19 @@
+;; 严格单进程模式：不导入 system.sb，不开放宿主管控 IPC 或后代创建。
+(version 1)
+(deny default)
+(allow syscall* mach-bootstrap)
+(import "dyld-support.sb")
+(deny process-fork)
+(deny system-privilege)
+(allow sysctl-read)
+(allow file-read* file-map-executable
+    (subpath "/System/Library")
+    (subpath "/usr/share/icu")
+    (subpath "/usr/share/locale")
+    (subpath "/usr/lib"))
+(allow file-read* file-write-data
+    (literal "/dev/null")
+    (literal "/dev/zero"))
+(allow file-read* (literal "/dev/random") (literal "/dev/urandom"))
+(allow file-read* file-write-data (subpath "/dev/fd"))
+{{.Rules}}

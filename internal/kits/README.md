@@ -4,7 +4,8 @@
 
 ## 目录与建议文件
 
-- `kit.go`（待实现）：Detect、Build 与能力描述，返回 runtime.LaunchSpec（Command、Args、Env、Stdin、ConfigFiles）。
+- `kit.go`（已定义接口，claude 适配已实现）：Detect、Build 与能力描述，返回 runtime.LaunchSpec（Command、Args、Env、Stdin、ConfigFiles）。
+- `registry.go`：受信 Kit 注册表和稳定排序的批量 DetectAll；不可用 Kit 不暴露只读路径。
 - [claude](claude/README.md)：首个必交的 Claude Code 适配。
 - Codex、dsh 在实际开始适配时再建目录，不以空目录或枚举项表示已经支持。
 

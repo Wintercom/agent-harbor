@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
-	"github.com/Wintercom/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/policy"
 )
 
 // modelProxy 是固定模型 HTTPS 上游的显式 Base URL 反向代理。

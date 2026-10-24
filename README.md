@@ -1,8 +1,8 @@
 # Agent Harbor
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。控制面（Gate / Policy / Secrets / Wails v3 桌面桥）已由研发 B 落地；编排、隔离与页面仍待 A / C。
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地共享契约、会话编排、macOS Runtime 与 Claude Kit（见 [开发记录](docs/DEV-A.md)）；研发 B 已落地 Gate / Policy / Secrets 与 Wails v3 桌面桥。真实模型/MCP 联调与产品页面仍待完成。
 
-仓库：https://github.com/Wintercom/agent-harbor
+仓库：https://github.com/liyufei916/agent-harbor
 
 可浏览原型（不接真 Runtime）：打开 [`prototype/index.html`](./prototype/index.html)（若有缓存请强制刷新）。
 
@@ -35,15 +35,15 @@ agent-harbor/
 ├── main.go / app.go / bindings.go   B：Wails v3 启动与 DesktopAPI
 ├── go.mod / Taskfile.yml            B：模块与任务
 ├── internal/
-│   ├── contracts/                   DTO（B 先行可编译；A 主改）
+│   ├── contracts/                   DTO（A 主改，B 复核绑定）
 │   ├── gate/ policy/ secrets/       B：已实现
-│   ├── orchestrator/ runtime/ kits/ A：待实现
+│   ├── orchestrator/ runtime/ kits/ A：已实现
 ├── frontend/                        C 页面 + B 构建/绑定
 ├── build/                           B：Wails v3 平台资源
 ├── security/ demos/ docs/ scripts/ prototype/
 ```
 
-模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令证据见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。
+模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
 
 当前两天版：单一 macOS 环境、一个真实 Agent、一个模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
 
@@ -60,7 +60,7 @@ agent-harbor/
 HARBOR_NO_COMMIT=1 ./scripts/github-push.sh
 ```
 
-默认远程：`https://github.com/Wintercom/agent-harbor.git`，分支 `main`。可用环境变量覆盖：`HARBOR_REMOTE`、`HARBOR_BRANCH`。
+默认远程：`https://github.com/liyufei916/agent-harbor.git`，分支 `main`。可用环境变量覆盖：`HARBOR_REMOTE`、`HARBOR_BRANCH`。
 
 ## 文档怎么读
 

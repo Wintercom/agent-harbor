@@ -5,14 +5,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# 优先环境变量；否则沿用已有 origin；默认 HTTPS（可用 SSH：HARBOR_REMOTE=git@github.com:Wintercom/agent-harbor.git）
+# 优先环境变量；否则沿用已有 origin；默认 HTTPS（可用 SSH：HARBOR_REMOTE=git@github.com:liyufei916/agent-harbor.git）
 BRANCH="${HARBOR_BRANCH:-main}"
 if [[ -n "${HARBOR_REMOTE:-}" ]]; then
   REMOTE_URL="$HARBOR_REMOTE"
 elif git remote get-url origin >/dev/null 2>&1; then
   REMOTE_URL="$(git remote get-url origin)"
 else
-  REMOTE_URL="https://github.com/cookiybb-sketch/agent-harbor.git"
+  REMOTE_URL="https://github.com/liyufei916/agent-harbor.git"
 fi
 
 if [[ ! -d .git ]]; then
@@ -44,7 +44,7 @@ if ! git push -u origin "$BRANCH"; then
   echo "  任选其一后重跑本脚本："
   echo "  1) gh auth login"
   echo "  2) 将本机 SSH 公钥加到 GitHub，然后："
-  echo "       HARBOR_REMOTE=git@github.com:Wintercom/agent-harbor.git ./scripts/github-push.sh"
+  echo "       HARBOR_REMOTE=git@github.com:liyufei916/agent-harbor.git ./scripts/github-push.sh"
   echo "  3) 在「终端.app」用已登录的 GitHub Desktop / HTTPS 凭据执行本脚本"
   exit 1
 fi
@@ -52,4 +52,4 @@ fi
 echo "✓ 已推送"
 git status -sb
 git log -1 --oneline
-echo "  https://github.com/cookiybb-sketch/agent-harbor"
+echo "  https://github.com/liyufei916/agent-harbor"

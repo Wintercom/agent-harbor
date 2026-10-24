@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
 func TestBuildHappyPath(t *testing.T) {

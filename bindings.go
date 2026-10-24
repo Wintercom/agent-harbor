@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

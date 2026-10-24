@@ -5,7 +5,7 @@
 | 文档版本 | v0.6 |
 | 更新日期 | 2026-10-23 |
 | 产品名称 | Agent Harbor |
-| 仓库 | https://github.com/Wintercom/agent-harbor.git |
+| 仓库 | https://github.com/liyufei916/agent-harbor.git |
 | 定位 | 本机桌面级安全沙箱：在隔离环境中运行主流 AI Coding Agent，凭据与 MCP 密钥永不进入沙箱 |
 | 状态 | 草案，供评审；仓库已建，代码待写入 |
 | 架构逻辑 | `ARCHITECTURE.md`（控制面 / 执行面、会话状态机、三条主路径） |
@@ -443,7 +443,7 @@ W0 骨架 ───────────────────────�
 
 ### 17.6 拆成「多人项目」的仓库 / 职责边界
 
-建议在 **https://github.com/Wintercom/agent-harbor** 单仓 monorepo 推进，按包分工，避免多仓协议漂移：
+建议在 **https://github.com/liyufei916/agent-harbor** 单仓 monorepo 推进，按包分工，避免多仓协议漂移：
 
 | 目录/包 | 负责人 | 对外接口（稳定契约） |
 |---|---|---|

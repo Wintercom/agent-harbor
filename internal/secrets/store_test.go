@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
 func TestPutLookupResolveNoLeak(t *testing.T) {

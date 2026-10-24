@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
 func TestDesktopAPICreateSessionMapsOrchestratorError(t *testing.T) {

@@ -14,7 +14,7 @@ status.textContent =
 async function probeDesktopBinding() {
   try {
     const mod = await import(
-      /* @vite-ignore */ '../bindings/github.com/Wintercom/agent-harbor/desktopapi.js'
+      /* @vite-ignore */ '../bindings/github.com/liyufei916/agent-harbor/desktopapi.js'
     )
     if (typeof mod.AppInfo === 'function') {
       const info = await mod.AppInfo()

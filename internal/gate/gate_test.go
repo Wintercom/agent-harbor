@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
-	"github.com/Wintercom/agent-harbor/internal/policy"
-	"github.com/Wintercom/agent-harbor/internal/secrets"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/secrets"
 )
 
 func TestSentinelLength(t *testing.T) {

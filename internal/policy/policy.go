@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
 var (

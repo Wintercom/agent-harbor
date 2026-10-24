@@ -1,6 +1,6 @@
 // Package contracts 存放前后端共享的可序列化 DTO。
-// 负责人：A 首次落地与主改；B 复核绑定兼容；C 核对页面字段。
-// 本文件由研发 B 为联调可编译先行落地，后续语义变更仍以 docs/CONTRACT.md 为准并由 A 主改。
+// 负责人：A 主改，B 复核绑定兼容，C 核对页面字段。
+// 字段与 docs/CONTRACT.md v1 一致，不包含业务实现。
 package contracts
 
 // AppError 是前端可见的业务错误。message 使用固定可读模板，不附加原始上游细节。
@@ -80,26 +80,13 @@ type SessionResponse struct {
 	Error   *AppError        `json:"error"`
 }
 
-// OutputData 是 stdout/stderr 文本块。
-type OutputData struct {
-	Stream string `json:"stream"` // stdout 或 stderr
-	Text   string `json:"text"`
-}
-
-// AuditData 是出站审计摘要，不含认证头或正文。
-type AuditData struct {
-	Target string `json:"target"` // 主机名，不含 URL 查询串
-	Tool   string `json:"tool"`
-	Result string `json:"result"` // allowed、denied 或 failed
-}
-
-// Event 通过固定事件名 harbor:event 传递；四类载荷恰有一项非 nil。
-type Event struct {
-	SessionID string           `json:"sessionId"`
-	Seq       uint64           `json:"seq"`
-	Type      string           `json:"type"`
-	State     *SessionSnapshot `json:"state"`
-	Output    *OutputData      `json:"output"`
-	Audit     *AuditData       `json:"audit"`
-	Error     *AppError        `json:"error"`
+// DesktopAPI 是绑定到桌面的业务方法集合。实现在根包 DesktopAPI，不在本包执行 IO。
+type DesktopAPI interface {
+	ListAgents() AgentsResponse
+	SelectWorkspace() WorkspaceResponse
+	ConnectModel(ConnectInput) AccountResponse
+	ConnectMcp(ConnectInput) AccountResponse
+	CreateSession(SessionSpec) SessionResponse
+	GetSession(string) SessionResponse
+	StopSession(string) SessionResponse
 }

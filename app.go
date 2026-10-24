@@ -5,10 +5,10 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
-	"github.com/Wintercom/agent-harbor/internal/gate"
-	"github.com/Wintercom/agent-harbor/internal/policy"
-	"github.com/Wintercom/agent-harbor/internal/secrets"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/gate"
+	"github.com/liyufei916/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

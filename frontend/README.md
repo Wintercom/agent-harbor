@@ -21,7 +21,7 @@ cd frontend && npm install && npm run build
 wails3 dev
 ```
 
-前端通过 `src/api.js`（C 实现）调用 `bindings/github.com/Wintercom/agent-harbor/desktopapi.js`。
+前端通过 `src/api.js`（C 实现）调用 `bindings/github.com/liyufei916/agent-harbor/desktopapi.js`。
 事件名固定为 `harbor:event`（见 contracts）。浏览器独立开发使用 `mock-api.js`，勿导入 bindings。
 
 准确方法见 [CONTRACT.md](../docs/CONTRACT.md)。

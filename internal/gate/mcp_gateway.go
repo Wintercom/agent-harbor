@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wintercom/agent-harbor/internal/contracts"
-	"github.com/Wintercom/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/policy"
 )
 
 // mcpGateway 是沙箱唯一 MCP 入口；在宿主机持证访问固定上游。
