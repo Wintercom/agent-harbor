@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Harbor</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <h1>Agent Harbor</h1>
+      <p class="hint">
+        桌面壳已由研发 B 接入 Wails v3。配置页与工作台由产品 C 在
+        <code>frontend/src/</code> 实现；请通过 <code>api.js</code> 调用绑定。
+      </p>
+      <pre id="status">正在检测桌面绑定…</pre>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

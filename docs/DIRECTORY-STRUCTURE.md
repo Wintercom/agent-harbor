@@ -1,22 +1,24 @@
 # Go + Wails 目录设计
 
-适用范围：两位研发、一位产品/前端，三人两天核心版。Go 承担业务后端，Wails 承担桌面桥接，Python 只用于验收辅助。Go 后端、前端与构建资源的目录及 README 已完成迁移，旧 src 骨架已移除；下列业务代码、依赖与构建配置仍待实现。
+适用范围：两位研发、一位产品/前端，三人两天核心版。Go 承担业务后端，Wails 承担桌面桥接，Python 只用于验收辅助。目录骨架与研发 B 的 Gate/Policy/Secrets/Wails 入口已落地；编排、隔离、Kit 与完整页面仍待 A/C。
 
 具体模块边界、依赖与并行执行见 [MODULE-DESIGN.md](MODULE-DESIGN.md)，准确签名与行为以 [CONTRACT.md](CONTRACT.md) 为准；本文件只描述文件归属，不重复定义接口。
 
 ## 1. 目标目录
 
-采用单 Go module、单桌面应用。为减少构建适配，建议使用 Wails v2 的根目录 `main.go` / `app.go` 常规入口；此前讨论的 `cmd/harbor/` 是示意，本版不另建重复入口。具体 Go/Wails/Node 版本在初始化前记录到决策文档。
+采用单 Go module、单桌面应用。桌面框架为 **Wails v3**（根目录 `main.go` / `app.go` / `bindings.go`，配置见 `build/config.yml` 与 `Taskfile.yml`）；此前讨论的 `cmd/harbor/` 不另建。版本与命令见 [DECISIONS.md](DECISIONS.md)。
 
 以下为目标结构：实现文件与构建产物均按需生成，不表示当前已存在。模块目录配置精简 README，测试就近放置。
 
 ```text
 agent-harbor/
-├── main.go                      # B：Wails 启动、窗口配置、前端资源嵌入
-├── app.go                       # B：受限 Go 绑定与事件适配，调用 A 的编排
+├── main.go                      # B：Wails v3 启动、窗口配置、前端资源嵌入
+├── app.go                       # B：控制面装配、HostDeps、错误映射
+├── bindings.go                  # B：DesktopAPI（唯一 Wails Service）
 ├── go.mod                       # B：单一 Go module
 ├── go.sum
-├── wails.json                   # B：桌面开发与构建配置
+├── Taskfile.yml                 # B：wails3 task / dev / build
+├── build/config.yml             # B：Wails v3 项目与开发配置
 ├── README.md                    # 入口、分工、实际可用的启动与构建命令
 ├── AGENTS.md                    # 跨代理通用约束
 ├── CLAUDE.md                    # 引用 AGENTS.md
@@ -62,7 +64,7 @@ agent-harbor/
 │   │   │   ├── setup.js         # 模型/MCP 连接、工作区与任务输入
 │   │   │   └── session.js       # 状态、输出、活动与停止
 │   │   └── styles.css
-│   ├── wailsjs/                 # Wails v2 生成绑定，不手改
+│   ├── bindings/                # Wails v3 生成绑定，不手改
 │   └── dist/                    # 前端构建产物，不手写
 │
 ├── security/                    # A 主责，B/C 配合的跨模块安全验收
@@ -80,10 +82,10 @@ agent-harbor/
 │   └── ...                     # 保留现有产品、架构与页面设计
 ├── scripts/                     # 保留现有仓库维护脚本
 ├── prototype/                   # 保留静态原型，非真实桌面实现
-└── build/                       # Wails 资源与输出，按脚手架实际内容组织
+└── build/                       # Wails v3 资源与输出，按脚手架实际内容组织
 ```
 
-`build/` 中可提交图标、应用描述等构建资源；二进制输出目录单独忽略，不要把整个 build 资源目录一概排除。当前忽略 frontend/dist、frontend/wailsjs、frontend/node_modules 及 build/bin，构建与绑定生成流程由初始化任务补齐；生成绑定只能从 Go 定义生成，不手工维护第二套类型。
+`build/` 中可提交图标和平台构建配置；二进制输出目录单独忽略。忽略 `frontend/dist`、`frontend/bindings`、`frontend/node_modules`、`bin/` 与 `build/bin`。生成绑定只能从 Go 定义重建，不手工维护第二套类型。
 
 ## 2. 分工与调用方向
 

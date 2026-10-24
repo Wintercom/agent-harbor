@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A harbor-wails-scaffold application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/harbor-wails-scaffold %u
+Terminal=false
+Type=Application
+Icon=harbor-wails-scaffold
+Categories=Utility;
+StartupWMClass=harbor-wails-scaffold
+
+ 
