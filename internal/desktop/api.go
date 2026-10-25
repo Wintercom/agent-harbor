@@ -217,12 +217,32 @@ func (d *DesktopAPI) CancelMcpOAuth(pendingID string) contracts.EmptyResponse {
 
 // WritePty 写入 PTY（占位）。
 func (d *DesktopAPI) WritePty(in contracts.PtyInput) contracts.EmptyResponse {
-	_ = in
-	return contracts.EmptyResponse{Error: unimplemented()}
+	writer, ok := d.app.sessionRef().(interface {
+		WritePty(context.Context, contracts.PtyInput) error
+	})
+	if !ok {
+		return contracts.EmptyResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := writer.WritePty(ctx, in); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
 }
 
 // ResizePty 调整 PTY（占位）。
 func (d *DesktopAPI) ResizePty(in contracts.PtyInput) contracts.EmptyResponse {
-	_ = in
-	return contracts.EmptyResponse{Error: unimplemented()}
+	resizer, ok := d.app.sessionRef().(interface {
+		ResizePty(context.Context, contracts.PtyInput) error
+	})
+	if !ok {
+		return contracts.EmptyResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := resizer.ResizePty(ctx, in); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
 }

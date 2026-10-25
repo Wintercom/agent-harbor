@@ -45,6 +45,8 @@ type session struct {
 	handle         runtime.Handle
 	gateStarted    bool
 	wait           <-chan runtime.Exit
+	process        runtime.Process
+	interactive    bool
 	cleanupDone    chan struct{}
 	finished       chan struct{}
 	retry          chan struct{}
@@ -332,6 +334,65 @@ func (o *Service) Destroy(ctx context.Context, id string) (contracts.SessionSnap
 	return result, nil
 }
 
+// WritePty 将后续轮次写入同一会话的交互 stdin，并由 Runtime 输出事件回传。
+func (o *Service) WritePty(ctx context.Context, input contracts.PtyInput) error {
+	if ctx.Err() != nil {
+		return publicError("CANCELLED")
+	}
+	if input.SessionID == "" || len(input.Data) == 0 || len(input.Data) > 32768 || strings.ContainsRune(input.Data, '\x00') {
+		return publicError("INVALID_ARGUMENT")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[input.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning || s.process == nil || !s.interactive {
+		o.mu.Unlock()
+		return publicError("INVALID_ARGUMENT")
+	}
+	process := s.process
+	o.mu.Unlock()
+	interactive, ok := process.(runtime.InteractiveProcess)
+	if !ok {
+		return publicError("UNIMPLEMENTED")
+	}
+	if err := interactive.Write([]byte(input.Data)); err != nil {
+		return safeError(err, "INTERNAL_ERROR")
+	}
+	return nil
+}
+
+func (o *Service) ResizePty(ctx context.Context, input contracts.PtyInput) error {
+	if ctx.Err() != nil {
+		return publicError("CANCELLED")
+	}
+	if input.SessionID == "" {
+		return publicError("INVALID_ARGUMENT")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[input.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning || s.process == nil || !s.interactive {
+		o.mu.Unlock()
+		return publicError("INVALID_ARGUMENT")
+	}
+	process := s.process
+	o.mu.Unlock()
+	interactive, ok := process.(runtime.InteractiveProcess)
+	if !ok {
+		return publicError("UNIMPLEMENTED")
+	}
+	if err := interactive.Resize(input.Cols, input.Rows); err != nil {
+		return safeError(err, "UNIMPLEMENTED")
+	}
+	return nil
+}
+
 func (o *Service) emitLocked(s *session, e contracts.Event) {
 	s.snapshot.Seq++
 	e.SessionID, e.Seq = s.snapshot.SessionID, s.snapshot.Seq
@@ -505,6 +566,8 @@ func (o *Service) provision(s *session) error {
 	if process == nil {
 		return publicError("ISOLATION_UNAVAILABLE")
 	}
+	s.process = process
+	s.interactive = launch.Interactive
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if ctx.Err() != nil {
@@ -589,7 +652,11 @@ func (o *Service) output(s *session, data contracts.OutputData) {
 }
 
 func (o *Service) outputLocked(s *session, data contracts.OutputData) {
-	o.emitLocked(s, contracts.Event{Type: "output", Output: &data})
+	if s.interactive {
+		o.emitLocked(s, contracts.Event{Type: contracts.EventTypePty, Pty: &data})
+		return
+	}
+	o.emitLocked(s, contracts.Event{Type: contracts.EventTypeOutput, Output: &data})
 }
 
 func (o *Service) drainEarlyLocked(s *session) {

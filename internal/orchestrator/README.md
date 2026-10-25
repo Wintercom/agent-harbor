@@ -4,7 +4,7 @@
 
 ## 当前实现
 
-- `session.go`：会话状态、最多两个并发会话、规范化工作区冲突、Create/Get/List/Stop/Destroy 和 Shutdown。
+- `session.go`：会话状态、最多两个并发会话、规范化工作区冲突、Create/Get/List/Stop/Destroy、同会话多轮输入和 Shutdown。
 - `events.go`：串行事件分发、输出限额、UTF-8 分块与 Sentinel 流式过滤。
 - `ports.go`：注入消费接口；`errors.go`：固定公开错误模板。
 - `session_test.go` / `events_test.go`：同契约替身测试。
@@ -17,7 +17,8 @@
 2. 通过注入的只读 AccountCatalog 检查账号元信息，检测 Runtime/Kit，构造 Policy 快照，再启动 Gate。
 3. 将 GateBinding.AllowedTCP 与只读运行路径交给 Runtime.Create，取得 PrivateHome，再映射 KitInput 生成 LaunchSpec，由 Runtime.Exec 校验、落盘并隔离执行。
 4. Agent 成功启动后进入 running；正常退出、用户停止和致命故障均进入清理。
-5. 先撤销 Sentinel 并取消在途请求，再结束进程树、清理私有 HOME，最后释放锁。
+5. 同一会话若 Kit 声明 `LaunchSpec.Interactive`，工作台后续轮次通过 `WritePty` 写入受控 stdin，并以 `pty` 事件回传；非交互 Agent 固定返回 `UNIMPLEMENTED`。
+6. 先撤销 Sentinel 并取消在途请求，再结束进程树、清理私有 HOME，最后释放锁。
 
 启动中途失败必须按已创建资源回滚。清理失败进入 failed 并保留锁，提供明确修复说明，不能误报 stopped 后允许新会话。
 

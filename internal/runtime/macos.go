@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -278,7 +279,16 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 	}
 	args := append([]string{"-f", e.profile, command}, launch.Args...)
 	cmd := exec.Command("/usr/bin/sandbox-exec", args...)
-	cmd.Dir, cmd.Env, cmd.Stdin = e.workspace, env, bytes.NewReader(launch.Stdin)
+	cmd.Dir, cmd.Env = e.workspace, env
+	var stdin io.WriteCloser
+	if launch.Interactive {
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			return nil, runtimeError("ISOLATION_UNAVAILABLE")
+		}
+	} else {
+		cmd.Stdin = bytes.NewReader(launch.Stdin)
+	}
 	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, runtimeError("ISOLATION_UNAVAILABLE")
@@ -300,6 +310,7 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 	stdoutWriter.Close()
 	stderrWriter.Close()
 	p := &macProcess{cmd: cmd, done: make(chan struct{}), rootDone: make(chan struct{})}
+	p.stdin = stdin
 	e.process = p
 	var readers sync.WaitGroup
 	readers.Add(2)
@@ -328,6 +339,12 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 		case <-p.rootDone:
 		}
 	}()
+	if launch.Interactive && len(launch.Stdin) > 0 {
+		if _, err := p.stdin.Write(launch.Stdin); err != nil {
+			p.kill(true)
+			return nil, runtimeError("ISOLATION_UNAVAILABLE")
+		}
+	}
 	return p, nil
 }
 
@@ -379,6 +396,33 @@ type macProcess struct {
 	result         Exit
 	cancelled      bool
 	confirmed      bool
+	stdin          io.WriteCloser
+}
+
+var _ InteractiveProcess = (*macProcess)(nil)
+
+func (p *macProcess) Write(data []byte) error {
+	p.mu.Lock()
+	stdin := p.stdin
+	select {
+	case <-p.rootDone:
+		p.mu.Unlock()
+		return runtimeError("INVALID_ARGUMENT")
+	default:
+	}
+	p.mu.Unlock()
+	if stdin == nil || len(data) == 0 {
+		return runtimeError("UNIMPLEMENTED")
+	}
+	_, err := stdin.Write(data)
+	return err
+}
+
+func (p *macProcess) Resize(cols, rows int) error {
+	if cols < 1 || rows < 1 || cols > 1000 || rows > 1000 {
+		return runtimeError("INVALID_ARGUMENT")
+	}
+	return runtimeError("UNIMPLEMENTED")
 }
 
 func (p *macProcess) kill(cancelled bool) {
@@ -391,6 +435,9 @@ func (p *macProcess) kill(cancelled bool) {
 	}
 	if err := p.cmd.Process.Kill(); err == nil {
 		p.cancelled = cancelled
+	}
+	if p.stdin != nil {
+		_ = p.stdin.Close()
 	}
 }
 

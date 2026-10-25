@@ -140,6 +140,7 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 		Args:        []string{"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "text", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath, "--setting-sources", "", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--disable-slash-commands", "--no-chrome", "--tools", "Read,Write,Edit", "--model", k.model},
 		Env:         map[string]string{"ANTHROPIC_BASE_URL": input.ModelBaseURL, "ANTHROPIC_API_KEY": input.Sentinel, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"},
 		Stdin:       []byte(input.Task),
+		Interactive: true,
 		ConfigFiles: []runtime.ConfigFile{{RelativePath: "harbor-mcp.json", Content: mcp}, {RelativePath: "harbor-settings.json", Content: settings}},
 	}, nil
 }

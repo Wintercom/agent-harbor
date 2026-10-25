@@ -102,6 +102,12 @@ B 可将 `runtime.NewMacOS()` 和 `claude.New(固定CLI路径, 固定模型名)`
 
 最新验证：`go test -race ./...`、`go vet ./...`、`git diff --check` 通过；真实 Claude 离线测试需 `HARBOR_TEST_CLAUDE=1`，本机 2.1.292 版本/初始化检查通过。真实模型、MCP、完整子进程能力和 Wails 仍待 B 联调。
 
+## 2026-10-25：同会话多轮输入
+
+Runtime 新增 `InteractiveProcess` 和 `LaunchSpec.Interactive`。交互 Kit 启动时保持受控 stdin，不再在首轮任务后关闭；Orchestrator 暴露 `WritePty`/`ResizePty`，校验会话仍处于 running 且确实由交互 Kit 启动，再把后续轮次写入同一进程。交互输出通过既有 `harbor:event` 以 `pty` 载荷回传，停止/销毁时由 Runtime 关闭 stdin 并清理进程。
+
+Claude 与 dsh 的启动规格已声明交互模式；Codex 仍需按其 app-server 协议单独接入，不能把普通一次性 CLI stdin 当作多轮协议。当前 macOS `Resize` 只校验尺寸并返回 `UNIMPLEMENTED`，因为严格 sandbox 尚未接入真实 PTY/窗口大小控制；写入和事件边界已经接通。
+
 ## 2026-10-24：Runtime 资源墓碑
 
 Destroy 成功后保留最小句柄墓碑，使重复 Destroy 继续幂等；同时清空 profile、工作区、私有目录、只读路径和进程引用，避免长时间运行的桌面应用累计敏感元数据。新增测试检查这些字段释放，并确认重复 Destroy 与已销毁句柄执行均符合契约。
