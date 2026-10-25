@@ -57,7 +57,8 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 	name := strings.TrimSpace(in.Name)
 	profileID := strings.TrimSpace(in.ProfileID)
 	origin := strings.TrimSpace(in.Origin)
-	key := in.APIKey
+	// 粘贴常带首尾空白/换行；上游按整串校验，空白会导致「Invalid API key」。
+	key := strings.TrimSpace(in.APIKey)
 	if name == "" || len(key) == 0 {
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
