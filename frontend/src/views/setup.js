@@ -41,7 +41,7 @@ export function mountSetup(root, ctx) {
           <input id="model-profile" value="demo-model" readonly />
         </label>
         <label class="field">API Key（提交后清空）
-          <input id="model-key" type="password" placeholder="任意非空测试 Key" autocomplete="off" />
+          <input id="model-key" type="password" placeholder="示例：mock-model-key-not-secret" autocomplete="off" />
         </label>
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-model">连接模型</button>
@@ -57,7 +57,7 @@ export function mountSetup(root, ctx) {
           <input id="mcp-profile" value="demo-mcp" readonly />
         </label>
         <label class="field">API Key / Token（提交后清空）
-          <input id="mcp-key" type="password" placeholder="任意非空测试 Token" autocomplete="off" />
+          <input id="mcp-key" type="password" placeholder="示例：mock-mcp-token-not-secret" autocomplete="off" />
         </label>
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-mcp">连接 MCP</button>

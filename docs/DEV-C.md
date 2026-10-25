@@ -97,6 +97,10 @@ python3 -m http.server 5173
 - 自检：`./demos/verify-workspace.sh`（可写、可覆盖、无敏感文件名）。
 - mock 选择工作区仍为 `/demo/project`；live 选本目录绝对路径。
 
+### 模型 / MCP 示例填写
+
+见 [demos/README.md](../demos/README.md)「模型 / MCP 填写示例」：mock 可用 `mock-model-key-not-secret` / `mock-mcp-token-not-secret`；live 仅换本机真实凭据，profileId 仍为 `demo-model` / `demo-mcp`。
+
 ---
 
 ## 分工备忘（C）

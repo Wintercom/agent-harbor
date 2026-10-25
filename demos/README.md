@@ -35,6 +35,35 @@ python3 -m http.server 5173
 4. 观察 provisioning → running → 输出 / MCP audit → stopped。
 5. 用场景下拉验证四失败路径。
 
+### 模型 / MCP 填写示例（可复制）
+
+**mock / D4**：任意非空 Key 即可；下列与页面默认显示名一致，便于照念。**不要**把真实 Key 写进仓库或截图。
+
+| 字段 | 模型连接 | MCP 连接 |
+|---|---|---|
+| 显示名 | `演示模型` | `演示 MCP` |
+| profileId（只读） | `demo-model` | `demo-mcp` |
+| API Key / Token | `mock-model-key-not-secret` | `mock-mcp-token-not-secret` |
+
+连接成功后输入框应清空；状态类似：
+
+- 模型：`已连接 · mock-model · demo-model.local`
+- MCP：`已连接 · mock-mcp · demo-mcp.local`
+
+**live / I1（待 B 绑定）**：profileId 仍固定为上表；显示名可自定；Key/Token 用本机已登记凭据，仅粘贴一次。上游 origin 由 B 的固定 profile / 环境变量决定（默认模型 `https://api.deepseek.com`，MCP `https://mcp.example.test`，可用 `HARBOR_DEMO_MODEL_ORIGIN` / `HARBOR_DEMO_MCP_ORIGIN` 覆盖），前端**不能**改 URL。
+
+```text
+# 模型（示例字段，Key 换成本机真实值）
+显示名: 演示模型
+profileId: demo-model
+apiKey: <本机真实模型 Key，勿提交>
+
+# MCP（示例字段，Token 换成本机真实值）
+显示名: 演示 MCP
+profileId: demo-mcp
+apiKey: <本机真实 MCP Token，勿提交>
+```
+
 ### 固定演示任务（可复制）
 
 ```
