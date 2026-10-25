@@ -10,45 +10,56 @@ import {
 
 export function mountSession(root, ctx) {
   root.innerHTML = `
-    <div class="boundary" id="boundary">
-      <div class="row" style="justify-content:space-between;width:100%">
-        <div>
-          <span id="sess-state" class="status-pill">无会话</span>
-          <span class="meta" id="sess-meta"></span>
-        </div>
-        <div class="row">
-          <label class="field inline">当前模型
-            <select id="sess-model"></select>
-          </label>
-          <button type="button" class="btn" id="btn-perm">权限一览</button>
-          <button type="button" class="btn danger" id="btn-stop" disabled>停止</button>
-          <button type="button" class="btn" id="btn-to-home">回 HOME</button>
-        </div>
+    <div id="sess-empty" class="empty-state">
+      <p>当前没有打开的会话。从 HOME 进入工作台，或创建新会话。</p>
+      <div class="actions">
+        <button type="button" class="btn" id="sess-empty-home">回 HOME</button>
+        <button type="button" class="btn primary" id="sess-empty-wizard">新会话</button>
       </div>
-      <p class="meta" id="sess-hint-line"></p>
     </div>
-    <div class="session-grid">
-      <div class="pty-panel">
-        <div class="pty-toolbar meta">终端 / Agent 输出（PTY）</div>
-        <div id="sess-pty" class="pty" tabindex="0"></div>
-        <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="输入后 Enter 发送到 PTY（mock）"></textarea>
+    <div id="sess-workbench" class="hidden">
+      <div class="boundary" id="boundary">
+        <div class="row" style="justify-content:space-between;width:100%">
+          <div>
+            <span id="sess-state" class="status-pill">无会话</span>
+            <span class="meta" id="sess-meta"></span>
+          </div>
+          <div class="row">
+            <label class="field inline">当前模型
+              <select id="sess-model"></select>
+            </label>
+            <button type="button" class="btn" id="btn-perm">权限一览</button>
+            <button type="button" class="btn danger" id="btn-stop" disabled>停止</button>
+            <button type="button" class="btn" id="btn-to-home">回 HOME</button>
+          </div>
+        </div>
+        <p class="meta" id="sess-hint-line"></p>
       </div>
-      <aside class="session-side">
-        <h3>本趟摘要</h3>
-        <ul class="meta" id="sess-stats">
-          <li>输出块：<span id="stat-out">0</span></li>
-          <li>审计：<span id="stat-audit">0</span></li>
-        </ul>
-        <h3>最近活动</h3>
-        <ul id="sess-audit" class="audit-list"></ul>
-        <p class="meta warn hidden" id="sess-hint"></p>
-        <p class="meta" id="sess-error"></p>
-      </aside>
+      <div class="session-grid">
+        <div class="pty-panel">
+          <div class="pty-toolbar meta">终端 / Agent 输出（PTY）</div>
+          <div id="sess-pty" class="pty" tabindex="0"></div>
+          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="输入后 Enter 发送到 PTY（mock）"></textarea>
+        </div>
+        <aside class="session-side">
+          <h3>本趟摘要</h3>
+          <ul class="meta" id="sess-stats">
+            <li>输出块：<span id="stat-out">0</span></li>
+            <li>审计：<span id="stat-audit">0</span></li>
+          </ul>
+          <h3>最近活动</h3>
+          <ul id="sess-audit" class="audit-list"></ul>
+          <p class="meta warn hidden" id="sess-hint"></p>
+          <p class="meta" id="sess-error"></p>
+        </aside>
+      </div>
+      <div id="perm-drawer" class="perm-drawer hidden"></div>
     </div>
-    <div id="perm-drawer" class="perm-drawer hidden"></div>
   `;
 
   const els = {
+    empty: root.querySelector("#sess-empty"),
+    workbench: root.querySelector("#sess-workbench"),
     state: root.querySelector("#sess-state"),
     meta: root.querySelector("#sess-meta"),
     hintLine: root.querySelector("#sess-hint-line"),
@@ -72,6 +83,32 @@ export function mountSession(root, ctx) {
       ? document.getElementById("modal-root")
       : null;
 
+  function showEmpty() {
+    els.empty?.classList.remove("hidden");
+    els.workbench?.classList.add("hidden");
+  }
+
+  function showWorkbench() {
+    els.empty?.classList.add("hidden");
+    els.workbench?.classList.remove("hidden");
+  }
+
+  const emptyHome = root.querySelector("#sess-empty-home");
+  if (emptyHome && typeof emptyHome.addEventListener === "function") {
+    emptyHome.addEventListener("click", () => ctx.navigate?.("home"));
+  }
+  const emptyWizard = root.querySelector("#sess-empty-wizard");
+  if (emptyWizard && typeof emptyWizard.addEventListener === "function") {
+    emptyWizard.addEventListener("click", () => ctx.navigate?.("wizard"));
+  }
+
+  function notifyResize() {
+    if (!ctx.state.sessionId || !els.pty) return;
+    const cols = Math.max(40, Math.floor((els.pty.clientWidth || 640) / 8));
+    const rows = Math.max(10, Math.floor((els.pty.clientHeight || 240) / 16));
+    api.resizePty({ sessionId: ctx.state.sessionId, cols, rows }).catch(() => {});
+  }
+
   async function fillModels() {
     if (!els.model) return;
     if (typeof document === "undefined" || !document.createElement) return;
@@ -93,12 +130,16 @@ export function mountSession(root, ctx) {
 
   function renderSnapshot(s) {
     if (!s) {
-      els.state.textContent = "无会话";
-      els.state.className = "status-pill";
-      els.meta.textContent = "";
-      els.stop.disabled = true;
+      showEmpty();
+      if (els.state) {
+        els.state.textContent = "无会话";
+        els.state.className = "status-pill";
+      }
+      if (els.meta) els.meta.textContent = "";
+      if (els.stop) els.stop.disabled = true;
       return;
     }
+    showWorkbench();
     els.state.textContent = s.state;
     els.state.className = `status-pill ${s.state}`;
     els.meta.textContent = `${s.agentId || ""} · ${s.workspace || ""} · 挂载:${s.mountMode || "direct"} · ${s.sessionId}`;
@@ -259,28 +300,42 @@ export function mountSession(root, ctx) {
     };
   }
 
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", notifyResize);
+  }
+
+  // 初始无会话
+  showEmpty();
+
   return {
     resetForNewSession(snapshot) {
       tail = new OutputTail();
       outCount = 0;
       auditCount = 0;
-      els.statOut.textContent = "0";
-      els.statAudit.textContent = "0";
-      els.pty.textContent = "";
-      els.audit.innerHTML = "";
-      els.error.textContent = "";
-      els.hint.classList.add("hidden");
+      if (els.statOut) els.statOut.textContent = "0";
+      if (els.statAudit) els.statAudit.textContent = "0";
+      if (els.pty) els.pty.textContent = "";
+      if (els.audit) els.audit.innerHTML = "";
+      if (els.error) els.error.textContent = "";
+      els.hint?.classList.add("hidden");
       hidePermissionModal(modalRoot);
       if (snapshot) {
         ctx.state.lastSnapshot = snapshot;
         api.activateSession(snapshot);
         renderSnapshot(snapshot);
+        notifyResize();
+      } else {
+        renderSnapshot(null);
       }
       fillModels();
     },
+    showEmpty,
     destroy() {
       unsub();
       hidePermissionModal(modalRoot);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("resize", notifyResize);
+      }
     },
   };
 }

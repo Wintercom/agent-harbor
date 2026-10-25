@@ -48,9 +48,13 @@ const ctx = {
     lastSnapshot: null,
     sessionHistory: [],
     health: null,
+    uiPrefs: { sidebarCollapsed: false, autoCollapseWorkbench: true },
   },
   navigate(name) {
     navigate(name);
+  },
+  applyUIPrefs(prefs) {
+    applyUIPrefs(prefs);
   },
   async stopSession(id) {
     const res = await api.stopSession(id);
@@ -186,7 +190,7 @@ function isWailsShell() {
   return typeof window !== "undefined" && !!window._wails;
 }
 
-function setSidebarCollapsed(collapsed) {
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
   sidebar.classList.toggle("collapsed", collapsed);
   const btn = document.getElementById("sidebar-toggle");
   if (btn) {
@@ -196,6 +200,22 @@ function setSidebarCollapsed(collapsed) {
   try {
     localStorage.setItem("harbor-sidebar-collapsed", collapsed ? "1" : "0");
   } catch {}
+  if (persist) {
+    ctx.state.uiPrefs = {
+      ...(ctx.state.uiPrefs || {}),
+      sidebarCollapsed: !!collapsed,
+    };
+    api.setUIPrefs(ctx.state.uiPrefs).catch(() => {});
+  }
+}
+
+function applyUIPrefs(prefs) {
+  if (!prefs) return;
+  ctx.state.uiPrefs = {
+    sidebarCollapsed: !!prefs.sidebarCollapsed,
+    autoCollapseWorkbench: prefs.autoCollapseWorkbench !== false,
+  };
+  setSidebarCollapsed(!!prefs.sidebarCollapsed, { persist: false });
 }
 
 function navigate(name, opts = {}) {
@@ -213,9 +233,18 @@ function navigate(name, opts = {}) {
   if (name === "models") mountModels(views.models, ctx);
   if (name === "tools") mountTools(views.tools, ctx);
   if (name === "settings") mountSettings(views.settings, ctx);
-  if (name === "session" && opts.autoCollapse) {
-    const pref = localStorage.getItem("harbor-sidebar-user-expanded");
-    if (pref !== "1") setSidebarCollapsed(true);
+  if (name === "session") {
+    if (!ctx.state.sessionId) {
+      sessionView?.showEmpty?.() || sessionView?.resetForNewSession?.(null);
+    }
+    if (opts.autoCollapse) {
+      const auto = ctx.state.uiPrefs?.autoCollapseWorkbench !== false;
+      let userExpanded = false;
+      try {
+        userExpanded = localStorage.getItem("harbor-sidebar-user-expanded") === "1";
+      } catch {}
+      if (auto && !userExpanded) setSidebarCollapsed(true);
+    }
   }
   if (ctx.state.health && ctx.state.health.available === false && name === "wizard") {
     showBlock(ctx.state.health.reason);
@@ -284,10 +313,18 @@ async function boot() {
   syncBadge();
 
   try {
-    if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
-      setSidebarCollapsed(true);
+    const prefsRes = await api.getUIPrefs();
+    if (prefsRes?.prefs) applyUIPrefs(prefsRes.prefs);
+    else if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
+      setSidebarCollapsed(true, { persist: false });
     }
-  } catch {}
+  } catch {
+    try {
+      if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
+        setSidebarCollapsed(true, { persist: false });
+      }
+    } catch {}
+  }
 
   document.getElementById("sidebar-toggle").onclick = () => {
     const next = !sidebar.classList.contains("collapsed");

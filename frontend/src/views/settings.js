@@ -26,6 +26,20 @@ export function mountSettings(root, ctx) {
     </section>
 
     <section class="card" style="margin-top:12px">
+      <h3>外观与侧栏</h3>
+      <label class="check-row">
+        <input type="checkbox" id="set-sidebar-collapsed" />
+        默认收缩侧栏
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="set-auto-collapse" />
+        进入工作台时自动收缩侧栏
+      </label>
+      <p class="meta">写入 Get/SetUIPrefs（mock 落 localStorage）。快捷键 ⌘B / Ctrl+B。</p>
+      <span class="meta" id="set-prefs-status"></span>
+    </section>
+
+    <section class="card" style="margin-top:12px">
       <h3>网络安全 · 已记住的网站</h3>
       <div id="set-hosts" class="meta">加载中…</div>
       <button type="button" class="btn" id="btn-reload-hosts">刷新</button>
@@ -110,6 +124,34 @@ export function mountSettings(root, ctx) {
   root.querySelector("#set-mount").onchange = (e) => {
     localStorage.setItem("harbor-default-mount", e.target.value);
   };
+
+  async function loadPrefs() {
+    const res = await api.getUIPrefs();
+    const prefs = res.prefs || ctx.state.uiPrefs || {};
+    root.querySelector("#set-sidebar-collapsed").checked = !!prefs.sidebarCollapsed;
+    root.querySelector("#set-auto-collapse").checked =
+      prefs.autoCollapseWorkbench !== false;
+  }
+
+  async function savePrefs() {
+    const prefs = {
+      sidebarCollapsed: root.querySelector("#set-sidebar-collapsed").checked,
+      autoCollapseWorkbench: root.querySelector("#set-auto-collapse").checked,
+    };
+    const res = await api.setUIPrefs(prefs);
+    const st = root.querySelector("#set-prefs-status");
+    if (res.error) {
+      st.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+      return;
+    }
+    ctx.state.uiPrefs = res.prefs || prefs;
+    ctx.applyUIPrefs?.(ctx.state.uiPrefs);
+    st.innerHTML = `<span class="ok">已保存</span>`;
+  }
+
+  root.querySelector("#set-sidebar-collapsed").onchange = savePrefs;
+  root.querySelector("#set-auto-collapse").onchange = savePrefs;
+  loadPrefs();
   const sel = root.querySelector("#scenario");
   if (sel) {
     sel.value = api.getMockScenario();
