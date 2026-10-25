@@ -187,3 +187,5 @@ Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `Agen
 - 新增真实 dsh + Seatbelt + Gate + 受控 HTTP 上游的两轮验证：第二轮上游请求包含第一轮用户消息及 assistant 回复，且没有新建 Agent 进程；无 MCP 可正常运行。此测试证明受控协议和上下文传递，不代表远程模型回答质量或真实认证 MCP 已验收。
 
 当前未关闭项：Codex Kit 在全量分支的安全移植及受控子进程方案、真实 Agent TUI 与 C 工作台联调、真实远程模型/认证 MCP、扩权 Gate/Policy 与页面完整联调、对外安全证据索引。microVM 仍为 backlog。上述缺口未完成前，不将 A 总体标为完成。
+
+同步 B 最新提交后，删除了另一份未经 Gate 原子校验的 SwitchModel 实现，旧 `SetModelAccount` 入口也统一转交受校验方法。Gate 重定向触发的 `Action` 已改为 `connect`，真实 HTTP→Gate→Orchestrator 测试确认挂起、决策及拒绝恢复；重定向仍不可因批准而自动携带凭据。会话权限一览由编排中的实际 Policy 构建，clone 项目规则标识仍为原工作区。证据索引见 [研发 A 交付状态](A-DELIVERY-STATUS.md)。

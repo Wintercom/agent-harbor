@@ -23,6 +23,10 @@ func (s *fullSession) Destroy(_ context.Context, id string) (contracts.SessionSn
 }
 func (s *fullSession) Health(context.Context) error { s.healthCalls++; return s.err }
 
+func (s *fullSession) Boundary(context.Context, string) (contracts.PermissionOverview, error) {
+	return contracts.PermissionOverview{SessionID: "one", AllowedHosts: []string{"selected.example.test"}}, s.err
+}
+
 type healthRuntime struct {
 	runtime.Runtime
 	service *fullSession
@@ -42,6 +46,10 @@ func TestSessionCapabilitiesForwardToOrchestrator(t *testing.T) {
 	destroyed := api.DestroySession("two")
 	if destroyed.Error != nil || destroyed.Session == nil || svc.destroyed != "two" {
 		t.Fatalf("%+v", destroyed)
+	}
+	boundary := api.GetPermissionOverview("one")
+	if boundary.Error != nil || boundary.Overview == nil || len(boundary.Overview.AllowedHosts) != 1 || boundary.Overview.AllowedHosts[0] != "selected.example.test" {
+		t.Fatalf("边界未转交编排: %+v", boundary)
 	}
 	health := api.GetRuntimeHealth()
 	if health.Error != nil || !health.Available || svc.healthCalls != 1 {

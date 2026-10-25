@@ -14,6 +14,7 @@ import (
 
 type SessionService interface {
 	Health(context.Context) error
+	Boundary(context.Context, string) (contracts.PermissionOverview, error)
 	WithConnection(context.Context, func(context.Context) error) error
 	Create(context.Context, contracts.SessionSpec) (contracts.SessionSnapshot, error)
 	Get(context.Context, string) (contracts.SessionSnapshot, error)

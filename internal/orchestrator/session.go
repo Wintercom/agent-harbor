@@ -47,6 +47,7 @@ type session struct {
 	wait           <-chan runtime.Exit
 	process        runtime.Process
 	interactive    bool
+	boundary       contracts.PermissionOverview
 	permissions    map[string]*permissionRequest
 	cleanupDone    chan struct{}
 	finished       chan struct{}
@@ -552,6 +553,7 @@ func (o *Service) provision(s *session) error {
 	}
 	o.mu.Lock()
 	s.snapshot.Workspace = p.Workspace
+	s.boundary = sessionBoundary(p, mcps)
 	o.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err

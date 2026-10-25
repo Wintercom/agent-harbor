@@ -101,7 +101,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		if locHost != "" && rt.spec.RequestPermission != nil {
 			decision, perr := rt.spec.RequestPermission(r.Context(), contracts.PermissionNeeded{
 				Target: locHost,
-				Action: "请求跟随跨主机重定向",
+				Action: "connect",
 			})
 			if perr == nil && (decision == "once" || decision == "project") {
 				_ = p.h.AllowExtraHost(p.sid, locHost, decision)
