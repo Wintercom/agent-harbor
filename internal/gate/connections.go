@@ -176,6 +176,9 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	if prof.Kind == "mcp" {
 		return c.probeMCP(ctx, prof, apiKey)
 	}
+	if prof.Protocol == "openai-responses" {
+		return c.probeOpenAIResponses(ctx, prof, apiKey)
+	}
 	// 自定义：先 GET /v1/models 验 Key（与模型名无关），再 POST /v1/messages。
 	if prof.ID == policy.ProfileCustom {
 		if err := c.probeModelsList(ctx, prof, apiKey); err != nil {
@@ -211,6 +214,24 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 		return last
 	}
 	return annotateAuthKeyMeta(ErrUpstreamAuth, apiKey)
+}
+
+func (c *Connections) probeOpenAIResponses(ctx context.Context, prof policy.FixedProfile, apiKey string) error {
+	body, _ := json.Marshal(map[string]any{"model": prof.Model, "input": "Reply OK", "max_output_tokens": 8, "store": false})
+	resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body, modelAuthBearer)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		ID     string `json:"id"`
+		Object string `json:"object"`
+	}
+	raw, err := readProbeBody(resp)
+	if err != nil || json.Unmarshal(raw, &result) != nil || result.ID == "" || result.Object != "response" {
+		return ErrUpstreamDown
+	}
+	return ctx.Err()
 }
 
 // probeModelsList 用 GET /v1/models 验证 Key；多认证头轮试（LiteLLM 部署差异大）。

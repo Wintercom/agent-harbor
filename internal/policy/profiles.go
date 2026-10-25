@@ -155,7 +155,9 @@ type FixedProfile struct {
 // DefaultProfiles 返回两天版固定组合。
 // 必须显式登记 origin、模型及工具白名单；没有占位供应商或隐式全工具授权。
 func DefaultProfiles() map[string]FixedProfile {
-	modelOrigin := envOr("HARBOR_DEMO_MODEL_ORIGIN", "")
+	// demo-model 由 Claude Kit 使用。优先采用 Claude 变量，同时兼容旧 DEMO 变量。
+	modelOrigin := envFirst("HARBOR_CLAUDE_MODEL_ORIGIN", "HARBOR_DEMO_MODEL_ORIGIN")
+	modelBasePath := envFirst("HARBOR_CLAUDE_MODEL_BASE_PATH", "HARBOR_DEMO_MODEL_BASE_PATH")
 	mcpOrigin := envOr("HARBOR_DEMO_MCP_ORIGIN", "")
 	tools := []string{}
 	for _, tool := range strings.Split(os.Getenv("HARBOR_DEMO_MCP_TOOLS"), ",") {
@@ -165,7 +167,7 @@ func DefaultProfiles() map[string]FixedProfile {
 	}
 	return map[string]FixedProfile{
 		ProfileDSHModel:  {ID: ProfileDSHModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL")), Origin: envOr("HARBOR_DSH_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_DSH_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
-		ProfileDemoModel: {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
+		ProfileDemoModel: {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), BasePath: modelBasePath, Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
 		ProfileDemoMCP:   {ID: ProfileDemoMCP, Kind: "mcp", Protocol: "streamable-http", Origin: mcpOrigin, Host: hostOfOrigin(mcpOrigin), Paths: []string{"/mcp"}, TestPath: "/mcp", Tools: tools},
 	}
 }
@@ -189,7 +191,7 @@ func (p FixedProfile) ValidConnection() bool {
 		return false
 	}
 	if p.Kind == "model" {
-		return p.Protocol == "anthropic" && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
+		return (p.Protocol == "anthropic" || p.Protocol == "openai-responses") && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
 	}
 	return p.Kind == "mcp" && p.Protocol == "streamable-http" && len(p.Tools) > 0
 }
@@ -210,11 +212,29 @@ func ValidBasePath(path string) bool {
 	return true
 }
 
+// JoinBasePath 将受信路径前缀与请求路径拼接一次，避免重复添加 provider 前缀。
+func JoinBasePath(base, path string) string {
+	base = strings.TrimRight(base, "/")
+	if base == "" || path == base || strings.HasPrefix(path, base+"/") {
+		return path
+	}
+	return base + "/" + strings.TrimLeft(path, "/")
+}
+
 func envOr(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return strings.TrimRight(v, "/")
 	}
 	return strings.TrimRight(fallback, "/")
+}
+
+func envFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return ""
 }
 
 func hostOfOrigin(origin string) string {

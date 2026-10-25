@@ -67,7 +67,7 @@ func (r *MacOS) Health(ctx context.Context) error {
 	if err := os.WriteFile(inside, []byte("harbor-health-fixture"), 0600); err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil)
+	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil, false)
 	if err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
@@ -153,7 +153,7 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 		}
 		workspace = clonePath
 	}
-	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP)
+	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP, spec.AllowChildProcesses)
 	if err != nil {
 		return Handle{}, err
 	}

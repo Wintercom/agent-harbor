@@ -43,13 +43,13 @@ wails3 task darwin:package  # macOS .app 包与本机 ad-hoc 签名
 go test -tags production,harbor_desktop -run TestNativeDesktopBindingsAndShutdown -v .
 ```
 
-启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude/dsh Kit 与 Orchestrator。固定上游必须通过 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN` 显式登记 HTTPS origin（仅 scheme + host/port，不含路径），同时设置 `HARBOR_CLAUDE_MODEL` 和逗号分隔的 `HARBOR_DEMO_MCP_TOOLS` 人工工具白名单；可执行文件可用 `HARBOR_CLAUDE_BIN`。未配置时拒绝连接，不默认访问供应商或占位服务。当前仅支持 Anthropic `/v1/messages` 和 Bearer 认证的 Streamable HTTP `/mcp`（2025-03-26）；连接模型会发送最多 1 token 的探测消息。真实服务组合仍需团队登记验收。
+启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude/dsh Kit 与 Orchestrator。Claude `demo-model` 支持通过 `HARBOR_CLAUDE_MODEL_ORIGIN`、`HARBOR_CLAUDE_MODEL_BASE_PATH`、`HARBOR_CLAUDE_MODEL` 登记上游；未设置前两项时兼容旧变量 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MODEL_BASE_PATH`。origin 仅允许 scheme + host/port，不含路径；路径前缀（如 DeepSeek Anthropic 兼容接口的 `/anthropic`）单独放在 `BASE_PATH`。固定 MCP 上游通过 `HARBOR_DEMO_MCP_ORIGIN` 和逗号分隔的 `HARBOR_DEMO_MCP_TOOLS` 登记；可执行文件可用 `HARBOR_CLAUDE_BIN`。未配置时拒绝连接，不默认访问供应商或占位服务。当前仅支持 Anthropic `/v1/messages` 和 Bearer 认证的 Streamable HTTP `/mcp`（2025-03-26）；连接模型会发送最多 1 token 的探测消息。真实服务组合仍需团队登记验收。
 
 ## DeepSeek dsh
 
 已接入官方 `@deepseek-ai/dsh@0.2.1-rc.2`，使用专用 Node `v26.12.1`。支持桌面选择 Agent、单任务、文件 Read/Write/Edit、Gate 模型流式调用、认证 MCP、停止清理和失败恢复。目标平台仍为非 root 的 Darwin 25 / arm64，不开放 Bash、子进程或插件安装。
 
-首次执行 `bash scripts/install-dsh.sh`，按 [dsh 安装、配置和验收](docs/DSH-INTEGRATION.md) 设置独立安装路径、`HARBOR_DSH_MODEL_ORIGIN`、`HARBOR_DSH_MODEL_BASE_PATH`、`HARBOR_DSH_MODEL` 与 MCP 白名单，再构建启动。配置页选择 `DeepSeek dsh` 后连接 `dsh-model`；Key 仅在桌面输入。
+首次执行 `bash scripts/install-dsh.sh`，按 [dsh 安装、配置和验收](docs/DSH-INTEGRATION.md) 设置独立安装路径、`HARBOR_DSH_MODEL_ORIGIN`、`HARBOR_DSH_MODEL_BASE_PATH`、`HARBOR_DSH_MODEL` 与 MCP 白名单，再构建启动。Codex 使用本机 `codex` CLI；设置 `HARBOR_CODEX_BIN`、`HARBOR_CODEX_MODEL_ORIGIN`、`HARBOR_CODEX_MODEL_BASE_PATH` 和 `HARBOR_CODEX_MODEL` 后选择 `OpenAI Codex`，连接 `codex-model`。配置页选择 `DeepSeek dsh` 后连接 `dsh-model`；Key 仅在桌面输入。
 
 真实 dsh + 受控上游已完成文件/MCP、多轮运行、停止和认证故障恢复验证；真实 DeepSeek 账号与远程 MCP 验收仍待测试凭据。
 

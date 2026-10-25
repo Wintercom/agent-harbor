@@ -8,12 +8,13 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/liyufei916/agent-harbor/internal/kits"
 	"github.com/liyufei916/agent-harbor/internal/kits/claude"
+	"github.com/liyufei916/agent-harbor/internal/kits/codex"
 	"github.com/liyufei916/agent-harbor/internal/kits/dsh"
 	"github.com/liyufei916/agent-harbor/internal/orchestrator"
 	"github.com/liyufei916/agent-harbor/internal/runtime"
 )
 
-// AttachOrchestrator 用研发 A 的 Runtime、Claude Kit 与 Orchestrator 接上本进程的 Gate/Policy/Secrets。
+// AttachOrchestrator 用研发 A 的 Runtime、Claude/Codex/dsh Kit 与 Orchestrator 接上本进程的 Gate/Policy/Secrets。
 // appCtx 是应用级 context，会话任务从它派生；不要传入已取消的请求 context。
 // 模型名来自 HARBOR_CLAUDE_MODEL，连接配置必须显式登记；检测仍可在未配置账号时独立运行。
 func (a *App) AttachOrchestrator(appCtx context.Context) error {
@@ -36,7 +37,15 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if err != nil {
 		return err
 	}
-	agentKits := map[string]kits.Kit{"claude": kit, "dsh": dshKit}
+	codexModel := strings.TrimSpace(os.Getenv("HARBOR_CODEX_MODEL"))
+	if codexModel == "" {
+		codexModel = "gpt-5-codex"
+	}
+	codexKit, err := codex.New(os.Getenv("HARBOR_CODEX_BIN"), codexModel)
+	if err != nil {
+		return err
+	}
+	agentKits := map[string]kits.Kit{"claude": kit, "codex": codexKit, "dsh": dshKit}
 	reg, err := kits.NewRegistry(agentKits)
 	if err != nil {
 		return err

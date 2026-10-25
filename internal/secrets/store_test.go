@@ -77,6 +77,20 @@ func TestDeleteThenResolveFails(t *testing.T) {
 	}
 }
 
+func TestListFiltersWithoutReturningKeys(t *testing.T) {
+	s := NewStore()
+	ctx := context.Background()
+	modelID, _ := s.Put(ctx, contracts.AccountInfo{Kind: "model", Name: "model", ProfileID: "demo-model", Host: "model.test"}, []byte("model-key"))
+	_, _ = s.Put(ctx, contracts.AccountInfo{Kind: "mcp", Name: "mcp", ProfileID: "demo-mcp", Host: "mcp.test"}, []byte("mcp-key"))
+	models := s.List(ctx, "model")
+	if len(models) != 1 || models[0].ID != modelID || models[0].Kind != "model" {
+		t.Fatalf("models=%+v", models)
+	}
+	if _, err := s.Resolve(ctx, modelID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClear(t *testing.T) {
 	s := NewStore()
 	ctx := context.Background()

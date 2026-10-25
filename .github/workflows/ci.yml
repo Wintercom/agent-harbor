@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   # 不限制目标分支：所有分支的 PR 都必须经过同一套检查。
   pull_request:
 

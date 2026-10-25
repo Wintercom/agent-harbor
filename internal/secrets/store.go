@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -128,6 +129,21 @@ func (s *Store) Lookup(_ context.Context, id string) (contracts.AccountInfo, err
 	return rec.meta, nil
 }
 
+// List 返回脱敏账号元信息；kind 为空时返回全部账号。
+func (s *Store) List(_ context.Context, kind string) []contracts.AccountInfo {
+	want := strings.TrimSpace(kind)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]contracts.AccountInfo, 0, len(s.byID))
+	for _, rec := range s.byID {
+		if want == "" || rec.meta.Kind == want {
+			out = append(out, rec.meta)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 // Clear 在应用退出时清空全部凭据。
 func (s *Store) Clear() {
 	s.mu.Lock()
@@ -144,19 +160,4 @@ func (s *Store) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.byID)
-}
-
-// List 返回脱敏账号元信息（无密钥）。kind 为 model|mcp|""（全部）。
-func (s *Store) List(_ context.Context, kind string) []contracts.AccountInfo {
-	want := strings.TrimSpace(kind)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]contracts.AccountInfo, 0, len(s.byID))
-	for _, rec := range s.byID {
-		if want != "" && rec.meta.Kind != want {
-			continue
-		}
-		out = append(out, rec.meta)
-	}
-	return out
 }

@@ -32,17 +32,26 @@ func runtimeError(code string) *contracts.AppError {
 
 var permittedEnv = map[string]bool{
 	"DSH_HOME": true, "DSH_TELEMETRY_DISABLED": true, "DEEPSEEK_API_KEY": true,
+	"CODEX_HOME": true, "OPENAI_API_KEY": true,
 	"ANTHROPIC_API_KEY": true, "ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true,
 	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": true, "CLAUDE_CODE_SIMPLE": true,
 	"DISABLE_AUTOUPDATER": true, "DISABLE_TELEMETRY": true, "DISABLE_ERROR_REPORTING": true,
 }
 
 func launchEnvironment(home string, extra map[string]string) ([]string, error) {
-	result := []string{"HOME=" + home, "TMPDIR=" + filepath.Join(home, "tmp"), "PATH=/usr/bin:/bin", "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8"}
+	path := "/usr/bin:/bin"
+	if extra["CODEX_HOME"] == filepath.Join(home, "codex") {
+		// 仅 Codex 受控 profile 需要宿主工具链；process-exec 仍由 Seatbelt 白名单约束。
+		path = "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin"
+	}
+	result := []string{"HOME=" + home, "TMPDIR=" + filepath.Join(home, "tmp"), "PATH=" + path, "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8"}
 	result = append(result, "CLAUDE_CODE_TMPDIR="+filepath.Join(home, "tmp"))
 	keys := make([]string, 0, len(extra))
 	for key, value := range extra {
 		if key == "DSH_HOME" && value != filepath.Join(home, "dsh") || key == "DSH_TELEMETRY_DISABLED" && value != "1" {
+			return nil, runtimeError("INVALID_ARGUMENT")
+		}
+		if key == "CODEX_HOME" && value != filepath.Join(home, "codex") {
 			return nil, runtimeError("INVALID_ARGUMENT")
 		}
 		if !permittedEnv[key] || strings.ContainsRune(value, 0) || len(value) > 32768 {

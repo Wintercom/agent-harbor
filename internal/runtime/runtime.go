@@ -8,11 +8,12 @@ import (
 )
 
 type RuntimeSpec struct {
-	SessionID     string
-	Workspace     string
-	MountMode     string
-	AllowedTCP    []string
-	ReadOnlyPaths []string
+	SessionID           string
+	Workspace           string
+	MountMode           string
+	AllowedTCP          []string
+	ReadOnlyPaths       []string
+	AllowChildProcesses bool // 仅显式声明的 Kit 可启用受控子进程；默认 false
 }
 
 type Handle struct {
@@ -44,6 +45,12 @@ type Runtime interface {
 	Create(context.Context, RuntimeSpec) (Handle, error)
 	Exec(context.Context, Handle, LaunchSpec, func(contracts.OutputData)) (Process, error)
 	Destroy(context.Context, Handle) error
+}
+
+// HealthChecker 是支持按 Kit 能力选择隔离 profile 的 Runtime 扩展接口。
+// 不实现时，编排层回退到 Runtime.Health 的默认严格检查。
+type HealthChecker interface {
+	HealthFor(context.Context, bool) error
 }
 
 type ConfigFile struct {
