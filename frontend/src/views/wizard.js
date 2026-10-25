@@ -170,7 +170,15 @@ export function mountWizard(root, ctx) {
       };
       wrap.querySelector("#wz-next").disabled = !draft.workspace;
     } else if (step === 1) {
-      wrap.querySelector("#wz-redetect").onclick = () => paint();
+      wrap.querySelector("#wz-redetect").onclick = async () => {
+        const btn = wrap.querySelector("#wz-redetect");
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "检测中…";
+        }
+        await refreshAgents();
+        await paint();
+      };
       wrap.querySelectorAll(".agent-card[data-id]").forEach((btn) => {
         btn.onclick = () => {
           draft.agentId = btn.getAttribute("data-id");

@@ -1,6 +1,6 @@
 # Claude Code 适配
 
-负责人：A。两天版优先适配的唯一必交 Agent；已实现固定 2.1.292 的离线检测与启动规格。严格环境版本/帮助、非交互初始化已实测；真实模型/MCP 兼容未验证。
+负责人：A。两天版优先适配的唯一必交 Agent；离线 Detect 默认按**能力**（`--bare --help` + 必需参数）放行，版本号写入 `AgentInfo.version`。文档基线仍记 `2.1.292`；若需钉死版本设 `HARBOR_CLAUDE_REQUIRE_VERSION`。GUI 缺 PATH 时会尝试 `/opt/homebrew/bin/claude`。真实模型/MCP 兼容未验证。
 
 ## 当前实现
 

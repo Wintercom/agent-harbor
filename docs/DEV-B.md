@@ -196,6 +196,10 @@ go test ./internal/desktop ./internal/secrets
 | MCP 网关 | 与模型反代同一套 `followCrossHostRedirect`（一跳、无凭据、DNS/IP） |
 | Connect | 非 `AllowInsecureLoopback` 的 profile 在探测前 `ValidatePublicHostname` |
 
+## 2026-10-25：Claude Detect 联调修复（配合 A Kit）
+
+本机常见：`claude --version` 为 `2.1.69` 而旧 Detect 硬钉 `2.1.292`，且帮助已无 `--permission-prompts`，导致「重新检测」一直不可用。现改为能力检测 + 明确 reason；`HARBOR_CLAUDE_BIN` / Homebrew 路径回退；可选 `HARBOR_CLAUDE_REQUIRE_VERSION` 钉版本。
+
 **仍未完**：真实 IdP / 模型 / MCP 的 I1 live 证据；PTY 真终端（A）。
 
 ```sh

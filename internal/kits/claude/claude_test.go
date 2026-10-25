@@ -44,10 +44,13 @@ func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
 	if strings.Contains(args, input().Task) || strings.Contains(args, sentinel) {
 		t.Fatal("任务或令牌进入命令行")
 	}
-	for _, flag := range []string{"--bare", "--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts none", "--tools Read,Write,Edit"} {
+	for _, flag := range []string{"--bare", "--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--permission-mode dontAsk", "--tools Read,Write,Edit"} {
 		if !strings.Contains(args, flag) {
 			t.Fatalf("缺少限制参数 %s", flag)
 		}
+	}
+	if strings.Contains(args, "--permission-prompts") {
+		t.Fatal("新 CLI 已移除 --permission-prompts，不应再传入")
 	}
 	if launch.Env["ANTHROPIC_API_KEY"] != sentinel || launch.Env["ANTHROPIC_BASE_URL"] != input().ModelBaseURL {
 		t.Fatal("模型未指向 Gate")
@@ -142,8 +145,38 @@ func TestDetectFailsClosed(t *testing.T) {
 		k.inspect = inspect
 		info, err := k.Detect(context.Background())
 		if err != nil || info.Agent.Available || strings.Contains(info.Agent.Reason, "内部错误") {
-			t.Fatal("检测失败未关闭或泄漏原始错误")
+			t.Fatalf("检测失败未关闭或泄漏原始错误: %+v %v", info.Agent, err)
 		}
+	}
+}
+
+func TestDetectCapabilityBasedAcceptsCompatibleVersion(t *testing.T) {
+	k, _ := New("/usr/bin/true", "model")
+	helpParts := append([]string{"Usage:"}, requiredHelpFlags...)
+	k.inspect = func(_ context.Context, _ string, args []string) (string, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return "2.1.69 (Claude Code)", nil
+		}
+		return strings.Join(helpParts, " "), nil
+	}
+	info, err := k.Detect(context.Background())
+	if err != nil || !info.Agent.Available || info.Agent.Version != "2.1.69" {
+		t.Fatalf("%+v %v", info.Agent, err)
+	}
+}
+
+func TestDetectRequireVersionEnv(t *testing.T) {
+	t.Setenv("HARBOR_CLAUDE_REQUIRE_VERSION", "2.1.292")
+	k, _ := New("/usr/bin/true", "model")
+	k.inspect = func(_ context.Context, _ string, args []string) (string, error) {
+		if len(args) > 0 && args[0] == "--version" {
+			return "2.1.69 (Claude Code)", nil
+		}
+		return strings.Join(requiredHelpFlags, " "), nil
+	}
+	info, err := k.Detect(context.Background())
+	if err != nil || info.Agent.Available || !strings.Contains(info.Agent.Reason, "2.1.69") || !strings.Contains(info.Agent.Reason, "2.1.292") {
+		t.Fatalf("%+v %v", info.Agent, err)
 	}
 }
 
@@ -163,7 +196,7 @@ func TestInstalledCLIInStrictRuntime(t *testing.T) {
 	if err != nil || !info.Agent.Available {
 		help, helpErr := k.inspect(context.Background(), path, []string{"--bare", "--help"})
 		t.Logf("受限帮助检测：字节=%d 错误=%v", len(help), helpErr)
-		for _, flag := range []string{"--bare", "--print", "--strict-mcp-config", "--mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts", "--permission-mode", "--disable-slash-commands", "--tools"} {
+		for _, flag := range requiredHelpFlags {
 			if !strings.Contains(help, flag) {
 				t.Logf("帮助缺少参数：%s", flag)
 			}
