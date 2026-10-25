@@ -177,6 +177,7 @@ export function mountModels(root, ctx, opts = {}) {
         <p class="meta">快捷填入（可选）：
           ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}" data-model="${p.model || ""}">${p.name}</button>`).join(" ")}
         </p>
+        <label class="check-row"><input type="checkbox" id="m-skip-probe"/> 跳过上游探测并保存（仅自定义；会话时仍可能因 Key 无效失败）</label>
         <div class="actions">
           <button type="button" class="btn" id="m-cancel">取消</button>
           <button type="button" class="btn primary" id="m-save">保存</button>
@@ -257,12 +258,14 @@ export function mountModels(root, ctx, opts = {}) {
             return;
           }
         }
+        const skipProbe = !!form.querySelector("#m-skip-probe")?.checked;
         const res = await api.connectModel({
           profileId: "custom",
           name,
           apiKey: key,
           origin,
           model,
+          skipProbe,
         });
         if (res.error) {
           let hint = "";
