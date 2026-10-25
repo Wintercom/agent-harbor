@@ -193,24 +193,30 @@ func TestConnectModelWithLocalUpstream(t *testing.T) {
 
 func TestConnectCustomDeepSeekAnthropicPrefix(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/anthropic/v1/messages" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 		if r.Header.Get("Authorization") != "Bearer sk-ds" && r.Header.Get("X-Api-Key") != "sk-ds" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		var body struct {
-			Model string `json:"model"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Model != "deepseek-chat" {
-			w.WriteHeader(http.StatusBadRequest)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/anthropic/v1/models":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"id":"deepseek-chat"}]}`))
 			return
+		case r.Method == http.MethodPost && r.URL.Path == "/anthropic/v1/messages":
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Model != "deepseek-chat" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"type":"message","content":[{"type":"text","text":"OK"}]}`))
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"type":"message","content":[{"type":"text","text":"OK"}]}`))
 	}))
 	defer origin.Close()
 
