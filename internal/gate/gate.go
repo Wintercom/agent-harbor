@@ -302,7 +302,6 @@ func (h *Harbor) SetModelAccount(sessionID, accountID string) error {
 }
 
 // AllowExtraHost 将扩权通过的主机记入会话（once 仅一次；project 会话期有效）。
-// 供后续出站校验使用；当前模型/MCP 反代仍绑定策略 Origin。
 func (h *Harbor) AllowExtraHost(sessionID, host, scope string) error {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if sessionID == "" || host == "" {
@@ -322,4 +321,23 @@ func (h *Harbor) AllowExtraHost(sessionID, host, scope string) error {
 	}
 	rt.extraHosts[host] = scope
 	return nil
+}
+
+// HasExtraHost 查询是否已扩权；once 命中后消费删除。
+func (h *Harbor) HasExtraHost(sessionID, host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.extraHosts == nil {
+		return false
+	}
+	scope, ok := rt.extraHosts[host]
+	if !ok {
+		return false
+	}
+	if scope == "once" {
+		delete(rt.extraHosts, host)
+	}
+	return true
 }

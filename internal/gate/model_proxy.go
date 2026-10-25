@@ -98,16 +98,28 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if blockedRedirect(resp, host) {
 		locHost := redirectHostname(resp)
-		if locHost != "" && rt.spec.RequestPermission != nil {
+		allowedExtra := locHost != "" && p.h.HasExtraHost(p.sid, locHost)
+		if !allowedExtra && locHost != "" && rt.spec.RequestPermission != nil {
 			decision, perr := rt.spec.RequestPermission(r.Context(), contracts.PermissionNeeded{
 				Target: locHost,
 				Action: "请求跟随跨主机重定向",
 			})
 			if perr == nil && (decision == "once" || decision == "project") {
 				_ = p.h.AllowExtraHost(p.sid, locHost, decision)
+				allowedExtra = true
+				// once：本请求已使用扩权（即便 V1 不跟随重定向），立即消费。
+				if decision == "once" {
+					_ = p.h.HasExtraHost(p.sid, locHost)
+				}
 			}
 		}
 		resp.Body.Close()
+		if allowedExtra {
+			// V1 仍不自动跟随重定向（防 SSRF）；仅记录允许并审计，Agent 需换非重定向路径。
+			p.h.emitAudit(rt, contracts.AuditData{Target: locHost, Tool: auditToolModel, Result: "allowed"})
+			http.Error(w, "redirect host permitted but not followed", http.StatusBadGateway)
+			return
+		}
 		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
 		http.Error(w, "redirect blocked", http.StatusBadGateway)
 		return

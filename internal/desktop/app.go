@@ -4,6 +4,8 @@ package desktop
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -37,6 +39,7 @@ type App struct {
 	policy  *policy.Builder
 	gate    *gate.Harbor
 	conn    *gate.Connections
+	dataDir string
 
 	mu       sync.Mutex
 	sessions SessionService
@@ -48,17 +51,38 @@ type App struct {
 	ready    bool
 }
 
-// NewApp 创建 Gate、Policy 与内存凭据。编排在 AttachOrchestrator 中注入。
+// NewApp 创建纯内存控制面（单测默认）。桌面进程请用 NewDesktopApp。
 func NewApp() *App {
-	store := secrets.NewStore()
+	return NewAppWithDataDir("")
+}
+
+// NewDesktopApp 使用本机 Application Support 落盘偏好/记住主机，并持久化凭据。
+func NewDesktopApp() *App {
+	return NewAppWithDataDir(defaultDataDir())
+}
+
+// NewAppWithDataDir 供测试注入临时目录；dataDir 空则纯内存凭据与状态。
+func NewAppWithDataDir(dataDir string) *App {
+	var store *secrets.Store
+	if dataDir != "" {
+		_ = os.MkdirAll(dataDir, 0700)
+		if s, err := secrets.NewPersistentStore(filepath.Join(dataDir, "accounts")); err == nil {
+			store = s
+		}
+	}
+	if store == nil {
+		store = secrets.NewStore()
+	}
 	pol := policy.NewBuilder(nil)
 	app := &App{
 		secrets:  store,
 		policy:   pol,
+		dataDir:  dataDir,
 		sessions: unavailableSession{},
 		prefs:    contracts.UIPrefs{SidebarCollapsed: false, AutoCollapseWorkbench: true},
 		hosts:    make(map[string]contracts.RememberedHost),
 	}
+	app.loadPersistedState()
 	app.gate = gate.New(store, pol)
 	app.conn = gate.NewConnections(store, pol)
 	return app
@@ -135,21 +159,24 @@ func (a *App) listRemembered(workspace string) []contracts.RememberedHost {
 
 func (a *App) rememberHost(host contracts.RememberedHost) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.hosts == nil {
 		a.hosts = make(map[string]contracts.RememberedHost)
 	}
 	a.hosts[hostMapKey(host.Workspace, host.Host)] = host
+	a.mu.Unlock()
+	a.savePersistedState()
 }
 
 func (a *App) revokeHost(workspace, host string) bool {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	key := hostMapKey(workspace, host)
 	if _, ok := a.hosts[key]; !ok {
+		a.mu.Unlock()
 		return false
 	}
 	delete(a.hosts, key)
+	a.mu.Unlock()
+	a.savePersistedState()
 	return true
 }
 
@@ -161,9 +188,11 @@ func (a *App) getPrefs() contracts.UIPrefs {
 
 func (a *App) setPrefs(p contracts.UIPrefs) contracts.UIPrefs {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.prefs = p
-	return a.prefs
+	out := a.prefs
+	a.mu.Unlock()
+	a.savePersistedState()
+	return out
 }
 
 // forwardEvent 不缓存或推导状态；准入由编排统一管理。
@@ -176,10 +205,10 @@ func (a *App) EmitHarborEvent(ev contracts.Event) {
 	}
 }
 
-// Shutdown 先停止编排，再清空内存凭据。
+// Shutdown 先停止编排。纯内存凭据在退出时清空；持久化 Store（Keychain/文件）保留跨重启。
 func (a *App) Shutdown(ctx context.Context) error {
 	err := a.sessionRef().Shutdown(ctx)
-	if err == nil {
+	if err == nil && a.dataDir == "" {
 		a.secrets.Clear()
 	}
 	return err
