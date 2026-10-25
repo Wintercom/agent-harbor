@@ -11,13 +11,14 @@ const HarborEventName = EventName
 
 // 事件 type 取值。
 const (
-	EventTypeStateChanged = "state_changed"
-	EventTypeOutput       = "output"
-	EventTypeAudit        = "audit"
-	EventTypeError        = "error"
+	EventTypeStateChanged      = "state_changed"
+	EventTypeOutput            = "output"
+	EventTypeAudit             = "audit"
+	EventTypeError             = "error"
+	EventTypePermissionNeeded  = "permission_needed"
 )
 
-// 公开错误码（与 docs/CONTRACT.md 一致）。
+// 公开错误码（与 docs/CONTRACT.md v1.1 一致）。
 const (
 	ErrInvalidArgument         = "INVALID_ARGUMENT"
 	ErrAccountNotFound         = "ACCOUNT_NOT_FOUND"
@@ -36,6 +37,9 @@ const (
 	ErrCleanupFailed           = "CLEANUP_FAILED"
 	ErrInternal                = "INTERNAL_ERROR"
 	ErrOrchestratorUnavailable = "ORCHESTRATOR_UNAVAILABLE"
+	ErrSessionLimit            = "SESSION_LIMIT"
+	ErrWorkspaceBusy           = "WORKSPACE_BUSY"
+	ErrUnimplemented           = "UNIMPLEMENTED"
 )
 
 // NewAppError 构造公开错误；message 应为固定模板。
@@ -56,15 +60,22 @@ type AuditData struct {
 	Result string `json:"result"` // allowed、denied 或 failed
 }
 
-// Event 通过固定事件名 harbor:event 传递；四类载荷恰有一项非 nil。
+// PermissionNeeded 是扩权挂起载荷（不含密钥）。
+type PermissionNeeded struct {
+	Target string `json:"target"`
+	Action string `json:"action"`
+}
+
+// Event 通过固定事件名 harbor:event 传递；五类载荷恰有一项非 nil。
 type Event struct {
-	SessionID string           `json:"sessionId"`
-	Seq       uint64           `json:"seq"`
-	Type      string           `json:"type"`
-	State     *SessionSnapshot `json:"state"`
-	Output    *OutputData      `json:"output"`
-	Audit     *AuditData       `json:"audit"`
-	Error     *AppError        `json:"error"`
+	SessionID  string            `json:"sessionId"`
+	Seq        uint64            `json:"seq"`
+	Type       string            `json:"type"`
+	State      *SessionSnapshot  `json:"state"`
+	Output     *OutputData       `json:"output"`
+	Audit      *AuditData        `json:"audit"`
+	Error      *AppError         `json:"error"`
+	Permission *PermissionNeeded `json:"permission"`
 }
 
 // Validate 只校验公开事件的数据形状，不执行策略、文件或网络检查。
@@ -83,6 +94,9 @@ func (e Event) Validate() error {
 		payloads++
 	}
 	if e.Error != nil {
+		payloads++
+	}
+	if e.Permission != nil {
 		payloads++
 	}
 	if payloads != 1 {
@@ -104,6 +118,10 @@ func (e Event) Validate() error {
 	case EventTypeError:
 		if e.Error == nil || e.Error.Code == "" || e.Error.Message == "" {
 			return errors.New("invalid error event")
+		}
+	case EventTypePermissionNeeded:
+		if e.Permission == nil || e.Permission.Target == "" || e.Permission.Action == "" {
+			return errors.New("invalid permission event")
 		}
 	default:
 		return errors.New("unknown event type")

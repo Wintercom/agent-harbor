@@ -6,7 +6,7 @@
 
 | 路径 | 状态 | 职责 | 负责人 |
 |---|---|---|---|
-| [index.html](index.html) / [src/](src/) | 已实现 mock 两页 | 配置、工作台、样式、api/mock | C |
+| [index.html](index.html) / [src/](src/) | PAGE-DESIGN 壳 + mock | 侧栏 HOME/模型/工具/设置/工作台；api/mock | C |
 | [package.json](package.json) / Vite | B 已初始化 | 依赖与构建脚本 | B |
 | `bindings/` | 生成 | Wails v3 绑定，**不手改** | B |
 | `dist/` | 构建产物 | 供 Go embed | 构建生成 |

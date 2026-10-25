@@ -1,44 +1,115 @@
 /**
- * 页面装配入口（产品 C）。
- * 桌面使用 live，普通浏览器使用 mock；Wails v3 绑定目录为 frontend/bindings/（B 生成，勿手改）。
+ * 页面装配：按 PAGE-DESIGN 侧栏壳 + 路由。
+ * 桌面 live / 浏览器 mock；bindings 由 B 生成勿手改。
  */
 import * as api from "./api.js";
 import { initializeTransport } from "./startup.js";
-import { mountSetup } from "./views/setup.js";
+import { mountHome } from "./views/home.js";
+import { mountWizard } from "./views/wizard.js";
+import { mountModels } from "./views/models.js";
+import { mountTools } from "./views/tools.js";
+import { mountSettings } from "./views/settings.js";
 import { mountSession } from "./views/session.js";
+import { mountOnboarding } from "./views/onboarding.js";
+import { mountBlock } from "./views/block.js";
 
 const badge = document.getElementById("mode-badge");
-const setupRoot = document.getElementById("view-setup");
-const sessionRoot = document.getElementById("view-session");
+const sidebar = document.getElementById("sidebar");
+const navSession = document.getElementById("nav-session");
+const healthDot = document.getElementById("health-dot");
+const healthText = document.getElementById("health-text");
+const onboardRoot = document.getElementById("onboarding-root");
+const blockRoot = document.getElementById("block-root");
+const shell = document.getElementById("app-shell");
+
+const views = {
+  home: document.getElementById("view-home"),
+  wizard: document.getElementById("view-wizard"),
+  models: document.getElementById("view-models"),
+  tools: document.getElementById("view-tools"),
+  settings: document.getElementById("view-settings"),
+  session: document.getElementById("view-session"),
+};
+
+let sessionView;
+let wizardView;
+let currentRoute = "home";
 
 const ctx = {
   state: {
     agentId: "claude",
     agentAvailable: false,
+    agents: [],
     modelAccount: null,
     mcpAccount: null,
     workspace: "",
     sessionId: "",
     lastSnapshot: null,
+    sessionHistory: [],
+    health: null,
   },
-  showTab(name) {
-    document.querySelectorAll(".tab").forEach((t) => {
-      t.classList.toggle("on", t.getAttribute("data-tab") === name);
-    });
-    setupRoot.classList.toggle("hidden", name !== "setup");
-    sessionRoot.classList.toggle("hidden", name !== "session");
+  navigate(name) {
+    navigate(name);
+  },
+  async stopSession(id) {
+    const res = await api.stopSession(id);
+    if (res.session) upsertHistory(res.session);
+    return res;
+  },
+  onAccountsChanged() {},
+  refreshHome() {
+    if (currentRoute === "home") mountHome(views.home, ctx);
+  },
+  refreshHealth() {
+    return refreshHealth();
   },
   onSessionCreated(snapshot) {
+    api.activateSession?.(snapshot);
     ctx.state.sessionId = snapshot.sessionId;
+    ctx.state.lastSnapshot = snapshot;
+    upsertHistory(snapshot);
     try {
       sessionStorage.setItem("harbor-session-id", snapshot.sessionId);
     } catch {}
     sessionView.resetForNewSession(snapshot);
-    ctx.showTab("session");
+    navSession.classList.remove("hidden");
+    navigate("session", { autoCollapse: true });
+  },
+  async openSession(sessionId) {
+    const res = await api.getSession(sessionId);
+    if (res.error || !res.session) return;
+    upsertHistory(res.session);
+    ctx.state.sessionId = res.session.sessionId;
+    ctx.state.lastSnapshot = res.session;
+    try {
+      sessionStorage.setItem("harbor-session-id", res.session.sessionId);
+    } catch {}
+    sessionView.resetForNewSession(res.session);
+    navSession.classList.remove("hidden");
+    navigate("session");
+  },
+  showTab(name) {
+    // session 回配置 → 新会话向导
+    if (name === "session") navigate("session");
+    else if (name === "setup") navigate("wizard");
   },
 };
 
-let sessionView;
+function upsertHistory(snapshot) {
+  if (!snapshot?.sessionId) return;
+  const list = ctx.state.sessionHistory || [];
+  const i = list.findIndex((s) => s.sessionId === snapshot.sessionId);
+  const row = {
+    sessionId: snapshot.sessionId,
+    state: snapshot.state,
+    workspace: snapshot.workspace,
+    agentId: snapshot.agentId,
+    cleanupComplete: snapshot.cleanupComplete,
+  };
+  if (i >= 0) list[i] = { ...list[i], ...row };
+  else list.unshift(row);
+  ctx.state.sessionHistory = list.slice(0, 20);
+}
 
 function syncBadge() {
   const banner = document.getElementById("mode-banner");
@@ -47,14 +118,14 @@ function syncBadge() {
     badge.className = "badge mock";
     if (banner) {
       banner.textContent =
-        "两天版：direct 会改原文件；凭据只在宿主机内存。当前为浏览器模拟模式，不能记入 I1–I11。";
+        "PAGE-DESIGN 壳 + 模拟数据。不能记入 I1–I11。多会话/扩权等接口见 TASK-SPLIT P0.5。";
     }
   } else {
     badge.textContent = "真实绑定";
     badge.className = "badge live";
     if (banner) {
       banner.textContent =
-        "真实绑定：任务请去掉 mock/search；工作区用 demos/workspace；凭据提交后清空。演示步骤见 demos/README。";
+        "真实绑定：任务去掉 mock/search；工作区用 demos/workspace。";
     }
   }
 }
@@ -69,6 +140,97 @@ function isWailsShell() {
   return typeof window !== "undefined" && !!window._wails;
 }
 
+function setSidebarCollapsed(collapsed) {
+  sidebar.classList.toggle("collapsed", collapsed);
+  const btn = document.getElementById("sidebar-toggle");
+  if (btn) {
+    btn.textContent = collapsed ? "»" : "«";
+    btn.title = collapsed ? "展开侧栏" : "收缩侧栏";
+  }
+  try {
+    localStorage.setItem("harbor-sidebar-collapsed", collapsed ? "1" : "0");
+  } catch {}
+}
+
+function navigate(name, opts = {}) {
+  currentRoute = name;
+  Object.entries(views).forEach(([key, el]) => {
+    el.classList.toggle("hidden", key !== name);
+  });
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.classList.toggle("on", btn.getAttribute("data-route") === name);
+  });
+  if (name === "home") mountHome(views.home, ctx);
+  if (name === "wizard") wizardView = mountWizard(views.wizard, ctx);
+  if (name === "models") mountModels(views.models, ctx);
+  if (name === "tools") mountTools(views.tools, ctx);
+  if (name === "settings") mountSettings(views.settings, ctx);
+  if (name === "session") {
+    navSession.classList.remove("hidden");
+    if (opts.autoCollapse) {
+      const pref = localStorage.getItem("harbor-sidebar-user-expanded");
+      if (pref !== "1") setSidebarCollapsed(true);
+    }
+  }
+  if (ctx.state.health && ctx.state.health.available === false && name === "wizard") {
+    showBlock(ctx.state.health.reason);
+  } else {
+    hideBlock();
+  }
+}
+
+async function refreshHealth() {
+  const health = await api.getRuntimeHealth();
+  ctx.state.health = health;
+  const ok = !!health.available;
+  healthDot.className = `health-dot ${ok ? "ok" : "bad"}`;
+  healthText.textContent = ok
+    ? health.provisional
+      ? "隔离就绪（占位）"
+      : "隔离就绪"
+    : "隔离不可用";
+  if (!ok) healthText.title = health.reason || "";
+  return health;
+}
+
+function showBlock(reason) {
+  blockRoot.classList.remove("hidden");
+  mountBlock(blockRoot, {
+    reason,
+    onSettings: () => {
+      hideBlock();
+      navigate("settings");
+    },
+  });
+}
+
+function hideBlock() {
+  blockRoot.classList.add("hidden");
+  blockRoot.innerHTML = "";
+}
+
+function maybeOnboarding(health) {
+  let done = false;
+  try {
+    done = localStorage.getItem("harbor-onboarded") === "1";
+  } catch {}
+  if (done) return false;
+  shell.classList.add("hidden");
+  onboardRoot.classList.remove("hidden");
+  mountOnboarding(onboardRoot, {
+    health,
+    onEnter() {
+      try {
+        localStorage.setItem("harbor-onboarded", "1");
+      } catch {}
+      onboardRoot.classList.add("hidden");
+      shell.classList.remove("hidden");
+      navigate("home");
+    },
+  });
+  return true;
+}
+
 async function boot() {
   await initializeTransport(api, {
     shell: isWailsShell(),
@@ -76,22 +238,57 @@ async function boot() {
   });
   syncBadge();
 
-  document.querySelectorAll(".tab").forEach((btn) => {
+  try {
+    if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
+      setSidebarCollapsed(true);
+    }
+  } catch {}
+
+  document.getElementById("sidebar-toggle").onclick = () => {
+    const next = !sidebar.classList.contains("collapsed");
+    setSidebarCollapsed(next);
+    try {
+      localStorage.setItem("harbor-sidebar-user-expanded", next ? "0" : "1");
+    } catch {}
+  };
+
+  document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () =>
-      ctx.showTab(btn.getAttribute("data-tab")),
+      navigate(btn.getAttribute("data-route")),
     );
   });
 
-  sessionView = mountSession(sessionRoot, ctx);
-  const setupView = mountSetup(setupRoot, ctx);
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+      e.preventDefault();
+      document.getElementById("sidebar-toggle").click();
+    }
+  });
+
+  sessionView = mountSession(views.session, ctx);
+  api.onEvent((ev) => {
+    if (ev.type === "state_changed" && ev.state) upsertHistory(ev.state);
+  });
+
+  const health = await refreshHealth();
+  if (maybeOnboarding(health)) {
+    /* 引导中 */
+  } else {
+    navigate(ctx.state.sessionId ? "session" : "home");
+  }
+
   let recovering = false;
   const recover = async () => {
     if (recovering) return;
     recovering = true;
     try {
-      await setupView.refreshAgents();
+      await refreshHealth();
+      if (wizardView?.refreshAgents) await wizardView.refreshAgents();
       const id = ctx.state.sessionId;
-      if (id) await api.getSession(id);
+      if (id) {
+        const res = await api.getSession(id);
+        if (res.session) upsertHistory(res.session);
+      }
     } finally {
       recovering = false;
     }
@@ -101,27 +298,31 @@ async function boot() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) recover();
   });
+
   try {
     const id = sessionStorage.getItem("harbor-session-id");
     if (id) {
       const response = await api.getSession(id);
-      if (response.session && !ctx.state.sessionId)
+      if (response.session && !ctx.state.sessionId) {
         ctx.onSessionCreated(response.session);
-      else if (response.error?.code === "SESSION_NOT_FOUND")
+      } else if (response.error?.code === "SESSION_NOT_FOUND") {
         sessionStorage.removeItem("harbor-session-id");
+      }
     }
   } catch {}
+
   window.addEventListener("pagehide", () => sessionView.destroy(), {
     once: true,
   });
-  if (!ctx.state.sessionId) ctx.showTab("setup");
 }
 
 boot().catch(() => {
   badge.textContent = "连接失败";
   badge.className = "badge bad";
-  setupRoot.textContent = "桌面连接初始化失败，请重新启动应用。";
-  document.querySelectorAll(".tab").forEach((button) => {
+  shell.classList.remove("hidden");
+  views.home.classList.remove("hidden");
+  views.home.textContent = "桌面连接初始化失败，请重新启动应用。";
+  document.querySelectorAll(".nav-item").forEach((button) => {
     button.disabled = true;
   });
 });

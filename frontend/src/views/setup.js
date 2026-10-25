@@ -9,11 +9,17 @@ const LIVE_TASK_STALE = /\bmock\b|\bsearch\b/i;
 
 /**
  * 配置页：连接模型/MCP、选工作区、任务、启动
+ * @param {{ embedded?: boolean }} [opts] 嵌在新会话向导时隐藏顶栏标题
  */
-export function mountSetup(root, ctx) {
+export function mountSetup(root, ctx, opts = {}) {
+  const embedded = !!opts.embedded;
   root.innerHTML = `
-    <h2>配置</h2>
-    <p class="sub">连接返回后清空凭据；切换 Agent 后需要重新连接对应模型。Claude 用 demo-model，dsh 用 dsh-model；MCP 固定 demo-mcp。</p>
+    ${
+      embedded
+        ? ""
+        : `<h2>配置</h2>
+    <p class="sub">连接返回后清空凭据；切换 Agent 后需要重新连接对应模型。Claude 用 demo-model，dsh 用 dsh-model；MCP 固定 demo-mcp。</p>`
+    }
     <div class="grid">
       <section class="card">
         <h3>Agent</h3>

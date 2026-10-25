@@ -119,22 +119,46 @@ python3 -m http.server 5173
 
 ### 当前页面边界（跟 main）
 
-- 配置 / 工作台两页；Agent **下拉**（claude / dsh）
+- ~~配置 / 工作台两页~~ → 见下节 **PAGE-DESIGN 壳**
 - 桌面强制 live；浏览器默认 mock
-- 无 HOME / Wizard / 扩权 / PTY；工作台为文本输出
+- 无扩权 Modal / PTY / 真双会话；工作台仍为文本输出
 
-### C 下一步（认领）
+---
+
+## 2026-10-25：按 PAGE-DESIGN 落地壳（C）
+
+对照 [PAGE-DESIGN.md](PAGE-DESIGN.md) 与 [TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) P1-C-01～05（契约未冻处用 stub）。
+
+### 已落地
+
+| 路径 | 说明 |
+|---|---|
+| `frontend/index.html` | 侧栏：HOME / 模型 / 工具 / 设置 / 工作台；底栏隔离灯；引导/阻断层 |
+| `frontend/src/main.js` | 路由、`⌘B` 收缩记忆、进工作台可自动缩、健康刷新 |
+| `views/onboarding.js` | 三句引导；隔离失败不可进入 |
+| `views/home.js` | 会话中心（单会话历史摘要；上限文案先写 1） |
+| `views/wizard.js` | 新会话步进条 + 内嵌原 `setup` 配置流 |
+| `views/models.js` / `tools.js` / `settings.js` | 独立配置页；mock 场景进设置 |
+| `views/block.js` | 隔离不可用阻断层 |
+| `mock-api` / `api` | `getRuntimeHealth`、`listSessions` stub；live 缺方法时健康占位可用 |
+
+### 与两天契约关系
+
+- Connect / CreateSession / Stop / Event **不变**；向导仍走现有 setup。
+- 健康与列表 **非正式契约字段**，待 P0.5-API-01/02；勿记入 I1–I11。
+- 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；接口：[CONTRACT.md](CONTRACT.md) v1.1；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
+
+### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| P0 | 跟 B 跑 I1/I2 操作与脱敏证据（P0-C-DOC-3） | ENV-1/2/4、Detect |
-| P0 | I8/I10/I11 点选记录 | 可起桌面 |
-| P0.5 | 冻结会后：`mock-api` 对齐新 API（P0.5-MOCK） | CONTRACT PR |
-| P1 | 壳/Onboarding stub（C-01/02） | API-01 已冻或约定 stub |
+| P0 | 跟 B 跑 I1/I2 与脱敏证据 | ENV、Detect、Claude 2.1.292 |
+| V1 | mock/页面对齐 CONTRACT v1.1；扩权 Modal、权限一览、HOME x/2 | A/B 真实现 |
+| P1 | Wizard 真四步拆页（仍无 PTY/OAuth/clone） | 已定契约 |
 
-### 明确不做（本迭代除非冻结）
+### 明确不做（仍禁止）
 
-完整 PAGE-DESIGN、手改 `bindings/`、改 `internal/`、把 mock 记为 I 通过。
+手改 `bindings/`、改 `internal/`、把 mock 记为 I 通过、未冻接口当真实现。
 
 ---
 
@@ -142,8 +166,8 @@ python3 -m http.server 5173
 
 | 负责 | 目录 |
 |---|---|
-| 配置页、工作台、样式与交互 | `frontend/index.html`、`frontend/src/**` |
+| 壳与页面、样式与交互 | `frontend/index.html`、`frontend/src/**` |
 | 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js`、`live-api.js` |
-| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项、[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) 中 C 卡 |
+| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md)、[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) |
 
 不修改桌面 Go 入口与会话状态机；不手改 `frontend/bindings/`。

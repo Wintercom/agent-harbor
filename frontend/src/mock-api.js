@@ -103,6 +103,133 @@ export async function listAgents() {
   return { agents, error: null };
 }
 
+/** CONTRACT v1.1 GetRuntimeHealth */
+export async function getRuntimeHealth() {
+  if (scenario === "isolation") {
+    return {
+      available: false,
+      reason: "隔离能力不可用（模拟）",
+      isolationLevel: "",
+      error: null,
+    };
+  }
+  return {
+    available: true,
+    reason: "",
+    isolationLevel: "mock-seatbelt",
+    error: null,
+  };
+}
+
+/** CONTRACT v1.1 ListSessions（mock 单会话表） */
+export async function listSessions() {
+  if (!session) return { sessions: [], error: null };
+  return {
+    sessions: [
+      {
+        sessionId: session.sessionId,
+        state: session.state,
+        workspace: session.workspace,
+        agentId: session.agentId,
+        cleanupComplete: session.cleanupComplete,
+      },
+    ],
+    error: null,
+  };
+}
+
+export async function destroySession(sessionId) {
+  if (!session || session.sessionId !== sessionId) {
+    return {
+      session: null,
+      error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
+    };
+  }
+  if (!["stopped", "failed"].includes(session.state) || !session.cleanupComplete) {
+    return {
+      session: snapshot(),
+      error: err("INVALID_ARGUMENT", "仅终态且清理完成的会话可销毁（模拟）"),
+    };
+  }
+  const last = snapshot();
+  session = null;
+  busy = false;
+  return { session: last, error: null };
+}
+
+export async function listAccounts(kind) {
+  const accounts = [];
+  if ((!kind || kind === "model") && modelAccount) accounts.push({ ...modelAccount });
+  if ((!kind || kind === "mcp") && mcpAccount) accounts.push({ ...mcpAccount });
+  return { accounts, error: null };
+}
+
+export async function removeAccount(accountId) {
+  if (modelAccount?.id === accountId) {
+    if (session && !["stopped", "failed"].includes(session.state)) {
+      return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
+    }
+    modelAccount = null;
+    return { error: null };
+  }
+  if (mcpAccount?.id === accountId) {
+    if (session && !["stopped", "failed"].includes(session.state)) {
+      return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
+    }
+    mcpAccount = null;
+    return { error: null };
+  }
+  return { error: err("ACCOUNT_NOT_FOUND", "账号不存在（模拟）") };
+}
+
+export async function getPermissionOverview(sessionId) {
+  return {
+    overview: {
+      sessionId: sessionId || session?.sessionId || "",
+      workspace: session?.workspace || FIXED.workspace,
+      allowedHosts: ["api.example.com"],
+      mcpSummary: mcpAccount ? [mcpAccount.name] : [],
+      deniedPathCategories: ["系统目录"],
+    },
+    error: null,
+  };
+}
+
+export async function listRememberedHosts() {
+  return { hosts: [], error: null };
+}
+
+export async function revokeRememberedHost() {
+  return { error: null };
+}
+
+export async function resolvePermission(input) {
+  if (!input?.sessionId || !input?.target || !input?.decision) {
+    return { error: err("INVALID_ARGUMENT", "扩权参数不完整（模拟）") };
+  }
+  if (!["deny", "once", "project"].includes(input.decision)) {
+    return { error: err("INVALID_ARGUMENT", "非法决策（模拟）") };
+  }
+  return { error: null };
+}
+
+export async function getUIPrefs() {
+  return {
+    prefs: { sidebarCollapsed: false, autoCollapseWorkbench: true },
+    error: null,
+  };
+}
+
+export async function setUIPrefs(prefs) {
+  return {
+    prefs: {
+      sidebarCollapsed: !!prefs?.sidebarCollapsed,
+      autoCollapseWorkbench: prefs?.autoCollapseWorkbench !== false,
+    },
+    error: null,
+  };
+}
+
 export async function selectWorkspace() {
   return { path: FIXED.workspace, cancelled: false, error: null };
 }
@@ -204,10 +331,10 @@ export async function createSession(spec) {
       ),
     };
   }
-  if (!Array.isArray(spec.mcpIds) || spec.mcpIds.length !== 1) {
+  if (!Array.isArray(spec.mcpIds) || spec.mcpIds.length > 8) {
     return {
       session: null,
-      error: err("INVALID_ARGUMENT", "mcpIds 长度必须为 1"),
+      error: err("INVALID_ARGUMENT", "mcpIds 长度须为 0..8"),
     };
   }
   if (!modelAccount || spec.modelAccountId !== modelAccount.id) {
@@ -219,11 +346,13 @@ export async function createSession(spec) {
   if (modelAccount.profileId !== (spec.agentId === "dsh" ? "dsh-model" : "demo-model")) {
     return {session: null, error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配")};
   }
-  if (!mcpAccount || spec.mcpIds[0] !== mcpAccount.id) {
-    return {
-      session: null,
-      error: err("INVALID_ARGUMENT", "请先连接 MCP 账号"),
-    };
+  if (spec.mcpIds.length > 0) {
+    if (!mcpAccount || !spec.mcpIds.every((id) => id === mcpAccount.id)) {
+      return {
+        session: null,
+        error: err("INVALID_ARGUMENT", "请先连接 MCP 账号，且 mcpIds 须匹配"),
+      };
+    }
   }
   if (![FIXED.agent.id, "dsh"].includes(spec.agentId)) {
     return {
