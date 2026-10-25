@@ -66,6 +66,17 @@ func TestEnvironmentAllowsOnlyKitInputs(t *testing.T) {
 	}
 }
 
+func TestCodexEnvironmentGetsToolchainPathOnlyWithPrivateCodexHome(t *testing.T) {
+	env, err := launchEnvironment("/private/home", map[string]string{"CODEX_HOME": "/private/home/codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "PATH=/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin") {
+		t.Fatalf("Codex 未获得受控工具链 PATH: %v", env)
+	}
+}
+
 type byteReader struct{ input []byte }
 
 func (r *byteReader) Read(p []byte) (int, error) {

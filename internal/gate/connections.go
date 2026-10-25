@@ -101,6 +101,9 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	if prof.Kind == "mcp" {
 		return c.probeMCP(ctx, prof, apiKey)
 	}
+	if prof.Protocol == "openai-responses" {
+		return c.probeOpenAIResponses(ctx, prof, apiKey)
+	}
 	body, _ := json.Marshal(map[string]any{"model": prof.Model, "max_tokens": 1, "messages": []any{map[string]string{"role": "user", "content": "Reply OK"}}})
 	resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body)
 	if err != nil {
@@ -124,14 +127,34 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	return ctx.Err()
 }
 
+func (c *Connections) probeOpenAIResponses(ctx context.Context, prof policy.FixedProfile, apiKey string) error {
+	body, _ := json.Marshal(map[string]any{"model": prof.Model, "input": "Reply OK", "max_output_tokens": 8, "store": false})
+	resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		ID     string `json:"id"`
+		Object string `json:"object"`
+	}
+	raw, err := readProbeBody(resp)
+	if err != nil || json.Unmarshal(raw, &result) != nil || result.ID == "" || result.Object != "response" {
+		return ErrUpstreamDown
+	}
+	return ctx.Err()
+}
+
 func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile, key, session, method string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+prof.BasePath+prof.TestPath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+policy.JoinBasePath(prof.BasePath, prof.TestPath), bytes.NewReader(body))
 	if err != nil {
 		return nil, ErrUpstreamDown
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	if prof.Kind == "model" {
+	if prof.Kind == "model" && prof.Protocol == "openai-responses" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	} else if prof.Kind == "model" {
 		req.Header.Set("X-Api-Key", key)
 		req.Header.Set("Anthropic-Version", "2023-06-01")
 	} else {

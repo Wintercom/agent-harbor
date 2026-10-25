@@ -9,8 +9,9 @@ import (
 )
 
 type KitInfo struct {
-	Agent         contracts.AgentInfo
-	ReadOnlyPaths []string // 固定 CLI 与必要运行文件的真实路径
+	Agent               contracts.AgentInfo
+	ReadOnlyPaths       []string // 固定 CLI 与必要运行文件的真实路径
+	NeedsChildProcesses bool     // 需要受控子进程时由 Runtime 选择更严格的子进程策略
 }
 
 type KitInput struct {

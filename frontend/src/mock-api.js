@@ -92,6 +92,7 @@ export function isMockTransport() {
 export async function listAgents() {
   const agents = [
     { ...FIXED.agent },
+    { id: "codex", name: "OpenAI Codex", version: "0.163.0", available: true, reason: "", modelProfileId: "codex-model" },
     { id: "dsh", name: "DeepSeek dsh", version: "0.2.1-rc.2", available: true, reason: "", modelProfileId: "dsh-model" },
   ];
   if (scenario === "isolation") {
@@ -247,7 +248,7 @@ export async function connectModel(input) {
       error: err("INVALID_ARGUMENT", "profileId、name、apiKey 均必填"),
     };
   }
-  if (![FIXED.modelProfileId, "dsh-model"].includes(input.profileId)) {
+  if (![FIXED.modelProfileId, "codex-model", "dsh-model"].includes(input.profileId)) {
     return {
       account: null,
       error: err("INVALID_ARGUMENT", "模型 profile 不受支持"),
@@ -343,7 +344,8 @@ export async function createSession(spec) {
       error: err("INVALID_ARGUMENT", "请先连接模型账号"),
     };
   }
-  if (modelAccount.profileId !== (spec.agentId === "dsh" ? "dsh-model" : "demo-model")) {
+  const expectedProfile = spec.agentId === "dsh" ? "dsh-model" : spec.agentId === "codex" ? "codex-model" : "demo-model";
+  if (modelAccount.profileId !== expectedProfile) {
     return {session: null, error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配")};
   }
   if (spec.mcpIds.length > 0) {

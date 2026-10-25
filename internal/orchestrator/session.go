@@ -327,16 +327,20 @@ func (o *Service) run(s *session) {
 
 func (o *Service) provision(s *session) error {
 	ctx := s.ctx
-	if err := o.deps.Runtime.Health(ctx); err != nil {
-		return safeError(err, "ISOLATION_UNAVAILABLE")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	kit := o.deps.Kits[s.spec.AgentID]
 	info, err := kit.Detect(ctx)
 	if err != nil || !info.Agent.Available || info.Agent.ID != s.spec.AgentID {
 		return publicError("AGENT_UNSUPPORTED")
+	}
+	if health, ok := o.deps.Runtime.(runtime.HealthChecker); ok {
+		if err := health.HealthFor(ctx, info.NeedsChildProcesses); err != nil {
+			return safeError(err, "ISOLATION_UNAVAILABLE")
+		}
+	} else if err := o.deps.Runtime.Health(ctx); err != nil {
+		return safeError(err, "ISOLATION_UNAVAILABLE")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	model, err := o.deps.Catalog.Lookup(ctx, s.spec.ModelAccountID)
 	if err != nil {
@@ -377,7 +381,7 @@ func (o *Service) provision(s *session) error {
 	o.mu.Lock()
 	s.filters = map[string]*streamFilter{"stdout": {token: binding.Sentinel}, "stderr": {token: binding.Sentinel}}
 	o.mu.Unlock()
-	handle, err := o.deps.Runtime.Create(ctx, runtime.RuntimeSpec{SessionID: s.snapshot.SessionID, Workspace: p.Workspace, MountMode: p.MountMode, AllowedTCP: append([]string(nil), binding.AllowedTCP...), ReadOnlyPaths: append([]string(nil), info.ReadOnlyPaths...)})
+	handle, err := o.deps.Runtime.Create(ctx, runtime.RuntimeSpec{SessionID: s.snapshot.SessionID, Workspace: p.Workspace, MountMode: p.MountMode, AllowedTCP: append([]string(nil), binding.AllowedTCP...), ReadOnlyPaths: append([]string(nil), info.ReadOnlyPaths...), AllowChildProcesses: info.NeedsChildProcesses})
 	// 接管成功返回的句柄，即使 Stop 已经取消，仍由统一清理器销毁。
 	if handle.ID != "" {
 		s.handle = handle

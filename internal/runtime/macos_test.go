@@ -267,6 +267,19 @@ func TestMacOSFileBoundaryAndNoFork(t *testing.T) {
 	}
 }
 
+func TestControlledChildrenAllowOnlyExplicitProfile(t *testing.T) {
+	r := NewMacOS()
+	if err := r.HealthFor(context.Background(), true); err != nil {
+		t.Fatalf("受控子进程 profile 未通过健康检查: %v", err)
+	}
+	spec := probeSpec(t)
+	spec.AllowChildProcesses = true
+	exit, _ := runProbe(t, r, spec, "spawn")
+	if exit.Code != 0 {
+		t.Fatalf("受控子进程未能执行白名单工具: %+v", exit)
+	}
+}
+
 func TestMacOSReadOnlyInstallationDirectory(t *testing.T) {
 	r := NewMacOS()
 	spec := probeSpec(t)

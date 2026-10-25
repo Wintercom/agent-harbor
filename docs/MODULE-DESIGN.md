@@ -97,7 +97,7 @@ flowchart TB
 
 前端 transport 最小接口为 listAgents、selectWorkspace、connectModel、connectMcp、createSession、getSession、stopSession、onEvent。全部业务调用返回 Promise<Response>；onEvent(callback) 返回取消函数，事件载荷就是 CONTRACT.md 的 Event，不再套一层。Wails transport 包装 PascalCase 生成方法；mock transport 不导入生成绑定，可在普通浏览器独立启动。
 
-前端固定 mock 数据：Agent id=claude 或 dsh，模型 profileId 分别为 demo-model 或 dsh-model；MCP id=mock-mcp、profileId=demo-mcp；工作区=/demo/project。不得放真实 Key。正常创建返回 provisioning，依次推送 running、文本 output、MCP allowed 审计、stopping、stopped；State/Error 字段及 seq 严格遵循契约。脚本可重复执行并支持提前 Stop；另外提供认证失败、SESSION_BUSY、ISOLATION_UNAVAILABLE、cleanupComplete=false 四个可选场景。所有 mock 只验证 UI/协议处理，不进入正式执行面。
+前端固定 mock 数据：Agent id=claude、codex 或 dsh，模型 profileId 分别为 demo-model、codex-model 或 dsh-model；MCP id=mock-mcp、profileId=demo-mcp；工作区=/demo/project。不得放真实 Key。正常创建返回 provisioning，依次推送 running、文本 output、MCP allowed 审计、stopping、stopped；State/Error 字段及 seq 严格遵循契约。脚本可重复执行并支持提前 Stop；另外提供认证失败、SESSION_BUSY、ISOLATION_UNAVAILABLE、cleanupComplete=false 四个可选场景。所有 mock 只验证 UI/协议处理，不进入正式执行面。
 
 Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisioning 竞争、清理失败等，不访问真实 Secrets。假 Runtime 不能用普通宿主机 shell 作为实际隔离运行降级。生产入口不自动回退任何 fake，模拟与真实运行明确切换，正式安全验收必须禁用 mock。
 

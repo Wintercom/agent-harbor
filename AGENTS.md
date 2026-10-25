@@ -34,7 +34,7 @@
 
 ### 当前范围增量（2026-10-25）
 
-用户已授权实现 DeepSeek 官方 dsh 适配，覆盖下文历史两天范围中的 dsh 排除项。当前注册 Claude/dsh Kit，dsh 固定 npm `0.2.1-rc.2` 与 Node `v26.12.1`；受限文件工具、模型、认证 MCP、桌面选择和清理实现见 [dsh 适配](docs/DSH-INTEGRATION.md)。不扩大 OS 权限，禁止 fork/子进程、Bash、动态插件。真实 CLI 加受控服务通过不等于真实远程验收。
+用户已授权实现 DeepSeek 官方 dsh 适配及 OpenAI Codex CLI 适配，覆盖下文历史两天范围中的 Agent 排除项。当前注册 Claude/Codex/dsh Kit；dsh 固定 npm `0.2.1-rc.2` 与 Node `v26.12.1`，Codex 使用 OpenAI Responses provider、私有 `CODEX_HOME` 与受控子进程 Runtime；受限文件工具、模型、认证 MCP、桌面选择和清理实现见 [dsh 适配](docs/DSH-INTEGRATION.md) 与 [Codex 适配](docs/CODEX-INTEGRATION.md)。默认禁止 fork/子进程，只有 Codex 显式声明后使用固定工具路径白名单；仍禁止提权、动态插件和未授权 Bash。真实 CLI 加受控服务通过不等于真实远程验收。
 
 ### 两天交付范围与检查点
 
@@ -151,6 +151,8 @@ Agent Harbor 是安全优先的桌面 Agent 沙箱：在隔离环境中运行 Cl
 每次用户纠正 Claude 的错误后，需要：
 - 在本章节下方的「经验教训」中添加新规则
 - 规则应具体、可执行，防止类似问题再次发生
+
+本次经验：上游 `BasePath` 与协议请求路径可能分别包含 `/v1`，连接探测和代理转发必须使用一次性路径拼接，避免生成 `/v1/v1/...`；配置文档中的 Origin 不应包含路径，前缀统一由 `BasePath` 表达。
 
  ### 6. 自动更新文档
 - 每次新开发的服务，代码，文档等需要及时总结更新CLAUDE.md

@@ -13,7 +13,7 @@ func TestReadOnlyInstallationHasNoRecursiveExecution(t *testing.T) {
 	if err := os.Mkdir(install, 0700); err != nil {
 		t.Fatal(err)
 	}
-	profile, err := makeProfile(root, root, []string{install}, nil)
+	profile, err := makeProfile(root, root, []string{install}, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,6 +23,27 @@ func TestReadOnlyInstallationHasNoRecursiveExecution(t *testing.T) {
 	}
 	if strings.Contains(profile, "(allow process-exec (subpath") || strings.Contains(profile, "(allow process-exec (literal "+quoted) {
 		t.Fatal("目录不应授予执行权")
+	}
+}
+
+func TestCodexProfileAllowsOnlyManagedRequirementFiles(t *testing.T) {
+	profile, err := makeProfile(t.TempDir(), t.TempDir(), nil, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range codexManagedConfigPaths {
+		quoted, _ := sbQuote(path)
+		if !strings.Contains(profile, "(allow file-read* (literal "+quoted+"))") {
+			t.Fatalf("Codex profile 未允许固定 managed 文件: %s", path)
+		}
+	}
+	for _, service := range []string{"com.apple.cfprefsd.daemon", "com.apple.cfprefsd.agent"} {
+		if !strings.Contains(profile, "(allow mach-lookup (global-name \""+service+"\"))") {
+			t.Fatalf("Codex profile 未允许最小偏好服务查询: %s", service)
+		}
+	}
+	if strings.Contains(profile, "(allow file-read* (subpath \"/etc\"))") {
+		t.Fatal("Codex profile 不应开放整个 /etc")
 	}
 }
 

@@ -3,7 +3,7 @@ package policy
 import "testing"
 
 func TestProductionProfilesFailClosedUntilConfigured(t *testing.T) {
-	for _, key := range []string{"HARBOR_DEMO_MODEL_ORIGIN", "HARBOR_DEMO_MCP_ORIGIN", "HARBOR_CLAUDE_MODEL", "HARBOR_DEMO_MCP_TOOLS", "HARBOR_DSH_MODEL_ORIGIN", "HARBOR_DSH_MODEL", "HARBOR_DSH_MODEL_BASE_PATH"} {
+	for _, key := range []string{"HARBOR_DEMO_MODEL_ORIGIN", "HARBOR_DEMO_MCP_ORIGIN", "HARBOR_CLAUDE_MODEL", "HARBOR_DEMO_MCP_TOOLS", "HARBOR_DSH_MODEL_ORIGIN", "HARBOR_DSH_MODEL", "HARBOR_DSH_MODEL_BASE_PATH", "HARBOR_CODEX_MODEL_ORIGIN", "HARBOR_CODEX_MODEL", "HARBOR_CODEX_MODEL_BASE_PATH"} {
 		t.Setenv(key, "")
 	}
 	for _, p := range DefaultProfiles() {
@@ -16,6 +16,9 @@ func TestProductionProfilesFailClosedUntilConfigured(t *testing.T) {
 	t.Setenv("HARBOR_DSH_MODEL_ORIGIN", "https://dsh.example.test")
 	t.Setenv("HARBOR_DSH_MODEL", "approved-dsh-model")
 	t.Setenv("HARBOR_DSH_MODEL_BASE_PATH", "/anthropic")
+	t.Setenv("HARBOR_CODEX_MODEL_ORIGIN", "https://codex.example.test")
+	t.Setenv("HARBOR_CODEX_MODEL", "approved-codex-model")
+	t.Setenv("HARBOR_CODEX_MODEL_BASE_PATH", "")
 	t.Setenv("HARBOR_DEMO_MCP_ORIGIN", "https://tools.example.test")
 	t.Setenv("HARBOR_DEMO_MCP_TOOLS", "read_approved,lookup_approved")
 	for _, p := range DefaultProfiles() {

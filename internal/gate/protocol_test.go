@@ -123,3 +123,20 @@ func TestModelRejectsHTMLAndWrongProtocol(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAIResponsesModelConnectionUsesBearerAndResponseShape(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" || r.Header.Get("Authorization") != "Bearer fixture-key" {
+			t.Errorf("Codex Responses 请求错误: path=%s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":"resp_fixture","object":"response"}`)
+	}))
+	defer up.Close()
+	store := secrets.NewStore()
+	p := policy.NewBuilder(map[string]policy.FixedProfile{"codex": {ID: "codex", Kind: "model", Protocol: "openai-responses", Model: "gpt-5-codex", Origin: up.URL, Host: "127.0.0.1", TestPath: "/v1/responses", AllowInsecureLoopback: true}})
+	account, err := NewConnections(store, p).ConnectModel(context.Background(), contracts.ConnectInput{ProfileID: "codex", Name: "Codex", APIKey: "fixture-key"})
+	if err != nil || account.ID == "" || store.Count() != 1 {
+		t.Fatalf("Codex Responses 连接失败: %+v %v", account, err)
+	}
+}
