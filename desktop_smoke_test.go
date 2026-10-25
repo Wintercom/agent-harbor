@@ -88,7 +88,7 @@ func runDesktopSmoke() {
 		os.Exit(1)
 	}
 	app := application.New(options)
-	win = newDesktopWindow(app)
+	win = newDesktopWindow(app, options.ShouldQuit)
 	chunks, _ := fs.Glob(assets, "frontend/dist/assets/live-api-*.js")
 	if len(chunks) != 1 {
 		panic("请先执行 wails3 build，生成唯一的 live transport 产物")

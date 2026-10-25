@@ -64,7 +64,7 @@ D1–D5 支持并行开发与联调；I1–I11 支持本次真实闭环判断。
 | 场景 | 操作摘要 | 实际结果 |
 |---|---|---|
 | normal | 连接模型+MCP → 选工作区 → 开始 | provisioning→running→输出/audit→stopped |
-| auth | 场景=认证失败 → 连接模型 | `AUTH_FAILED`；Key 已清空；无会话 |
+| auth | 场景=认证失败 → 连接模型 | 历史返回 `AUTH_FAILED`；2026-10-25 已修为 `UPSTREAM_AUTH_FAILED`；Key 清空、无会话 |
 | busy | 场景=SESSION_BUSY → 已连接后开始 | `SESSION_BUSY`；不进入 running |
 | isolation | 场景=隔离不可用 → 开始 | `ISOLATION_UNAVAILABLE`；Agent 显示不可用 |
 | cleanup | 场景=cleanup → 开始后停止，再停一次 | 首次 failed 且 cleanupComplete=false + 提示重试；再次停止后 stopped |
@@ -78,3 +78,7 @@ D1–D5 支持并行开发与联调；I1–I11 支持本次真实闭环判断。
 ## 2026-10-25 Wails v3 升级检查
 
 D1 的绑定生成已执行；原生 WebView 冒烟通过生成绑定校验 DTO、业务错误、Go→JS 中文事件及最后窗口关闭回调。Go/CLI/前端 runtime 均固定 3.0.0-beta.34。命令与证据范围见 [升级验证](WAILS-V3-ASSESSMENT.md)。本项未使用真实凭据、未运行真实模型/MCP 任务，也未人工选择系统目录，不能据此将 I1–I11 整体改为通过。
+
+## 2026-10-25 联调准入缺陷修复
+
+连接重定向/假成功、在途撤销、桌面准入与前端事件问题已修复并加入回归；退出失败可保留窗口重试，受限绑定仅七个方法。证据与范围见 [ABC 修复进展](ABC-INTEGRATION-REVIEW.md#修复进展)。独立 Postman 上游模拟已实际收到真实 Go HTTP 客户端请求；前端 11 项测试及实际 WebView 关闭通过。上述证据不改变真实 I1/I2 和完整 I3–I11 待执行的状态。

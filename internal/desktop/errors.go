@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	"errors"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
@@ -18,6 +19,10 @@ func mapError(err error) *contracts.AppError {
 		return contracts.NewAppError(pub.Code, pub.Message, pub.Retryable)
 	}
 	switch {
+	case errors.Is(err, context.Canceled):
+		return contracts.NewAppError(contracts.ErrCancelled, "操作已取消", false)
+	case errors.Is(err, context.DeadlineExceeded):
+		return contracts.NewAppError(contracts.ErrUpstreamTimeout, "上游连接超时", true)
 	case errors.Is(err, gate.ErrInvalidConnectInput):
 		return contracts.NewAppError(contracts.ErrInvalidArgument, "输入不合法", false)
 	case errors.Is(err, gate.ErrUpstreamAuth):

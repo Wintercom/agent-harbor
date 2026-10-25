@@ -20,6 +20,7 @@ const FIXED = {
 
 let scenario = "normal";
 let seq = 0;
+let sessionNumber = 0;
 let session = null;
 let modelAccount = null;
 let mcpAccount = null;
@@ -51,6 +52,8 @@ function emit(partial) {
     audit: partial.audit || null,
     error: partial.error || null,
   };
+  if (session && event.sessionId === session.sessionId) session.seq = event.seq;
+  if (event.state) event.state = { ...event.state, seq: event.seq };
   listeners.forEach((cb) => {
     try {
       cb(event);
@@ -109,7 +112,7 @@ export async function connectModel(input) {
   if (scenario === "auth") {
     return {
       account: null,
-      error: err("AUTH_FAILED", "模型认证失败（模拟）", true),
+      error: err("UPSTREAM_AUTH_FAILED", "模型认证失败（模拟）", false),
     };
   }
   if (!input?.profileId || !input?.name || !input?.apiKey) {
@@ -144,7 +147,7 @@ export async function connectMcp(input) {
   if (scenario === "auth") {
     return {
       account: null,
-      error: err("AUTH_FAILED", "MCP 认证失败（模拟）", true),
+      error: err("UPSTREAM_AUTH_FAILED", "MCP 认证失败（模拟）", false),
     };
   }
   if (!input?.profileId || !input?.name || !input?.apiKey) {
@@ -188,10 +191,18 @@ export async function createSession(spec) {
       error: err("SESSION_BUSY", "已有会话占用（模拟）"),
     };
   }
-  if (!spec?.workspace || !spec?.agentId || !spec?.modelAccountId || !spec?.task) {
+  if (
+    !spec?.workspace ||
+    !spec?.agentId ||
+    !spec?.modelAccountId ||
+    !spec?.task
+  ) {
     return {
       session: null,
-      error: err("INVALID_ARGUMENT", "workspace、agentId、modelAccountId、task 必填"),
+      error: err(
+        "INVALID_ARGUMENT",
+        "workspace、agentId、modelAccountId、task 必填",
+      ),
     };
   }
   if (!Array.isArray(spec.mcpIds) || spec.mcpIds.length !== 1) {
@@ -221,7 +232,8 @@ export async function createSession(spec) {
 
   clearTimers();
   busy = true;
-  const sessionId = "sess-mock-1";
+  const sessionId = `sess-mock-${++sessionNumber}`;
+  seq = 0;
   session = {
     sessionId,
     state: "provisioning",
@@ -231,6 +243,7 @@ export async function createSession(spec) {
     cleanupComplete: false,
     error: null,
   };
+  emit({ type: "state_changed", state: snapshot() });
   const first = snapshot();
   schedule(200, () => {
     if (!session || session.sessionId !== sessionId) return;
@@ -277,7 +290,10 @@ export async function createSession(spec) {
 
 function beginStop(fromUser) {
   if (!session) return;
-  if (session.state === "stopped" || (session.state === "failed" && session.cleanupComplete)) {
+  if (
+    session.state === "stopped" ||
+    (session.state === "failed" && session.cleanupComplete)
+  ) {
     return;
   }
   clearTimers();
@@ -289,12 +305,12 @@ function beginStop(fromUser) {
       snapshot({
         state: "failed",
         cleanupComplete: false,
-        error: err("CLEANUP_FAILED", "清理未确认（模拟）", true),
+        error: err("CLEANUP_FAILED", "清理未确认（模拟）", false),
       });
       emit({ type: "state_changed", state: snapshot() });
       emit({
         type: "error",
-        error: err("CLEANUP_FAILED", "清理未确认，锁仍占用（模拟）", true),
+        error: err("CLEANUP_FAILED", "清理未确认，锁仍占用（模拟）", false),
       });
       // 保留 busy，允许 Stop 重试
       return;
@@ -326,14 +342,18 @@ export async function stopSession(sessionId) {
       error: err("SESSION_NOT_FOUND", "未知会话"),
     };
   }
-  if (session.state === "stopped") {
+  if (["stopped", "stopping"].includes(session.state)) {
     return { session: snapshot(), error: null };
   }
   if (session.state === "failed" && session.cleanupComplete) {
     return { session: snapshot(), error: null };
   }
   // cleanup 失败场景：再次 Stop 视为重试清理成功
-  if (session.state === "failed" && !session.cleanupComplete && scenario === "cleanup") {
+  if (
+    session.state === "failed" &&
+    !session.cleanupComplete &&
+    scenario === "cleanup"
+  ) {
     snapshot({ state: "stopping", error: null, cleanupComplete: false });
     emit({ type: "state_changed", state: snapshot() });
     schedule(300, () => {

@@ -36,10 +36,7 @@ func TestCreateSessionForwardsInjectedService(t *testing.T) {
 
 func TestConnectRejectedWhileSessionBusy(t *testing.T) {
 	app := NewApp()
-	app.forwardEvent(contracts.Event{
-		Type:  contracts.EventTypeStateChanged,
-		State: &contracts.SessionSnapshot{State: contracts.StateRunning},
-	})
+	app.SetSessionService(&recordingSession{connectionErr: contracts.NewAppError(contracts.ErrSessionBusy, "已有会话进行中", false)})
 	api := NewDesktopAPI(app)
 	model := api.ConnectModel(contracts.ConnectInput{ProfileID: "demo-model", Name: "n", APIKey: "secret"})
 	mcp := api.ConnectMcp(contracts.ConnectInput{ProfileID: "demo-mcp", Name: "n", APIKey: "secret"})
@@ -49,13 +46,7 @@ func TestConnectRejectedWhileSessionBusy(t *testing.T) {
 	if mcp.Error == nil || mcp.Error.Code != contracts.ErrSessionBusy {
 		t.Fatalf("mcp=%+v", mcp)
 	}
-	app.forwardEvent(contracts.Event{
-		Type:  contracts.EventTypeStateChanged,
-		State: &contracts.SessionSnapshot{State: contracts.StateStopped, CleanupComplete: true},
-	})
-	if app.sessionBusy() {
-		t.Fatal("stopped session should release connect")
-	}
+
 }
 
 func TestMapErrorPassesPublicAppError(t *testing.T) {
@@ -75,10 +66,6 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 		t.Fatal("expected orchestrator")
 	}
 	api := NewDesktopAPI(app)
-	info := api.AppInfo()
-	if info["orchestrator"] != "wired" || info["gate"] != "ok" {
-		t.Fatalf("%v", info)
-	}
 	agents := api.ListAgents()
 	if agents.Error != nil || len(agents.Agents) != 1 || agents.Agents[0].ID != "claude" {
 		t.Fatalf("%+v", agents)
@@ -86,7 +73,9 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 }
 
 type recordingSession struct {
-	last contracts.SessionSpec
+	last          contracts.SessionSpec
+	connectionErr error
+	shutdownErr   error
 }
 
 func (r *recordingSession) Create(_ context.Context, spec contracts.SessionSpec) (contracts.SessionSnapshot, error) {
@@ -105,4 +94,25 @@ func (r *recordingSession) Stop(context.Context, string) (contracts.SessionSnaps
 	return contracts.SessionSnapshot{State: "stopping"}, nil
 }
 
-func (r *recordingSession) Shutdown(context.Context) error { return nil }
+func (r *recordingSession) Shutdown(context.Context) error { return r.shutdownErr }
+
+func (r *recordingSession) WithConnection(ctx context.Context, action func(context.Context) error) error {
+	if r.connectionErr != nil {
+		return r.connectionErr
+	}
+	return action(ctx)
+}
+
+func TestShutdownRetainsCredentialsUntilCleanupConfirmed(t *testing.T) {
+	app := NewApp()
+	svc := &recordingSession{shutdownErr: contracts.NewAppError(contracts.ErrCleanupFailed, "清理未确认完成", false)}
+	app.SetSessionService(svc)
+	_, _ = app.secrets.Put(context.Background(), contracts.AccountInfo{Kind: "model", Name: "fixture", ProfileID: "m", Host: "example.test"}, []byte("fixture"))
+	if err := app.Shutdown(context.Background()); err == nil || app.secrets.Count() != 1 {
+		t.Fatal("失败后无法保留资源重试")
+	}
+	svc.shutdownErr = nil
+	if err := app.Shutdown(context.Background()); err != nil || app.secrets.Count() != 0 {
+		t.Fatal("确认清理后没有清空凭据")
+	}
+}

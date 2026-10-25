@@ -14,7 +14,7 @@ import (
 
 // AttachOrchestrator 用研发 A 的 Runtime、Claude Kit 与 Orchestrator 接上本进程的 Gate/Policy/Secrets。
 // appCtx 是应用级 context，会话任务从它派生；不要传入已取消的请求 context。
-// 模型名来自 HARBOR_CLAUDE_MODEL，缺省为宿主机固定占位，不从任务正文推导。
+// 模型名来自 HARBOR_CLAUDE_MODEL，连接配置必须显式登记；检测仍可在未配置账号时独立运行。
 func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if appCtx == nil {
 		appCtx = context.Background()

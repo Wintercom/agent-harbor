@@ -44,15 +44,21 @@ type GateBinding struct {
 }
 
 type sessionRuntime struct {
-	spec      GateSpec
-	sentinel  string
-	model     *modelProxy
-	mcp       *mcpGateway
-	modelAddr string
-	mcpAddr   string
-	cancel    context.CancelFunc
-	audit     func(contracts.AuditData)
-	fatal     func(error)
+	spec       GateSpec
+	sentinel   string
+	model      *modelProxy
+	mcp        *mcpGateway
+	modelAddr  string
+	mcpAddr    string
+	cancel     context.CancelFunc
+	ctx        context.Context
+	revoked    bool
+	active     sync.WaitGroup
+	serving    sync.WaitGroup
+	revokeOnce sync.Once
+	done       chan struct{}
+	audit      func(contracts.AuditData)
+	fatal      func(error)
 }
 
 // Harbor 是控制面出站闸口。
@@ -73,7 +79,8 @@ func New(store *secrets.Store, pol *policy.Builder) *Harbor {
 		policy:  pol,
 		client: &http.Client{
 			// 会话流量用单次请求的空闲与总超时，避免 Client.Timeout 在流式响应中途掐断。
-			Timeout: 0,
+			Timeout:   0,
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -116,7 +123,7 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 		return GateBinding{}, err
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(ctx)
 	mp := newModelProxy(h, spec.SessionID, modelLn)
 	gw := newMCPGateway(h, spec.SessionID, mcpLn)
 
@@ -128,9 +135,14 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 		modelAddr: modelLn.Addr().String(),
 		mcpAddr:   mcpLn.Addr().String(),
 		cancel:    cancel,
-		audit:     audit,
-		fatal:     fatal,
+		ctx:       runCtx, done: make(chan struct{}),
+		audit: audit,
+		fatal: fatal,
 	}
+
+	mp.server.BaseContext = func(net.Listener) context.Context { return runCtx }
+	gw.server.BaseContext = func(net.Listener) context.Context { return runCtx }
+	rt.serving.Add(2)
 
 	h.mu.Lock()
 	if _, exists := h.sessions[spec.SessionID]; exists {
@@ -143,8 +155,9 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 	h.sessions[spec.SessionID] = rt
 	h.mu.Unlock()
 
-	go mp.serve(runCtx)
-	go gw.serve(runCtx)
+	go func() { defer rt.serving.Done(); mp.serve(runCtx) }()
+	go func() { defer rt.serving.Done(); gw.serve(runCtx) }()
+	go func() { <-runCtx.Done(); _ = h.Revoke(context.Background(), spec.SessionID) }()
 
 	// 确认端口可接受连接
 	if err := waitReady(ctx, rt.modelAddr, rt.mcpAddr); err != nil {
@@ -190,29 +203,61 @@ func (h *Harbor) Revoke(ctx context.Context, sessionID string) error {
 	h.mu.Lock()
 	rt, ok := h.sessions[sessionID]
 	if ok {
-		delete(h.sessions, sessionID)
+		rt.revoked = true
 	}
 	h.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	rt.sentinel = "" // 本地失效
+	// Sentinel 内容不可并发改写；在锁内标记失效，取消所有入站及上游 context。
 	rt.cancel()
-	if rt.model != nil {
-		rt.model.close()
+	rt.revokeOnce.Do(func() {
+		go func() {
+			if rt.model != nil {
+				rt.model.close()
+			}
+			if rt.mcp != nil {
+				rt.mcp.close()
+			}
+			rt.serving.Wait()
+			rt.active.Wait()
+			h.client.CloseIdleConnections()
+			close(rt.done)
+		}()
+	})
+	select {
+	case <-rt.done:
+		h.mu.Lock()
+		if h.sessions[sessionID] == rt {
+			delete(h.sessions, sessionID)
+		}
+		h.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		return errors.New(contracts.ErrCleanupFailed)
 	}
-	if rt.mcp != nil {
-		rt.mcp.close()
-	}
-	_ = ctx
-	return nil
 }
 
 func (h *Harbor) getSession(sessionID string) (*sessionRuntime, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	rt, ok := h.sessions[sessionID]
-	return rt, ok
+	if !ok || rt.revoked || rt.ctx.Err() != nil {
+		return nil, false
+	}
+	return rt, true
+}
+
+// acquireSession 和撤销共用锁，禁止 Wait 开始后再增加在途计数。
+func (h *Harbor) acquireSession(sessionID string) (*sessionRuntime, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.revoked || rt.ctx.Err() != nil {
+		return nil, false
+	}
+	rt.active.Add(1)
+	return rt, true
 }
 
 func (h *Harbor) emitAudit(rt *sessionRuntime, data contracts.AuditData) {

@@ -148,19 +148,19 @@ func TestRevokeInvalidatesSentinel(t *testing.T) {
 
 func TestConnectModelWithLocalUpstream(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") != "good-key" {
+		if r.Header.Get("X-Api-Key") != "good-key" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"type":"message","content":[{"type":"text","text":"OK"}]}`))
 	}))
 	defer origin.Close()
 
 	store := secrets.NewStore()
 	pol := policy.NewBuilder(map[string]policy.FixedProfile{
 		policy.ProfileDemoModel: {
-			ID: policy.ProfileDemoModel, Kind: "model", Origin: origin.URL,
+			ID: policy.ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: "fixture", AllowInsecureLoopback: true, Origin: origin.URL,
 			Paths: []string{"/"}, Host: "127.0.0.1", TestPath: "/",
 		},
 		policy.ProfileDemoMCP: {

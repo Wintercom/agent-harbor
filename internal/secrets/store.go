@@ -43,7 +43,7 @@ func newID(kind string) string {
 }
 
 // Put 要求 info.ID 为空；成功后分配 ID 并保存密钥。失败不留记录。
-func (s *Store) Put(_ context.Context, info contracts.AccountInfo, key []byte) (string, error) {
+func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte) (string, error) {
 	if info.ID != "" {
 		return "", ErrInvalidInput
 	}
@@ -77,6 +77,9 @@ func (s *Store) Put(_ context.Context, info contracts.AccountInfo, key []byte) (
 	keyCopy := append([]byte(nil), key...)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	s.byID[id] = &record{meta: meta, key: keyCopy}
 	return id, nil
 }

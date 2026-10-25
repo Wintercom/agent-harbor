@@ -118,7 +118,10 @@ export function mountSetup(root, ctx) {
     els.start.disabled = missing.length > 0;
     if (missing.length) {
       els.msg.textContent = `开始前还需：${missing.join("、")}`;
-    } else if (!els.msg.querySelector(".bad") && !els.msg.querySelector(".ok")) {
+    } else if (
+      !els.msg.querySelector(".bad") &&
+      !els.msg.querySelector(".ok")
+    ) {
       els.msg.textContent = "就绪，可开始运行";
     }
   }
@@ -150,7 +153,7 @@ export function mountSetup(root, ctx) {
     api.setMockScenario(els.scenario.value);
     const tip =
       els.scenario.value === "auth"
-        ? "已切 auth：请重新连接模型/MCP 以看到 AUTH_FAILED"
+        ? "已切 auth：请重新连接模型/MCP 以看到 UPSTREAM_AUTH_FAILED"
         : `已切换场景：${els.scenario.value}`;
     els.msg.textContent = tip;
     refreshAgents();
@@ -267,5 +270,5 @@ export function mountSetup(root, ctx) {
   };
 
   refreshAgents();
-  return { refreshStart };
+  return { refreshStart, refreshAgents };
 }

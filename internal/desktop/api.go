@@ -48,31 +48,29 @@ func (d *DesktopAPI) SelectWorkspace() contracts.WorkspaceResponse {
 		CanChooseDirectories(true).
 		CanChooseFiles(false).
 		PromptForSingleSelection()
-	if err != nil || path == "" {
+	return workspaceResult(path, err)
+}
+
+func workspaceResult(path string, err error) contracts.WorkspaceResponse {
+	if err != nil {
+		return contracts.WorkspaceResponse{Error: mapError(err)}
+	}
+	if path == "" {
 		return contracts.WorkspaceResponse{Cancelled: true}
 	}
 	return contracts.WorkspaceResponse{Path: path}
 }
 
-func (d *DesktopAPI) rejectIfBusy() *contracts.AppError {
-	if d.app.sessionBusy() {
-		return contracts.NewAppError(contracts.ErrSessionBusy, "已有会话进行中", false)
-	}
-	return nil
-}
-
-func (d *DesktopAPI) noteSnapshot(snap contracts.SessionSnapshot) {
-	d.app.noteSessionState(snap.State, snap.CleanupComplete)
-}
-
 // ConnectModel 测试并保存模型账号。
 func (d *DesktopAPI) ConnectModel(in contracts.ConnectInput) contracts.AccountResponse {
-	if err := d.rejectIfBusy(); err != nil {
-		return contracts.AccountResponse{Error: err}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	meta, err := d.app.conn.ConnectModel(ctx, in)
+	var meta contracts.AccountInfo
+	err := d.app.sessionRef().WithConnection(ctx, func(call context.Context) error {
+		var err error
+		meta, err = d.app.conn.ConnectModel(call, in)
+		return err
+	})
 	if err != nil {
 		return contracts.AccountResponse{Error: mapError(err)}
 	}
@@ -81,12 +79,14 @@ func (d *DesktopAPI) ConnectModel(in contracts.ConnectInput) contracts.AccountRe
 
 // ConnectMcp 测试并保存 MCP 账号。
 func (d *DesktopAPI) ConnectMcp(in contracts.ConnectInput) contracts.AccountResponse {
-	if err := d.rejectIfBusy(); err != nil {
-		return contracts.AccountResponse{Error: err}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	meta, err := d.app.conn.ConnectMcp(ctx, in)
+	var meta contracts.AccountInfo
+	err := d.app.sessionRef().WithConnection(ctx, func(call context.Context) error {
+		var err error
+		meta, err = d.app.conn.ConnectMcp(call, in)
+		return err
+	})
 	if err != nil {
 		return contracts.AccountResponse{Error: mapError(err)}
 	}
@@ -101,7 +101,6 @@ func (d *DesktopAPI) CreateSession(spec contracts.SessionSpec) contracts.Session
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
-	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
 }
 
@@ -113,7 +112,6 @@ func (d *DesktopAPI) GetSession(id string) contracts.SessionResponse {
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
-	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
 }
 
@@ -125,21 +123,5 @@ func (d *DesktopAPI) StopSession(id string) contracts.SessionResponse {
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
-	d.noteSnapshot(snap)
 	return contracts.SessionResponse{Session: &snap}
-}
-
-// AppInfo 供诊断显示接线状态，不含密钥。
-func (d *DesktopAPI) AppInfo() map[string]string {
-	orch := "unavailable"
-	if d.app.orchestratorReady() {
-		orch = "wired"
-	}
-	return map[string]string{
-		"product":      "Agent Harbor",
-		"role":         "control-plane",
-		"gate":         d.app.gate.Health(),
-		"orchestrator": orch,
-		"framework":    "wails-v3",
-	}
 }

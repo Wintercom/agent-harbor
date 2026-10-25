@@ -1,0 +1,9 @@
+version: 1
+name: Harbor 受控协议上游
+slug: harbor-upstream
+protocol: http
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

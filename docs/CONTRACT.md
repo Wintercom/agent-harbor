@@ -102,6 +102,7 @@ type Event struct {
 // 下列为后端接口规格，不属于 UI DTO，也不得绑定到 Wails。
 // 方法的 context 为调用控制；SessionService 内部用应用级 context 派生任务。
 type SessionService interface {
+    WithConnection(context.Context, func(context.Context) error) error // 后端连接准入，不绑定 Wails
     Create(context.Context, SessionSpec) (SessionSnapshot, error)
     Get(context.Context, string) (SessionSnapshot, error)
     Stop(context.Context, string) (SessionSnapshot, error)
@@ -308,3 +309,5 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 公开 Event 在进入事件传输前必须满足 `contracts.Event.Validate` 的纯数据形状校验；该校验不替代策略、凭据或操作系统边界检查。
 
 本文是并行实现的唯一方法/字段来源。首次落地时 A 合入 contracts DTO 和内部消费边界，B 复核并生成 Wails 绑定，C 据此实现 api.js；新增字段或语义变更先改本文及双方实现/替身，不能让联调时临时协商接口。首次编译仍是实现检查点，当前文档规格编译通过不意味着绑定生成或应用已可运行。
+
+2026-10-25 修复约定：连接测试通过 SessionService.WithConnection 原子占用与 Create 共用的准入锁；会话活动、清理未完成或另一连接进行中均拒绝。编排只调用不透明回调，不获得凭据能力。Shutdown 取消并等待连接结束。ConnectModel 验证固定 Anthropic messages 响应（最多 1 token）；ConnectMcp 执行 2025-03-26 initialize/initialized/tools/list 并核对人工白名单；拒绝重定向与非 HTTPS 生产配置。未配置接入项失败关闭，不自动选供应商。

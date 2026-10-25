@@ -30,17 +30,13 @@ func newModelProxy(h *Harbor, sessionID string, ln net.Listener) *modelProxy {
 }
 
 func (p *modelProxy) close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = p.server.Shutdown(ctx)
+	// 取消时强制关闭活动连接；Revoke 另行等待全部 handler 与 Serve 退出。
+	_ = p.server.Close()
 	_ = p.ln.Close()
 }
 
 func (p *modelProxy) serve(ctx context.Context) {
-	go func() {
-		<-ctx.Done()
-		p.close()
-	}()
+
 	err := p.server.Serve(p.ln)
 	if err != nil && err != http.ErrServerClosed {
 		rt, _ := p.h.getSession(p.sid)
@@ -49,11 +45,12 @@ func (p *modelProxy) serve(ctx context.Context) {
 }
 
 func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
-	rt, ok := p.h.getSession(p.sid)
+	rt, ok := p.h.acquireSession(p.sid)
 	if !ok {
 		http.Error(w, "session gone", http.StatusServiceUnavailable)
 		return
 	}
+	defer rt.active.Done()
 	host := hostOfOrigin(rt.spec.Policy.Model.Origin)
 	if !policy.PathAllowed(rt.spec.Policy.Model, r.URL.Path) {
 		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
