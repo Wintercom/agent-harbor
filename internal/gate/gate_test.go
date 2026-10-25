@@ -231,13 +231,18 @@ func TestConnectCustomDeepSeekAnthropicPrefix(t *testing.T) {
 }
 
 func TestAuthProbeErrorLiteLLMSKHint(t *testing.T) {
-	err := authProbeError([]byte(`{"error":{"message":"LiteLLM Virtual Key expected. Received=****, expected to start with 'sk-'.","type":"auth_error"}}`))
+	err := authProbeError("llmapi.qiniu.io", []byte(`{"error":{"message":"LiteLLM Virtual Key expected. Received=****, expected to start with 'sk-'.","type":"auth_error"}}`))
 	ae, ok := err.(*contracts.AppError)
 	if !ok || ae.Code != contracts.ErrUpstreamAuthFailed || !strings.Contains(ae.Message, "sk-") {
 		t.Fatalf("%v", err)
 	}
 	if strings.Contains(ae.Message, "Received=") {
 		t.Fatalf("leaked upstream detail: %s", ae.Message)
+	}
+	err = authProbeError("api.qnaigc.com", []byte(`{"error":{"message":"Invalid API key","type":"authentication_error"}}`))
+	ae, ok = err.(*contracts.AppError)
+	if !ok || !strings.Contains(ae.Message, "不是同一套") {
+		t.Fatalf("%v", err)
 	}
 }
 

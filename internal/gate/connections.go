@@ -57,8 +57,7 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 	name := strings.TrimSpace(in.Name)
 	profileID := strings.TrimSpace(in.ProfileID)
 	origin := strings.TrimSpace(in.Origin)
-	// 粘贴常带首尾空白/换行；上游按整串校验，空白会导致「Invalid API key」。
-	key := strings.TrimSpace(in.APIKey)
+	key := sanitizeAPIKey(in.APIKey)
 	if name == "" || len(key) == 0 {
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
@@ -110,7 +109,7 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 					return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
 				}
 				probeErr = err
-				if errors.Is(err, ErrUpstreamAuth) {
+				if isUpstreamAuthErr(err) {
 					sawAuth = true
 				} else {
 					sawOther = true
@@ -124,6 +123,9 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		if !ok {
 			// 全是 401 才报认证失败；夹杂 404/协议错误时优先「上游不可用」，避免把错 path/模型误报成 Key 无效。
 			if sawAuth && !sawOther {
+				if probeErr != nil {
+					return contracts.AccountInfo{}, probeErr
+				}
 				return contracts.AccountInfo{}, ErrUpstreamAuth
 			}
 			if probeErr != nil {
@@ -161,11 +163,38 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 		return c.probeMCP(ctx, prof, apiKey)
 	}
 	body, _ := json.Marshal(map[string]any{"model": prof.Model, "max_tokens": 1, "messages": []any{map[string]string{"role": "user", "content": "Reply OK"}}})
-	resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body)
-	if err != nil {
-		return err
+	// 自定义网关优先只带 Bearer（七牛/LiteLLM 文档如此）；再试 X-Api-Key；最后双头。
+	modes := []modelAuthMode{modelAuthBoth}
+	if prof.ID == policy.ProfileCustom {
+		modes = []modelAuthMode{modelAuthBearer, modelAuthXAPIKey, modelAuthBoth}
 	}
-	defer resp.Body.Close()
+	var last error
+	for _, mode := range modes {
+		resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body, mode)
+		if err != nil {
+			last = err
+			if isUpstreamAuthErr(err) {
+				continue
+			}
+			return err
+		}
+		err = readAnthropicProbeOK(ctx, resp)
+		resp.Body.Close()
+		if err == nil {
+			return nil
+		}
+		last = err
+		if !isUpstreamAuthErr(err) {
+			return err
+		}
+	}
+	if last != nil {
+		return last
+	}
+	return ErrUpstreamAuth
+}
+
+func readAnthropicProbeOK(ctx context.Context, resp *http.Response) error {
 	var result struct {
 		Type    string `json:"type"`
 		Content []struct {
@@ -183,7 +212,15 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	return ctx.Err()
 }
 
-func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile, key, session, method string, body []byte) (*http.Response, error) {
+type modelAuthMode int
+
+const (
+	modelAuthBoth modelAuthMode = iota
+	modelAuthBearer
+	modelAuthXAPIKey
+)
+
+func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile, key, session, method string, body []byte, authMode modelAuthMode) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+prof.BasePath+prof.TestPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, ErrUpstreamDown
@@ -191,9 +228,15 @@ func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if prof.Kind == "model" {
-		// 官方 Anthropic 认 X-Api-Key；不少兼容网关只认 Bearer。与 model_proxy 出站一致两边都带。
-		req.Header.Set("X-Api-Key", key)
-		req.Header.Set("Authorization", "Bearer "+key)
+		switch authMode {
+		case modelAuthBearer:
+			req.Header.Set("Authorization", "Bearer "+key)
+		case modelAuthXAPIKey:
+			req.Header.Set("X-Api-Key", key)
+		default:
+			req.Header.Set("X-Api-Key", key)
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
 		req.Header.Set("Anthropic-Version", "2023-06-01")
 	} else {
 		req.Header.Set("Authorization", "Bearer "+key)
@@ -210,22 +253,49 @@ func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile
 		raw, _ := readProbeBody(resp)
 		resp.Body.Close()
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			return nil, authProbeError(raw)
+			return nil, authProbeError(prof.Host, raw)
 		}
 		return nil, ErrUpstreamDown
 	}
 	return resp, nil
 }
 
+func sanitizeAPIKey(raw string) string {
+	k := strings.TrimSpace(raw)
+	k = strings.Trim(k, "\"'")
+	k = strings.Map(func(r rune) rune {
+		switch r {
+		case '\uFEFF', '\u200B', '\u200C', '\u200D', '\u00A0':
+			return -1
+		}
+		if r < 32 {
+			return -1
+		}
+		return r
+	}, k)
+	return strings.TrimSpace(k)
+}
+
+func isUpstreamAuthErr(err error) bool {
+	if errors.Is(err, ErrUpstreamAuth) {
+		return true
+	}
+	var ae *contracts.AppError
+	return errors.As(err, &ae) && ae != nil && ae.Code == contracts.ErrUpstreamAuthFailed
+}
+
 // authProbeError 把上游 401/403 正文收成固定中文提示，不回传 Key/哈希等敏感片段。
-func authProbeError(raw []byte) error {
+func authProbeError(host string, raw []byte) error {
 	low := strings.ToLower(string(raw))
+	host = strings.ToLower(host)
 	msg := "上游认证失败"
 	switch {
 	case strings.Contains(low, "expected to start with 'sk-'") || strings.Contains(low, `expected to start with "sk-"`):
-		msg = "上游要求 API Key 以 sk- 开头（LiteLLM/七牛虚拟 Key）。请换 sk-… Key，或改用 https://api.qnaigc.com"
+		msg = "上游要求 API Key 以 sk- 开头（LiteLLM 虚拟 Key）"
 	case strings.Contains(low, "litellm") && (strings.Contains(low, "token_not_found") || strings.Contains(low, "invalid proxy server token")):
-		msg = "上游拒绝了该 Key（LiteLLM 虚拟 Key 无效或未登记）"
+		msg = "上游拒绝了该 Key（LiteLLM 未登记或已失效）。请确认地址为 https://llmapi.qiniu.io 且 Key 属于该网关"
+	case strings.Contains(host, "qnaigc") && (strings.Contains(low, "invalid api key") || strings.Contains(low, "authentication_error")):
+		msg = "上游认证失败：API Key 无效。api.qnaigc.com 与 llmapi.qiniu.io 不是同一套 Key；请到 portal.qiniu.com/ai-inference 复制官方 Key，或改地址为 LiteLLM 网关"
 	case strings.Contains(low, "invalid api key") || strings.Contains(low, "invalid x-api-key") || strings.Contains(low, "authentication_error"):
 		msg = "上游认证失败：API Key 无效"
 	}
@@ -292,7 +362,7 @@ func decodeRPC(resp *http.Response, id int, result any) error {
 
 func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, key string) error {
 	initBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent-harbor","version":"0.1.0"}}}`)
-	resp, err := c.probeRequest(ctx, prof, key, "", http.MethodPost, initBody)
+	resp, err := c.probeRequest(ctx, prof, key, "", http.MethodPost, initBody, modelAuthBearer)
 	if err != nil {
 		return err
 	}
@@ -302,7 +372,7 @@ func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, ke
 			// 测试创建的上游会话也必须关闭，失败不触发任何工具调用。
 			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 			defer cancel()
-			if r, e := c.probeRequest(cleanup, prof, key, session, http.MethodDelete, nil); e == nil {
+			if r, e := c.probeRequest(cleanup, prof, key, session, http.MethodDelete, nil, modelAuthBearer); e == nil {
 				r.Body.Close()
 			}
 		}()
@@ -318,7 +388,7 @@ func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, ke
 	if err != nil || initialized.Protocol != mcpProtocolVersion || len(initialized.Capabilities.Tools) == 0 || string(initialized.Capabilities.Tools) == "null" {
 		return ErrUpstreamDown
 	}
-	resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`), modelAuthBearer)
 	if err != nil {
 		return err
 	}
@@ -331,7 +401,7 @@ func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, ke
 	seen := map[string]bool{}
 	for page := 0; page < 20; page++ {
 		payload, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]string{"cursor": cursor}})
-		resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, payload)
+		resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, payload, modelAuthBearer)
 		if err != nil {
 			return err
 		}

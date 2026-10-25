@@ -8,8 +8,9 @@ const PRESETS = [
   { name: "Anthropic", origin: "https://api.anthropic.com", model: "claude-haiku-4-5-20251001" },
   // DeepSeek Anthropic 兼容基址（探测 POST …/anthropic/v1/messages，模型 deepseek-chat）
   { name: "DeepSeek", origin: "https://api.deepseek.com/anthropic", model: "deepseek-chat" },
-  // 七牛官方 Anthropic 兼容（勿用 llmapi.qiniu.io 除非 Key 为 sk- 虚拟 Key）
-  { name: "七牛", origin: "https://api.qnaigc.com", model: "" },
+  // 两套七牛网关 Key 不互通：官方 Token API vs LiteLLM
+  { name: "七牛官方", origin: "https://api.qnaigc.com", model: "" },
+  { name: "七牛LiteLLM", origin: "https://llmapi.qiniu.io", model: "GPT-5.6" },
 ];
 
 export function mountModels(root, ctx, opts = {}) {
@@ -135,7 +136,7 @@ export function mountModels(root, ctx, opts = {}) {
         <h3>${editing === "new" ? "添加模型" : "编辑模型"}</h3>
         <label class="field">名称<input id="m-name" value="${acc.name || ""}" maxlength="100"/></label>
         <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://api.deepseek.com/anthropic"/></label>
-        <p class="meta">须 Anthropic 兼容 Messages API。地址可带前缀（如 DeepSeek 的 <code>/anthropic</code>）；探测 POST <code>{origin}/v1/messages</code>。</p>
+        <p class="meta">须 Anthropic 兼容 Messages API（探测 <code>POST …/v1/messages</code>）。七牛：<code>api.qnaigc.com</code> 与 <code>llmapi.qiniu.io</code> 各用各的 Key，不能混用。</p>
         <label class="field">模型名（可选）<input id="m-model" value="${acc.model || ""}" placeholder="空则按主机推断，如 deepseek-chat"/></label>
         <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
         <p class="meta">快捷填入（可选）：
@@ -218,14 +219,11 @@ export function mountModels(root, ctx, opts = {}) {
                 return "";
               }
             })();
-            if (host.includes("llmapi.qiniu") || host.includes("qiniu")) {
-              hint =
-                " llmapi.qiniu.io 要 sk- 开头的 LiteLLM 虚拟 Key；也可点「七牛」改用 https://api.qnaigc.com + 控制台 API Key。";
-            } else if (!/sk-/i.test(key) && res.error.message.includes("sk-")) {
-              hint = "";
+            if (host.includes("qnaigc") || host.includes("llmapi.qiniu")) {
+              hint = ""; // 后端 message 已含七牛双网关说明
             } else {
               hint =
-                " 请确认 Key 与地址匹配。DeepSeek/Anthropic/七牛用对应快捷填入；纯 OpenAI /chat/completions 不受支持。";
+                " 请确认 Key 与地址匹配。DeepSeek/Anthropic 用对应快捷填入；纯 OpenAI /chat/completions 不受支持。";
             }
           } else if (res.error.code === "UPSTREAM_UNAVAILABLE") {
             hint = " 上游可达但协议/模型名可能不对；可改「模型名」后重试。";
