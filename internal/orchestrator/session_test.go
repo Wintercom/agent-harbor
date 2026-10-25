@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -145,7 +146,11 @@ func (p fakePolicy) Build(_ context.Context, req policy.PolicyRequest) (policy.P
 	if mode == "" {
 		mode = "direct"
 	}
-	return policy.PolicySnapshot{Workspace: req.Workspace, MountMode: mode, MCPID: req.MCP.ID}, nil
+	mounts := []policy.MCPMount{}
+	for _, mcp := range req.MCPs {
+		mounts = append(mounts, policy.MCPMount{AccountID: mcp.ID})
+	}
+	return policy.PolicySnapshot{Workspace: req.Workspace, MountMode: mode, MCPMounts: mounts}, nil
 }
 func (f *fixture) Lookup(_ context.Context, id string) (contracts.AccountInfo, error) {
 	if err := f.step("lookup-" + id); err != nil {
@@ -154,7 +159,7 @@ func (f *fixture) Lookup(_ context.Context, id string) (contracts.AccountInfo, e
 	switch id {
 	case "model", "model-next":
 		return contracts.AccountInfo{ID: id, Kind: "model"}, nil
-	case "mcp":
+	case "mcp", "mcp-next":
 		return contracts.AccountInfo{ID: id, Kind: "mcp"}, nil
 	default:
 		return contracts.AccountInfo{}, publicError("ACCOUNT_NOT_FOUND")
@@ -170,7 +175,7 @@ func (f *fixture) SwitchModel(_ context.Context, _ string, account string) error
 	f.mu.Unlock()
 	return nil
 }
-func (f *fixture) Start(_ context.Context, _ gate.GateSpec, audit func(contracts.AuditData), fatal func(error)) (gate.GateBinding, error) {
+func (f *fixture) Start(_ context.Context, spec gate.GateSpec, audit func(contracts.AuditData), fatal func(error)) (gate.GateBinding, error) {
 	if err := f.step("start"); err != nil {
 		return gate.GateBinding{}, err
 	}
@@ -178,7 +183,14 @@ func (f *fixture) Start(_ context.Context, _ gate.GateSpec, audit func(contracts
 	f.onFatal = fatal
 	f.onAudit = audit
 	f.mu.Unlock()
-	return gate.GateBinding{Sentinel: sentinel, ModelBaseURL: "http://127.0.0.1:41001/model", MCPURL: "http://127.0.0.1:41002/mcp", AllowedTCP: []string{"127.0.0.1:41001", "127.0.0.1:41002"}}, nil
+	binding := gate.GateBinding{Sentinel: sentinel, ModelBaseURL: "http://127.0.0.1:41001/model", AllowedTCP: []string{"127.0.0.1:41001"}}
+	if len(spec.Policy.MCPMounts) > 0 {
+		binding.AllowedTCP = append(binding.AllowedTCP, "127.0.0.1:41002")
+	}
+	for i := range spec.Policy.MCPMounts {
+		binding.MCPURLs = append(binding.MCPURLs, "http://127.0.0.1:41002/mcp/"+strconv.Itoa(i))
+	}
+	return binding, nil
 }
 func (f *fixture) Revoke(context.Context, string) error {
 	_ = f.step("revoke")
@@ -589,7 +601,7 @@ func TestValidationAndSingleSessionLock(t *testing.T) {
 	for _, change := range []func(*contracts.SessionSpec){
 		func(s *contracts.SessionSpec) { s.Task = "" }, func(s *contracts.SessionSpec) { s.Task = strings.Repeat("x", 32769) },
 		func(s *contracts.SessionSpec) { s.Task = string([]byte{0xff}) }, func(s *contracts.SessionSpec) { s.Workspace = "" },
-		func(s *contracts.SessionSpec) { s.MCPIDs = nil }, func(s *contracts.SessionSpec) { s.MCPIDs = []string{"a", "b"} },
+		func(s *contracts.SessionSpec) { s.MCPIDs = []string{""} }, func(s *contracts.SessionSpec) { s.MCPIDs = []string{"a", "a"} },
 	} {
 		input := spec()
 		change(&input)
@@ -775,5 +787,33 @@ func TestSessionDeadlineIncludesProvisioning(t *testing.T) {
 		case <-timer.C:
 			t.Fatal("会话总时限未覆盖准备阶段")
 		}
+	}
+}
+
+func TestCreateOptionalAndMultipleMCP(t *testing.T) {
+	for _, ids := range [][]string{nil, {"mcp", "mcp-next"}} {
+		f := newFixture()
+		o := setup(t, f, Timeouts{}, nil)
+		input := spec()
+		input.MCPIDs = ids
+		snap, err := o.Create(context.Background(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		awaitState(t, o, snap.SessionID, contracts.StateRunning)
+		_, err = o.Stop(context.Background(), snap.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		awaitState(t, o, snap.SessionID, contracts.StateStopped)
+	}
+}
+func TestCreateRejectsDuplicateAndTooManyMCP(t *testing.T) {
+	o := setup(t, newFixture(), Timeouts{}, nil)
+	for _, ids := range [][]string{{"mcp", "mcp"}, {""}, {"mcp", "mcp-next", "mcp", "mcp", "mcp", "mcp", "mcp", "mcp", "mcp"}} {
+		input := spec()
+		input.MCPIDs = ids
+		_, err := o.Create(context.Background(), input)
+		assertCode(t, err, "INVALID_ARGUMENT")
 	}
 }

@@ -142,24 +142,56 @@ func (d *DesktopAPI) RemoveAccount(accountID string) contracts.EmptyResponse {
 	return contracts.EmptyResponse{Error: unimplemented()}
 }
 
-// ListSessions 列出会话摘要（V1.1 占位）。
+// ListSessions 读取编排记录，不在桌面层重建会话状态。
 func (d *DesktopAPI) ListSessions() contracts.SessionsResponse {
-	return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: unimplemented()}
-}
-
-// DestroySession 销毁终态会话记录（V1.1 占位）。
-func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse {
-	_ = sessionID
-	return contracts.SessionResponse{Error: unimplemented()}
-}
-
-// GetRuntimeHealth 返回隔离探测（V1.1 占位；实现接 Runtime.Health）。
-func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
-	return contracts.RuntimeHealthResponse{
-		Available: false,
-		Reason:    "健康检查尚未接线",
-		Error:     unimplemented(),
+	service, ok := d.app.sessionRef().(interface {
+		List(context.Context) ([]contracts.SessionSummary, error)
+	})
+	if !ok {
+		return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: unimplemented()}
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sessions, err := service.List(ctx)
+	if err != nil {
+		return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: mapError(err)}
+	}
+	if sessions == nil {
+		sessions = []contracts.SessionSummary{}
+	}
+	return contracts.SessionsResponse{Sessions: sessions}
+}
+
+// DestroySession 仅转发请求；终态和清理检查由编排负责。
+func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse {
+	service, ok := d.app.sessionRef().(interface {
+		Destroy(context.Context, string) (contracts.SessionSnapshot, error)
+	})
+	if !ok {
+		return contracts.SessionResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	snapshot, err := service.Destroy(ctx, sessionID)
+	if err != nil {
+		return contracts.SessionResponse{Error: mapError(err)}
+	}
+	return contracts.SessionResponse{Session: &snapshot}
+}
+
+// GetRuntimeHealth 请求编排执行实际隔离探针；失败只返回固定公开错误。
+func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
+	service, ok := d.app.sessionRef().(interface{ Health(context.Context) error })
+	if !ok {
+		return contracts.RuntimeHealthResponse{Reason: "隔离探测服务尚未就绪", Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := service.Health(ctx); err != nil {
+		public := mapError(err)
+		return contracts.RuntimeHealthResponse{Reason: public.Message, Error: public}
+	}
+	return contracts.RuntimeHealthResponse{Available: true}
 }
 
 // GetPermissionOverview 权限一览（V1.1 占位）。

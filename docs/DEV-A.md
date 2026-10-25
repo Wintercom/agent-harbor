@@ -177,3 +177,13 @@ Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `Agen
 复制使用 `os.Root` 限定源目录范围；拒绝符号链接、特殊文件，单文件上限 64 MiB、总内容 1 GiB、节点数 10 万，逐块检查取消。复制得到独立文件并保留用户执行位；不继承 setuid/setgid 或组/其他用户权限。复制期间原目录仍可能被外部程序修改，副本不承诺文件系统原子快照。
 
 验证覆盖副本修改不影响原文件、链接拒绝、取消、Policy 挂载模式校验、快照副本路径及原目录锁。真实 macOS Runtime 的副本创建与 Destroy 删除测试通过；远程 Agent/模型联调仍待执行。
+
+## 2026-10-25：全量收尾批次（持续验证）
+
+- 输出与 PTY 事件共同计入 1 MiB 队列上限；修复慢 UI 下交互输出绕过预算的问题。Shutdown 先停止全部活动会话，再分别等待清理，不让一个慢会话延迟另一个会话的取消。
+- 会话工具选择支持 0–8 个不重复账号；Policy、Gate、Kit 按顺序交接独立挂载。多挂载分别使用 `/mcp/0` 等路径，持证访问各自固定 `/mcp` 上游，工具白名单互不混用。0 工具只开放模型端口；Claude 空 MCP 配置与 dsh 不装载 MCP 插件。
+- Runtime 新增互斥的 `LaunchSpec.Terminal` 模式，可信宿主分配独立 PTY、绑定控制终端、支持窗口 ioctl 和可取消写入。仍拒绝 fork、未授权执行和提权；Claude 的 JSONL 消息流继续使用管道，不冒充真实终端。真实受限 helper 已验证回显、中文第二轮、resize、终态关闭；尚不能把 helper 证据视为真实 Agent TUI 验收。
+- `dsh.NewConversation` 使用本仓库固定的 `conversation.mjs` 驱动，通过固定版本官方 Agent API 保留同一实例和 Session。驱动随启动配置写入私有 HOME，只导入受信安装目录的官方模块，不装载任务指定代码、不启用动态插件或 shell。桌面装配采用此模式；`dsh.New` 仍保留官方 headless 单任务路径用于回归。输入采用有界 JSONL，正文不进入参数或插件源代码，执行失败退出并由编排清理。
+- 新增真实 dsh + Seatbelt + Gate + 受控 HTTP 上游的两轮验证：第二轮上游请求包含第一轮用户消息及 assistant 回复，且没有新建 Agent 进程；无 MCP 可正常运行。此测试证明受控协议和上下文传递，不代表远程模型回答质量或真实认证 MCP 已验收。
+
+当前未关闭项：Codex Kit 在全量分支的安全移植及受控子进程方案、真实 Agent TUI 与 C 工作台联调、真实远程模型/认证 MCP、扩权 Gate/Policy 与页面完整联调、对外安全证据索引。microVM 仍为 backlog。上述缺口未完成前，不将 A 总体标为完成。

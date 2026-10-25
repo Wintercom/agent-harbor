@@ -45,7 +45,11 @@ func (k realKit) Build(context.Context, kits.KitInput) (runtime.LaunchSpec, erro
 type workspacePolicy struct{ workspace string }
 
 func (p workspacePolicy) Build(_ context.Context, request policy.PolicyRequest) (policy.PolicySnapshot, error) {
-	return policy.PolicySnapshot{Workspace: p.workspace, MountMode: "direct", MCPID: request.MCP.ID}, nil
+	mounts := []policy.MCPMount{}
+	for _, mcp := range request.MCPs {
+		mounts = append(mounts, policy.MCPMount{AccountID: mcp.ID})
+	}
+	return policy.PolicySnapshot{Workspace: p.workspace, MountMode: "direct", MCPMounts: mounts}, nil
 }
 
 func TestOrchestratorWithRealIsolatedProcess(t *testing.T) {

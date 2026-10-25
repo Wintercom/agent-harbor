@@ -90,8 +90,15 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 		return contracts.SessionSnapshot{}, publicError("CANCELLED")
 	}
 	if !utf8.ValidString(spec.Task) || len(spec.Task) < 1 || len(spec.Task) > 32768 || strings.TrimSpace(spec.Task) == "" ||
-		strings.TrimSpace(spec.Workspace) == "" || spec.ModelAccountID == "" || len(spec.MCPIDs) != 1 || spec.MCPIDs[0] == "" || strings.ContainsRune(spec.Workspace, 0) {
+		strings.TrimSpace(spec.Workspace) == "" || spec.ModelAccountID == "" || len(spec.MCPIDs) > 8 || strings.ContainsRune(spec.Workspace, 0) {
 		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	seenMCP := map[string]bool{}
+	for _, id := range spec.MCPIDs {
+		if strings.TrimSpace(id) == "" || seenMCP[id] {
+			return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+		}
+		seenMCP[id] = true
 	}
 	if _, ok := o.deps.Kits[spec.AgentID]; !ok {
 		return contracts.SessionSnapshot{}, publicError("AGENT_UNSUPPORTED")
@@ -227,6 +234,13 @@ func (o *Service) Shutdown(ctx context.Context) error {
 		o.connectionCancel()
 	}
 	o.mu.Unlock()
+	// 先通知全部会话，再等待连接及各会话清理，避免先遇到慢会话而漏停其他进程。
+	for _, s := range active {
+		// 即使调用方期限已到，取消也必须送达；Stop 本身不等待资源清理。
+		if _, err := o.Stop(context.Background(), s.snapshot.SessionID); err != nil {
+			return err
+		}
+	}
 	if connectionDone != nil {
 		select {
 		case <-connectionDone:
@@ -235,9 +249,6 @@ func (o *Service) Shutdown(ctx context.Context) error {
 		}
 	}
 	for _, s := range active {
-		if _, err := o.Stop(ctx, s.snapshot.SessionID); err != nil {
-			return err
-		}
 		o.mu.Lock()
 		done := s.cleanupDone
 		o.mu.Unlock()
@@ -513,19 +524,31 @@ func (o *Service) provision(s *session) error {
 	if err != nil {
 		return safeError(err, "ACCOUNT_NOT_FOUND")
 	}
-	mcp, err := o.deps.Catalog.Lookup(ctx, s.spec.MCPIDs[0])
-	if err != nil {
-		return safeError(err, "ACCOUNT_NOT_FOUND")
-	}
-	if model.ID != s.spec.ModelAccountID || mcp.ID != s.spec.MCPIDs[0] || model.Kind != "model" || mcp.Kind != "mcp" {
+	if model.ID != s.spec.ModelAccountID || model.Kind != "model" {
 		return publicError("INVALID_ARGUMENT")
 	}
-	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, MountMode: s.spec.MountMode, Model: model, MCP: mcp})
+	mcps := make([]contracts.AccountInfo, 0, len(s.spec.MCPIDs))
+	for _, id := range s.spec.MCPIDs {
+		account, err := o.deps.Catalog.Lookup(ctx, id)
+		if err != nil {
+			return safeError(err, "ACCOUNT_NOT_FOUND")
+		}
+		if account.ID != id || account.Kind != "mcp" {
+			return publicError("INVALID_ARGUMENT")
+		}
+		mcps = append(mcps, account)
+	}
+	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, MountMode: s.spec.MountMode, Model: model, MCPs: mcps})
 	if err != nil {
 		return safeError(err, "WORKSPACE_DENIED")
 	}
-	if !filepath.IsAbs(p.Workspace) || (p.MountMode != "direct" && p.MountMode != "clone") || p.MCPID != mcp.ID {
+	if !filepath.IsAbs(p.Workspace) || (p.MountMode != "direct" && p.MountMode != "clone") || len(p.MCPMounts) != len(mcps) {
 		return publicError("WORKSPACE_DENIED")
+	}
+	for i, mount := range p.MCPMounts {
+		if mount.AccountID != mcps[i].ID {
+			return publicError("WORKSPACE_DENIED")
+		}
 	}
 	o.mu.Lock()
 	s.snapshot.Workspace = p.Workspace
@@ -533,7 +556,7 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
+	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
 		return o.RequestPermission(call, s.snapshot.SessionID, request)
 	}},
 		func(data contracts.AuditData) { o.audit(s, data) }, func(err error) { o.fail(s, err, "INTERNAL_ERROR") })
@@ -544,7 +567,7 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !validBinding(binding) {
+	if !validBinding(binding) || len(bindingMCPURLs(binding)) != len(mcps) {
 		return publicError("INVALID_SENTINEL")
 	}
 	o.mu.Lock()
@@ -572,7 +595,7 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	launch, err := kit.Build(ctx, kits.KitInput{Task: s.spec.Task, PrivateHome: handle.PrivateHome, ModelBaseURL: binding.ModelBaseURL, MCPURL: binding.MCPURL, Sentinel: binding.Sentinel})
+	launch, err := kit.Build(ctx, kits.KitInput{Task: s.spec.Task, PrivateHome: handle.PrivateHome, ModelBaseURL: binding.ModelBaseURL, MCPURLs: bindingMCPURLs(binding), Sentinel: binding.Sentinel})
 	if err != nil {
 		return safeError(err, "AGENT_UNSUPPORTED")
 	}
@@ -593,7 +616,7 @@ func (o *Service) provision(s *session) error {
 	}
 	o.mu.Lock()
 	s.process = process
-	s.interactive = launch.Interactive
+	s.interactive = launch.Interactive || launch.Terminal
 	defer o.mu.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -617,7 +640,11 @@ func validBinding(b gate.GateBinding) bool {
 		}
 		allowed[address] = true
 	}
-	for _, raw := range []string{b.ModelBaseURL, b.MCPURL} {
+	urls := append([]string{b.ModelBaseURL}, bindingMCPURLs(b)...)
+	if len(b.MCPURLs) > 0 && b.MCPURL != "" && (len(b.MCPURLs) != 1 || b.MCPURLs[0] != b.MCPURL) {
+		return false
+	}
+	for _, raw := range urls {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme != "http" || !allowed[u.Host] || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 			return false
@@ -753,4 +780,14 @@ func (o *Service) cleanup(s *session) bool {
 		return true
 	}
 	return false
+}
+
+func bindingMCPURLs(b gate.GateBinding) []string {
+	if len(b.MCPURLs) > 0 {
+		return append([]string{}, b.MCPURLs...)
+	}
+	if b.MCPURL != "" {
+		return []string{b.MCPURL}
+	}
+	return []string{}
 }

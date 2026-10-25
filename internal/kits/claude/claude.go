@@ -113,7 +113,11 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if ctx.Err() != nil {
 		return runtime.LaunchSpec{}, kitError("CANCELLED")
 	}
-	if !utf8.ValidString(input.Task) || strings.TrimSpace(input.Task) == "" || len(input.Task) > 32768 || !filepath.IsAbs(input.PrivateHome) || filepath.Clean(input.PrivateHome) != input.PrivateHome || !gateURL(input.ModelBaseURL) || !gateURL(input.MCPURL) || len(input.Sentinel) < 32 || len(input.Sentinel) > 512 {
+	if !utf8.ValidString(input.Task) || strings.TrimSpace(input.Task) == "" || len(input.Task) > 32768 || !filepath.IsAbs(input.PrivateHome) || filepath.Clean(input.PrivateHome) != input.PrivateHome || !gateURL(input.ModelBaseURL) || len(input.Sentinel) < 32 || len(input.Sentinel) > 512 {
+		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
+	}
+	urls, urlErr := kits.MCPGateURLs(input)
+	if urlErr != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
 	for _, r := range input.Sentinel {
@@ -127,11 +131,18 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	}
 	mcpPath := filepath.Join(input.PrivateHome, "harbor-mcp.json")
 	settingsPath := filepath.Join(input.PrivateHome, "harbor-settings.json")
-	mcp, err := json.Marshal(map[string]any{"mcpServers": map[string]any{"harbor": map[string]any{"type": "http", "url": input.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + input.Sentinel}}}})
+	servers := map[string]any{}
+	permissions := []string{"Read", "Write", "Edit"}
+	for i, endpoint := range urls {
+		name := kits.MCPName(i)
+		servers[name] = map[string]any{"type": "http", "url": endpoint, "headers": map[string]string{"Authorization": "Bearer " + input.Sentinel}}
+		permissions = append(permissions, "mcp__"+name+"__*")
+	}
+	mcp, err := json.Marshal(map[string]any{"mcpServers": servers})
 	if err != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
-	settings, err := json.Marshal(map[string]any{"disableAllHooks": true, "permissions": map[string]any{"allow": []string{"Read", "Write", "Edit", "mcp__harbor__*"}}})
+	settings, err := json.Marshal(map[string]any{"disableAllHooks": true, "permissions": map[string]any{"allow": permissions}})
 	if err != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}

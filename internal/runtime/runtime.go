@@ -56,6 +56,7 @@ type LaunchSpec struct {
 	Args        []string
 	Env         map[string]string
 	Stdin       []byte
+	Terminal    bool                         // 分配独立 PTY；与结构化消息编码互斥
 	Interactive bool                         // 保持 stdin 打开，允许同一会话多轮输入
 	EncodeInput func([]byte) ([]byte, error) // Kit 提供协议编码；Runtime 只负责受控写入
 	ConfigFiles []ConfigFile

@@ -13,6 +13,7 @@ import (
 )
 
 type SessionService interface {
+	Health(context.Context) error
 	WithConnection(context.Context, func(context.Context) error) error
 	Create(context.Context, contracts.SessionSpec) (contracts.SessionSnapshot, error)
 	Get(context.Context, string) (contracts.SessionSnapshot, error)

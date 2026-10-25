@@ -6,7 +6,7 @@
 
 A 已补扩权等待/决策生命周期和桌面转发，GateSpec 提供可选会话回调；真实 Gate 触发与 Policy 应用尚待 B 接入，不能当作扩权闭环已验收。详见 [研发 A 开发记录](docs/DEV-A.md)。
 
-Claude 多轮使用 Kit 编码的 stream-json 消息和可取消串行 stdin；dsh headless 仍为单任务，不能仅保持 stdin 打开就声明多轮。验证边界见 [研发 A 开发记录](docs/DEV-A.md)。
+Claude 多轮使用 stream-json；桌面 dsh 使用固定受信会话驱动保留同一 Agent，上游 fixture 已验证两轮历史。Runtime 另有真实 PTY/resize；0–8 个 MCP 独立挂载、输出限额与全会话退出清理已补齐。真实远程与 Agent TUI 联调仍待验收，见 [研发 A 开发记录](docs/DEV-A.md)。
 
 全量分支 A 已接入 clone 工作区副本、原目录互斥及清理测试；安全边界与验证见 [研发 A 开发记录](docs/DEV-A.md)。后续 PR 目标为 `feat/page-design-full`。
 

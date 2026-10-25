@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"github.com/liyufei916/agent-harbor/internal/kits"
 	"github.com/liyufei916/agent-harbor/internal/runtime"
+	"path/filepath"
+	"strconv"
 )
 
 // 使用官方插件的显式组合，避免默认 bundle 启用 shell、插件管理或宿主授权链。
 func profile(input kits.KitInput, model string) ([]runtime.ConfigFile, error) {
+	return buildProfile(input, model, false)
+}
+
+func buildProfile(input kits.KitInput, model string, conversation bool) ([]runtime.ConfigFile, error) {
 	rows := []map[string]any{}
 	add := func(id, pkg string, config map[string]any) {
 		row := map[string]any{"id": id, "name": "@deepseek-ai/" + pkg}
@@ -32,9 +38,24 @@ func profile(input kits.KitInput, model string) ([]runtime.ConfigFile, error) {
 	add("fs-sandbox", "dsh-fs-sandbox", nil)
 	add("tool-fs", "dsh-tool-fs", map[string]any{"read": true, "write": true, "edit": true, "readImage": false})
 	add("agent-loop", "dsh-agent-loop", map[string]any{"agents": []any{}})
-	add("connection", "dsh-mcp-client", map[string]any{"serverName": "harbor", "transport": "streamable-http", "url": input.MCPURL, "headers": map[string]string{"Authorization": "Bearer " + input.Sentinel}, "failOnStartupError": true, "reconnect": map[string]any{"enabled": false}})
-	add("headless-startup", "dsh-headless/startup", nil)
-	add("headless-runner", "dsh-headless", map[string]any{"json": true})
+	urls, err := kits.MCPGateURLs(input)
+	if err != nil {
+		return nil, err
+	}
+	for i, endpoint := range urls {
+		id := "connection"
+		if i > 0 {
+			id += "-" + strconv.Itoa(i+1)
+		}
+		add(id, "dsh-mcp-client", map[string]any{"serverName": kits.MCPName(i), "transport": "streamable-http", "url": endpoint, "headers": map[string]string{"Authorization": "Bearer " + input.Sentinel}, "failOnStartupError": true, "reconnect": map[string]any{"enabled": false}})
+	}
+
+	if conversation {
+		rows = append(rows, map[string]any{"id": "harbor-conversation", "name": filepath.Join(input.PrivateHome, "harbor-conversation.mjs")})
+	} else {
+		add("headless-startup", "dsh-headless/startup", nil)
+		add("headless-runner", "dsh-headless", map[string]any{"json": true})
+	}
 	raw, err := json.Marshal([]any{map[string]any{"insert": rows}})
 	if err != nil {
 		return nil, err

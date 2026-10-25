@@ -132,3 +132,37 @@ func TestDSHRejectsEscapedInstallationFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildOptionalAndMultipleMCP(t *testing.T) {
+	k := fixtureKit(t)
+	for _, urls := range [][]string{nil, {"http://127.0.0.1:40002/mcp/0", "http://127.0.0.1:40002/mcp/1"}} {
+		input := validInput()
+		input.MCPURL = ""
+		input.MCPURLs = urls
+		launch, err := k.Build(context.Background(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var patches []struct {
+			Insert []struct {
+				Name   string         `json:"name"`
+				Config map[string]any `json:"config"`
+			} `json:"insert"`
+		}
+		if err := json.Unmarshal(launch.ConfigFiles[2].Content, &patches); err != nil {
+			t.Fatal(err)
+		}
+		found := 0
+		for _, row := range patches[0].Insert {
+			if row.Name == "@deepseek-ai/dsh-mcp-client" {
+				if row.Config["url"] != urls[found] || row.Config["serverName"] != kits.MCPName(found) {
+					t.Fatal("挂载配置串用")
+				}
+				found++
+			}
+		}
+		if found != len(urls) {
+			t.Fatalf("配置挂载数=%d", found)
+		}
+	}
+}

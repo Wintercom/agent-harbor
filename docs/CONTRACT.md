@@ -491,3 +491,9 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 公开 Event 须满足 `contracts.Event.Validate`。本文是并行实现的唯一方法/字段来源；变更先改本文与 `internal/contracts`，再 sync mock/bindings。
 
 既有约定仍有效：WithConnection 准入锁；Connect 探测语义。自定义 Origin 须 HTTPS；OAuth 仅工具页。
+
+### 多 MCP 的 Go 内部交接（2026-10-25）
+
+`SessionSpec.mcpIds` 为 0–8 个不重复的已连接账号 ID；空列表表示不挂载工具。PolicyRequest.MCPs 按该顺序构造 PolicySnapshot.MCPMounts（AccountID、Endpoint、Tools），GateBinding.MCPURLs 按同一顺序交给 Kit。每个挂载有独立 Gateway 路径，按挂载解析宿主凭据及工具白名单，不合并同名工具。Kit 将其映射为 harbor、harbor-2 等独立服务器；0 个挂载生成空 MCP 配置，不连接占位服务。
+
+旧单 MCP 字段仅兼容内部单挂载调用：MCP/MCPID/Tools、MCPAccountID、MCPURL；新列表与旧字段同时提供且有歧义时拒绝。多挂载路径仅用于选定授权项，上游仍使用固定 `/mcp`，不得把路径或账号由执行面替换为任意目标。公开 Wails DTO 和绑定签名不变。

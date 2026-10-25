@@ -34,7 +34,15 @@ type PolicyRequest struct {
 	AgentID   string
 	MountMode string
 	Model     contracts.AccountInfo
-	MCP       contracts.AccountInfo
+	MCP       contracts.AccountInfo // 兼容旧单挂载
+	MCPs      []contracts.AccountInfo
+}
+
+// MCPMount 将单个授权账号、上游和工具名单绑定在一起。
+type MCPMount struct {
+	AccountID string
+	Endpoint  EndpointRule
+	Tools     []string
 }
 
 // PolicySnapshot 是会话期不可变授权。
@@ -45,6 +53,7 @@ type PolicySnapshot struct {
 	MCP       EndpointRule
 	MCPID     string
 	Tools     []string
+	MCPMounts []MCPMount
 }
 
 // Builder 构造会话策略快照。
@@ -91,15 +100,34 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if !ValidBasePath(modelProf.BasePath) {
 		return PolicySnapshot{}, ErrUnknownProfile
 	}
-	mcpProf, ok := b.profiles[req.MCP.ProfileID]
-	if !ok || mcpProf.Kind != "mcp" {
-		return PolicySnapshot{}, ErrUnknownProfile
+	if !sameHost(req.Model.Host, modelProf.Host) {
+		return PolicySnapshot{}, ErrHostMismatch
 	}
-	if req.MCP.Kind != "mcp" || req.MCP.ID == "" {
+	accounts := req.MCPs
+	if req.MCP.ID != "" {
+		if len(accounts) > 0 {
+			return PolicySnapshot{}, ErrMissingMCP
+		}
+		accounts = []contracts.AccountInfo{req.MCP}
+	}
+	if len(accounts) > 8 {
 		return PolicySnapshot{}, ErrMissingMCP
 	}
-	if !sameHost(req.Model.Host, modelProf.Host) || !sameHost(req.MCP.Host, mcpProf.Host) {
-		return PolicySnapshot{}, ErrHostMismatch
+	mounts := make([]MCPMount, 0, len(accounts))
+	seen := map[string]bool{}
+	for _, account := range accounts {
+		if account.Kind != "mcp" || strings.TrimSpace(account.ID) == "" || seen[account.ID] {
+			return PolicySnapshot{}, ErrMissingMCP
+		}
+		seen[account.ID] = true
+		prof, ok := b.profiles[account.ProfileID]
+		if !ok || prof.Kind != "mcp" {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		if !sameHost(account.Host, prof.Host) {
+			return PolicySnapshot{}, ErrHostMismatch
+		}
+		mounts = append(mounts, MCPMount{AccountID: account.ID, Endpoint: EndpointRule{Origin: prof.Origin, Paths: append([]string{}, prof.Paths...)}, Tools: append([]string{}, prof.Tools...)})
 	}
 	mountMode := strings.TrimSpace(req.MountMode)
 	if mountMode == "" {
@@ -108,7 +136,7 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if mountMode != "direct" && mountMode != "clone" {
 		return PolicySnapshot{}, ErrInvalidWorkspace
 	}
-	return PolicySnapshot{
+	snapshot := PolicySnapshot{
 		Workspace: ws,
 		MountMode: mountMode,
 		Model: EndpointRule{
@@ -116,13 +144,12 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 			BasePath: modelProf.BasePath,
 			Paths:    append([]string{}, modelProf.Paths...),
 		},
-		MCP: EndpointRule{
-			Origin: mcpProf.Origin,
-			Paths:  append([]string{}, mcpProf.Paths...),
-		},
-		MCPID: req.MCP.ID,
-		Tools: append([]string{}, mcpProf.Tools...),
-	}, nil
+		MCPMounts: mounts,
+	}
+	if len(mounts) == 1 {
+		snapshot.MCP, snapshot.MCPID, snapshot.Tools = mounts[0].Endpoint, mounts[0].AccountID, append([]string{}, mounts[0].Tools...)
+	}
+	return snapshot, nil
 }
 
 // NormalizeWorkspace 返回绝对清理路径。
