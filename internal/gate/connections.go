@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -165,8 +166,13 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	if prof.Protocol == "openai-responses" {
 		return c.probeOpenAIResponses(ctx, prof, apiKey)
 	}
+	// 自定义：先 GET /v1/models 验 Key（与模型名无关），再 POST /v1/messages。
+	if prof.ID == policy.ProfileCustom {
+		if err := c.probeModelsList(ctx, prof, apiKey); err != nil {
+			return annotateAuthKeyMeta(err, apiKey)
+		}
+	}
 	body, _ := json.Marshal(map[string]any{"model": prof.Model, "max_tokens": 1, "messages": []any{map[string]string{"role": "user", "content": "Reply OK"}}})
-	// 自定义网关优先只带 Bearer（七牛/LiteLLM 文档如此）；再试 X-Api-Key；最后双头。
 	modes := []modelAuthMode{modelAuthBoth}
 	if prof.ID == policy.ProfileCustom {
 		modes = []modelAuthMode{modelAuthBearer, modelAuthXAPIKey, modelAuthBoth}
@@ -175,26 +181,26 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 	for _, mode := range modes {
 		resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body, mode)
 		if err != nil {
-			last = err
+			last = annotateAuthKeyMeta(err, apiKey)
 			if isUpstreamAuthErr(err) {
 				continue
 			}
-			return err
+			return last
 		}
 		err = readAnthropicProbeOK(ctx, resp)
 		resp.Body.Close()
 		if err == nil {
 			return nil
 		}
-		last = err
+		last = annotateAuthKeyMeta(err, apiKey)
 		if !isUpstreamAuthErr(err) {
-			return err
+			return last
 		}
 	}
 	if last != nil {
 		return last
 	}
-	return ErrUpstreamAuth
+	return annotateAuthKeyMeta(ErrUpstreamAuth, apiKey)
 }
 
 func (c *Connections) probeOpenAIResponses(ctx context.Context, prof policy.FixedProfile, apiKey string) error {
@@ -213,6 +219,30 @@ func (c *Connections) probeOpenAIResponses(ctx context.Context, prof policy.Fixe
 		return ErrUpstreamDown
 	}
 	return ctx.Err()
+}
+
+// probeModelsList 用 GET /v1/models 验证 Key，避免把「模型名不对」误报成认证失败。
+func (c *Connections) probeModelsList(ctx context.Context, prof policy.FixedProfile, key string) error {
+	u := strings.TrimRight(prof.Origin, "/") + prof.BasePath + "/v1/models"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return ErrUpstreamDown
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return mapProbeErr(ctx, err)
+	}
+	raw, _ := readProbeBody(resp)
+	resp.Body.Close()
+	if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		return authProbeError(prof.Host, raw)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ErrUpstreamDown
+	}
+	return nil
 }
 
 func readAnthropicProbeOK(ctx context.Context, resp *http.Response) error {
@@ -313,14 +343,38 @@ func authProbeError(host string, raw []byte) error {
 	switch {
 	case strings.Contains(low, "expected to start with 'sk-'") || strings.Contains(low, `expected to start with "sk-"`):
 		msg = "上游要求 API Key 以 sk- 开头（LiteLLM 虚拟 Key）"
-	case strings.Contains(low, "litellm") && (strings.Contains(low, "token_not_found") || strings.Contains(low, "invalid proxy server token")):
-		msg = "上游拒绝了该 Key（LiteLLM 未登记或已失效）。请确认地址为 https://llmapi.qiniu.io 且 Key 属于该网关"
+	case strings.Contains(low, "invalid proxy server token") || strings.Contains(low, "token_not_found") || strings.Contains(low, "litellm_verification"):
+		msg = "上游拒绝了该 Key（LiteLLM 未登记或已失效）。请在 LiteLLM/七牛侧确认 Key 仍有效，且地址为 https://llmapi.qiniu.io"
 	case strings.Contains(host, "qnaigc") && (strings.Contains(low, "invalid api key") || strings.Contains(low, "authentication_error")):
-		msg = "上游认证失败：API Key 无效。api.qnaigc.com 与 llmapi.qiniu.io 不是同一套 Key；请到 portal.qiniu.com/ai-inference 复制官方 Key，或改地址为 LiteLLM 网关"
+		msg = "上游认证失败：API Key 无效。api.qnaigc.com 与 llmapi.qiniu.io 不是同一套 Key；请到 portal.qiniu.com/ai-inference 复制官方 Key，或改用 LiteLLM 地址"
 	case strings.Contains(low, "invalid api key") || strings.Contains(low, "invalid x-api-key") || strings.Contains(low, "authentication_error"):
 		msg = "上游认证失败：API Key 无效"
+	case len(bytes.TrimSpace(raw)) == 0:
+		msg = "上游认证失败（无错误正文）"
 	}
 	return contracts.NewAppError(contracts.ErrUpstreamAuthFailed, msg, false)
+}
+
+// annotateAuthKeyMeta 在认证错误上附加 Key 长度/前缀提示，便于确认桌面是否传丢，不包含密钥本身。
+func annotateAuthKeyMeta(err error, key string) error {
+	if err == nil || !isUpstreamAuthErr(err) {
+		return err
+	}
+	meta := "已提交 " + strconv.Itoa(len(key)) + " 字节"
+	if strings.HasPrefix(key, "sk-") {
+		meta += "，前缀 sk-"
+	} else {
+		meta += "，前缀非 sk-"
+	}
+	var ae *contracts.AppError
+	if errors.As(err, &ae) && ae != nil {
+		msg := ae.Message
+		if !strings.Contains(msg, "已提交") {
+			msg = msg + "（" + meta + "）"
+		}
+		return contracts.NewAppError(ae.Code, msg, ae.Retryable)
+	}
+	return contracts.NewAppError(contracts.ErrUpstreamAuthFailed, "上游认证失败（"+meta+"）", false)
 }
 
 func readProbeBody(resp *http.Response) ([]byte, error) {
