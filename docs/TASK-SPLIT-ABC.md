@@ -2,22 +2,22 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.5（复核修订：裁掉与定案冲突的任务卡表述） |
+| 文档版本 | v2.0（**分支 feat/page-design-full：全量 PAGE-DESIGN**） |
 | 日期 | 2026-10-25 |
-| 基线代码 | `main` HEAD；拉取后以 `git rev-parse HEAD` 为准 |
-| 对照 | [SYSTEM-DESIGN](SYSTEM-DESIGN.md)、[CONTRACT](CONTRACT.md) v1.1、[PAGE-API-MAP](PAGE-API-MAP.md)、[PAGE-DESIGN](PAGE-DESIGN.md)、[MODULE-DESIGN](MODULE-DESIGN.md)、[MVP-2D3P](MVP-2D3P.md)、[ACCEPTANCE](ACCEPTANCE.md)、[DECISIONS](DECISIONS.md)、[ARCHITECTURE](ARCHITECTURE.md) |
+| 基线代码 | 分支 `feat/page-design-full`；拉取后以 `git rev-parse HEAD` 为准 |
+| 对照 | [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) **v1.2**、[PAGE-API-MAP](PAGE-API-MAP.md)、[PAGE-DESIGN](PAGE-DESIGN.md)、[MODULE-DESIGN](MODULE-DESIGN.md)、[MVP-2D3P](MVP-2D3P.md)、[ACCEPTANCE](ACCEPTANCE.md)、[DECISIONS](DECISIONS.md)、[ARCHITECTURE](ARCHITECTURE.md) |
 
-**读法**：先读 **[SYSTEM-DESIGN](SYSTEM-DESIGN.md)**（架构+模块+分工）与 **[CONTRACT](CONTRACT.md)**（接口）→ **P0** 真机闭环 → **§3 按已定契约并行实现 V1** → **§4 P1 任务卡**。P0 未闭环前，V1 页面不记 I 通过。
+**读法**：本分支产品真源是 **PAGE-DESIGN 全文**。先读 SYSTEM-DESIGN v2 + CONTRACT v1.2 → §3 全量并行实现 → §4 任务卡（**含** OAuth/clone/PTY）。P0 I 证据可并行，但**不得**再以排期裁掉首版能力。mock ≠ I 通过。
 
-**文档分工（已定，无草案会）**
+**文档分工**
 
 | 层级 | 文档 |
 |---|---|
-| 整体架构 / 模块拆分 / ABC 边界 | **SYSTEM-DESIGN** |
-| 接口定义（方法/DTO/事件/错误码） | **CONTRACT v1.1** |
+| 整体架构 / 模块拆分 / ABC 边界 | **SYSTEM-DESIGN v2** |
+| 接口定义（方法/DTO/事件/错误码） | **CONTRACT v1.2** |
 | 哪一屏调哪个 API | **PAGE-API-MAP** |
 | 包替身与文件归属 | MODULE-DESIGN |
-| 交互与文案 | PAGE-DESIGN |
+| 交互与文案 | **PAGE-DESIGN（本分支真源）** |
 | 谁何时交付 | **本文** |
 
 **证据模板**（写入 ACCEPTANCE / 联调记录，截图前去凭据）：
@@ -37,38 +37,36 @@
 | 层 | 含义 | 完成判据 |
 |---|---|---|
 | **P0 两天核心** | 桌面真连 → 隔离 Agent → 模型+认证 MCP → 停止清理 | D 项齐 + **I1–I11 真实证据** |
-| **P1 / V1 产品壳** | HOME/向导/模型/工具/设置/扩权/多会话（无 PTY/OAuth/clone） | SYSTEM-DESIGN §4 + CONTRACT v1.1 |
+| **全量 PAGE（本分支）** | 首版导航+各屏：**含** OAuth / clone / PTY / 四步向导 / 扩权 / 多会话 | SYSTEM-DESIGN §4 + CONTRACT v1.2 + PAGE-DESIGN |
 
-现状：契约与架构 **已定**；P0 真机 I 未齐；C 壳 stub 已开工；DesktopAPI 新方法可先 `UNIMPLEMENTED`。
+现状（`feat/page-design-full`）：契约 **v1.2** 与 SYSTEM-DESIGN **v2** 已定；C 全量 UI stub/mock 已推；live 新方法可先 `UNIMPLEMENTED`。
 
-当前实现边界：多会话/扩权等 **按契约开发中**；PTY/OAuth/clone **明确不做**。详见 SYSTEM-DESIGN §4。
-
-**优先级**：同一人冲突时 **P0（I1–I11）> V1 实现**；V1 UI/mock 不挡 P0，但不得把 mock 记为 I 通过。
+**优先级（本分支）**：**PAGE-DESIGN 完整体验 > 排期**；P0 I 证据可并行，但不得砍首版屏/能力。
 
 ---
 
-## 0.5 已定文档入口（不再开会拍板）
+## 0.5 已定文档入口
 
 | 交付物 | 路径 | 状态 |
 |---|---|---|
-| 架构 + 模块拆分 + 分工 | [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) | **已定** |
-| 接口全文 | [CONTRACT.md](CONTRACT.md) v1.1 | **已定**；`internal/contracts` 已对齐 DTO |
+| 架构 + 模块拆分 + 分工 | [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) v2 | **全量已定** |
+| 接口全文 | [CONTRACT.md](CONTRACT.md) **v1.2** | **已定**（含 OAuth/PTY/SwitchModel/clone） |
 | 屏 ↔ API | [PAGE-API-MAP.md](PAGE-API-MAP.md) | **已定** |
-| 绑定占位 | `internal/desktop` 新方法返回 `UNIMPLEMENTED` | **已落** |
+| 绑定占位 | `internal/desktop` 新方法可 `UNIMPLEMENTED` | **已落**（含 PTY/OAuth） |
+| C UI stub | `frontend/` 四步向导/双轨工具/工作台 PTY 区等 | **已落 mock** |
 
-三人直接按模块实现；字段争议以 CONTRACT 为准改文档后再改代码。
+字段争议以 CONTRACT 为准改文档后再改代码。
 
-### 复核结论（2026-10-25）
+### 复核结论（2026-10-25 · 全量）
 
 | 项 | 结论 |
 |---|---|
-| 架构 / 模块拆分 / 接口三件套 | **成立**：SYSTEM-DESIGN + CONTRACT v1.1 + PAGE-API-MAP 一致 |
-| ABC 包所有权 | **成立**：A 编排/Runtime/Kit；B desktop/Gate/Policy/Secrets/Prefs；C frontend/demos |
-| 与 §4 旧任务卡 | **曾冲突**（OAuth/clone/PTY「待拍板」）→ 本版已改为延后/裁剪 |
-| 实现缺口 | Orchestrator 仍单会话接口；desktop 新方法多为 `UNIMPLEMENTED`；`live-api.js` 需跟 bindings；mock 已扩方法 |
-| GetRuntimeHealth | **A** 提供 Runtime.Health 语义；**B** DesktopAPI 接线；C 只消费 |
-| ListAccounts | **B** Secrets/Catalog 扩展列表+删除；非 Orch |
-| 扩权 | **B** Gate 发现需授权 → 事件；**A** 挂起/Resolve；**C** Modal |
+| 架构 / 接口 / 屏映射 | SYSTEM-DESIGN v2 + CONTRACT v1.2 + PAGE-API-MAP **已对齐全量** |
+| 本文 §3–§4 | **本版改回**：OAuth/clone/PTY **全部开工**，不再 backlog |
+| ABC 包所有权 | A 编排/Runtime/Kit/PTY·clone 真实现；B Gate/OAuth/账号/Prefs/绑定；C 全屏 UI+mock |
+| 实现缺口 | Orch 多会话/扩权/PTY 真实现；Gate OAuth 回调；`wails3 generate` |
+| GetRuntimeHealth | A 语义 · B 绑定 · C 消费 |
+| 扩权 | B 触发事件 · A Resolve · C Modal |
 
 ---
 
@@ -77,8 +75,8 @@
 | 角色 | 已交付 |
 |---|---|
 | A | D2；严格单进程 Runtime/Claude Kit（探针）；dsh Kit 代码；测试 Gate 编排集成 |
-| B | Gate/Policy/Secrets；Wails v3；bindings 生成；live/`harbor:event`；MCP SSE；profile 环境变量机制；联调准入修复；v1.1 DesktopAPI **方法占位** |
-| C | 配置+工作台；**PAGE 壳 stub**（HOME/模型/工具/设置/向导/引导）；mock D4 + v1.1 部分方法；demos；Agent 下拉；`live-api`；前端单测 |
+| B | Gate/Policy/Secrets；Wails v3；bindings；live/`harbor:event`；MCP SSE；v1.2 DesktopAPI **方法占位**（含 OAuth/PTY） |
+| C | **全量 PAGE stub/mock**（四步向导、OpenAPI 模型、工具双轨、工作台边界/PTY/扩权）；demos；单测 |
 
 ---
 
@@ -297,81 +295,82 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 
 ---
 
-## 3. V1 契约落地与并行实现（已定，无冻结会）
+## 3. 全量契约落地与并行实现（CONTRACT v1.2）
 
-方案见 [SYSTEM-DESIGN](SYSTEM-DESIGN.md) + [CONTRACT v1.1](CONTRACT.md)。下列为 **实现任务**，不是再讨论。
+方案见 [SYSTEM-DESIGN v2](SYSTEM-DESIGN.md) + [CONTRACT v1.2](CONTRACT.md) + [PAGE-DESIGN](PAGE-DESIGN.md)。
 
-### 3.1 裁定摘要
+### 3.1 裁定摘要（本分支全部做）
 
 | ID | 能力 | 裁定 | 主责 |
 |---|---|---|---|
-| API-01 | GetRuntimeHealth | **做** | A（Runtime.Health）+ B（绑定） |
+| API-01 | GetRuntimeHealth | **做** | A + B 绑定 |
 | API-02 | ListSessions / DestroySession；上限 2；WORKSPACE_BUSY | **做** | A |
-| API-03 | GetPermissionOverview + 记住主机列表/撤销 | **做** | B |
-| API-04 | permission_needed + ResolvePermission | **做** | B 触发 · A 状态 · C UI |
-| API-05 | ListAccounts / RemoveAccount；ConnectModel.origin | **做** | B + C 页 |
-| API-06 | 多 MCP Token；mcpIds 0..8 | **做**；OAuth→**延后** | B + C |
-| API-07 | mountMode 仅 direct | **做字段**；clone→**延后** | A 校验 |
-| API-08 | Get/SetUIPrefs | **做** | B 落盘（C 可暂 localStorage） |
-| API-09 | PTY | **延后** | — |
-| API-10 | 设置页只接已有 API | **做** | C |
+| API-03 | GetPermissionOverview + 记住主机 | **做** | B |
+| API-04 | permission_needed + ResolvePermission | **做** | B·A·C |
+| API-05 | ListAccounts / RemoveAccount；ConnectModel.origin | **做** | B + C |
+| API-06 | 多 MCP Token + **OAuth**（Start/CancelMcpOAuth） | **做** | B + C |
+| API-07 | mountMode `direct` **与** `clone` | **做** | A + C 向导 |
+| API-08 | Get/SetUIPrefs | **做** | B |
+| API-09 | WritePty / ResizePty + 事件 `pty` | **做** | A + B 桥 + C UI |
+| API-10 | 设置页接已有 API | **做** | C |
+| API-11 | SwitchModel | **做** | A/B + C 工作台 |
 
 ### 3.2 并行开工
 
 ```text
-已定 CONTRACT v1.1
-  ├─ A：SessionService.List/Destroy/ResolvePermission；Health；多会话锁
-  ├─ B：wails3 generate；Prefs 落盘；Overview/Accounts/origin；去掉 UNIMPLEMENTED
-  └─ C：mock 全方法 + 页面对接；扩权 Modal；HOME 接 listSessions
+CONTRACT v1.2（全量）
+  ├─ A：多会话/Destroy/ResolvePermission；clone 挂载；PTY 真实现；Health
+  ├─ B：generate；OAuth 回调；Overview/Accounts/origin/Prefs；PTY 事件桥；去 UNIMPLEMENTED
+  └─ C：PAGE 全屏（已 stub）→ 打磨 + mock 并发/OAuth/PTY 流
 ```
 
 ### 3.3 任务卡
 
-#### V1-DTO · contracts 已对齐 · A/C 核对 · **文档侧已完成**
+#### FULL-DTO · contracts v1.2 · A/C 核对 · **文档+DTO 已完成**
 
 | | |
 |---|---|
-| **目标** | DTO/错误码/事件与 CONTRACT 一致 |
-| **DoD** | `internal/contracts` 编译；Event 含 permission_needed |
-| **状态** | 2026-10-25 已写入 |
+| **目标** | DTO/错误码/事件含 OAuth、PTY、SwitchModel、clone |
+| **DoD** | `internal/contracts` 与 CONTRACT v1.2 一致 |
+| **状态** | 2026-10-25 已写入（本分支） |
 
-#### V1-BIND · 绑定生成与去占位 · B · 估 1–2d
-
-| | |
-|---|---|
-| **目标** | `wails3 generate`；新方法从 UNIMPLEMENTED 接到真实现 |
-| **DoD** | live 调用形状正确；C 不因缺方法崩 |
-| **依赖** | V1-DTO |
-
-#### V1-MOCK · mock 全量对齐 · C · 估 1d
+#### FULL-BIND · 绑定生成与去占位 · B · 估 1–2d
 
 | | |
 |---|---|
-| **目标** | mock-api 覆盖 v1.1 DesktopAPI + permission_needed 样例 |
-| **DoD** | `npm test` 过；浏览器可演示壳/HOME/扩权 UI |
-| **依赖** | CONTRACT（已定） |
+| **目标** | `wails3 generate`；v1.2 方法从 UNIMPLEMENTED 接到实现 |
+| **DoD** | C live 不因缺方法崩 |
+| **依赖** | FULL-DTO |
 
-#### V1-ORCH · 多会话与扩权 · A · 估 3–5d
-
-| | |
-|---|---|
-| **目标** | 上限 2、同目录冲突、Destroy、ResolvePermission |
-| **DoD** | 单测覆盖 SESSION_LIMIT / WORKSPACE_BUSY；与 B Gate 联调一条扩权 |
-| **依赖** | V1-DTO |
-
-#### V1-GATE-POL · 一览/账号/origin/Prefs · B · 估 3–5d
+#### FULL-MOCK · mock 全量 · C · 估 1d · **大部分已做**
 
 | | |
 |---|---|
-| **目标** | Overview、记住主机、List/RemoveAccount、自定义 Origin、UIPrefs 文件 |
-| **DoD** | 无 Key 进事件；Prefs 重启仍在 |
-| **依赖** | V1-BIND |
+| **目标** | mock 覆盖 v1.2 DesktopAPI（含 OAuth/PTY/SwitchModel） |
+| **DoD** | `npm test` 过；浏览器可走通向导→工作台→扩权/PTY |
+| **状态** | stub 已推；继续补并发与空态 |
+
+#### FULL-ORCH · 多会话 / clone / 扩权 / PTY · A · 估 5–10d
+
+| | |
+|---|---|
+| **目标** | 上限 2、同目录冲突、Destroy、ResolvePermission、clone 挂载、PTY 会话 |
+| **DoD** | 单测 + 与 B 联调扩权/PTY 各一条 |
+| **依赖** | FULL-DTO |
+
+#### FULL-GATE · 一览/账号/origin/OAuth/Prefs · B · 估 5–8d
+
+| | |
+|---|---|
+| **目标** | Overview、记住主机、Accounts、自定义 Origin、**OAuth 回调**、UIPrefs、PTY 事件转发 |
+| **DoD** | 无 Key 进事件；OAuth 至少一条 mock→真通路径文档化 |
+| **依赖** | FULL-BIND |
 
 ---
 
-## 4. P1 — 页面与后端欠账（细化）
+## 4. 页面与后端任务卡（全量 PAGE）
 
-规则：接口以 CONTRACT v1.1 为准；**延后项（OAuth/clone/PTY）不得开工冒充交付**。估时为人天量级。
+规则：接口以 **CONTRACT v1.2** 为准；**OAuth / clone / PTY 均在范围内**。估时仅供参考，本分支不因估时砍范围。
 
 ### 4.1 产品 C
 
@@ -406,18 +405,18 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 | **DoD** | 达上限与同目录冲突有产品文案；销毁二次确认 |
 | **依赖** | **V1-ORCH / P1-A-01**（mock 可先演示） |
 | **参考** | PAGE §5.2 |
-| **进度** | stub 用 `sessionHistory` + mock `listSessions`；文案改为 x/2 |
+| **进度** | stub：`sessionHistory` + mock `listSessions`；文案 x/2；销毁确认已有 |
 
 #### P1-C-04 · 新会话 Wizard · 估 3–4d · **合并配置流 stub**
 
 | | |
 |---|---|
-| **目标** | 工作区→Agent→模型→工具（可跳过）；**仅 direct** |
-| **步骤** | 步进条 → 每步校验 → CreateSession；工具步可空 mcpIds |
-| **DoD** | 可跳过工具；direct 强警告；**不出现 clone 选项**（V1 延后） |
-| **依赖** | 现有 Connect API；上限错误靠 A |
-| **参考** | PAGE §5.3；SYSTEM-DESIGN §4 |
-| **进度** | 步进条 + 内嵌 `setup.js`；真四步拆页待交互 |
+| **目标** | 工作区→Agent→模型→工具（可跳过）；**direct 与 clone** |
+| **步骤** | 四步校验 → CreateSession（含 mountMode）；工具可跳过 |
+| **DoD** | 可跳过工具；direct 强警告；clone 可选且文案正确 |
+| **依赖** | Connect API；clone 真实现靠 A（UI 可先 mock） |
+| **参考** | PAGE §5.3 |
+| **进度** | **真四步 stub 已落**（本分支） |
 
 #### P1-C-05 · 独立模型页 · 估 3–4d · **固定 profile stub**
 
@@ -428,18 +427,18 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 | **DoD** | 不再写死唯一 demo-model（或并存迁移开关） |
 | **依赖** | **P1-B-02** |
 | **参考** | PAGE §2 |
-| **进度** | `views/models.js` 独立页仍固定 demo/dsh-model |
+| **进度** | `views/models.js` 自由 OpenAPI（名+地址+Key）stub 已落 |
 
-#### P1-C-06 · 独立工具页 · 估 2–3d · **Token 轨（V1）**
+#### P1-C-06 · 独立工具页 · 估 3–5d · **双轨（Token + OAuth）**
 
 | | |
 |---|---|
-| **目标** | **仅 Token/API Key**；列表只展示已添加 MCP；支持删除 |
-| **步骤** | Token 表单 → `listAccounts("mcp")` / `removeAccount` → ●/▲ |
-| **DoD** | 无厂商密钥回显；无 OAuth 入口（V1 延后） |
-| **依赖** | **V1-GATE-POL**（账号列表）；mock 可先行 |
-| **参考** | PAGE §2；SYSTEM-DESIGN §4 |
-| **进度** | `views/tools.js` Token + demo-mcp |
+| **目标** | OAuth/SSO **或** Token；列表只展示已添加；删除 |
+| **步骤** | 双轨表单 → `connectMcp` / `startMcpOAuth` → 列表 |
+| **DoD** | 无密钥回显；两条轨 UI 齐全；OAuth 与 B 回调联调 |
+| **依赖** | FULL-GATE（OAuth）；mock 可先行 |
+| **参考** | PAGE §5.6 |
+| **进度** | `views/tools.js` 双轨 stub 已落 |
 
 #### P1-C-07 · 设置页 · 估 2–3d · **检测/场景 stub**
 
@@ -451,15 +450,16 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 | **进度** | Agent 重检 + mock 场景 + 重置引导；记住主机入口待接 API-03 |
 | **参考** | PAGE 设置；API-10 |
 
-#### P1-C-08 · 工作台增强 · 估 3–5d（**无 PTY**）
+#### P1-C-08 · 工作台增强 · 估 5–8d（**含 PTY**）
 
 | | |
 |---|---|
-| **目标** | 边界条（`getPermissionOverview`）；多会话焦点切换；继续 **文本 output** |
-| **步骤** | 1）边界条接 API-03 2）焦点切 sessionId 3）扩权事件弹 Modal（C-09） |
-| **DoD** | 评审能指着边界条讲隔离；**不承诺内嵌 PTY**（延后） |
-| **依赖** | P1-B-05 / V1-GATE-POL；P1-A-01 |
-| **参考** | PAGE 工作台；SYSTEM-DESIGN §4 |
+| **目标** | 边界条；当前模型切换；权限一览；**内嵌 PTY**；右侧摘要；顶栏/焦点切换 |
+| **步骤** | 边界条 → `switchModel` → Overview → PTY 输入/事件 → 扩权 Modal |
+| **DoD** | 对照 PAGE §5.4；PTY 区可演示（mock 或 live） |
+| **依赖** | FULL-GATE / FULL-ORCH；API-09 |
+| **参考** | PAGE §5.4 |
+| **进度** | stub 已落（边界/PTY/扩权演示） |
 
 #### P1-C-09 · 扩权 Modal · 估 2–3d
 
@@ -507,21 +507,13 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 | **DoD** | 前端不直连上游；策略校验 origin |
 | **参考** | PAGE 模型 |
 
-#### P1-B-03 · 多 MCP（Token）· 估 2–4d · **V1 范围**
+#### P1-B-03 · 多 MCP Token + OAuth · 估 5–8d · **全量**
 
 | | |
 |---|---|
-| **目标** | 多 MCP 账号挂载；`mcpIds` 0..8；白名单仍人工登记 |
-| **DoD** | CreateSession 接受多 id；无 OAuth |
-| **参考** | CONTRACT v1.1；SYSTEM-DESIGN §4 |
-| **延后** | OAuth/SSO → backlog（原估 5–8d 整卡挪后） |
-
-#### P1-B-03b · OAuth MCP · **V1 不做 / backlog**
-
-| | |
-|---|---|
-| **目标** | 浏览器 OAuth/SSO 轨 |
-| **状态** | 契约不暴露方法；勿排进本迭代交付 |
+| **目标** | 多 MCP；`mcpIds` 0..8；Token 轨 + **StartMcpOAuth/CancelMcpOAuth** 真通至少一条 |
+| **DoD** | CreateSession 接受多 id；OAuth 回调写入账号目录；无 Key 进事件 |
+| **参考** | CONTRACT v1.2；PAGE 工具双轨 |
 
 #### P1-B-04 · 扩权策略引擎 · 估 4–6d
 
@@ -561,13 +553,14 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 | **DoD** | 单测覆盖上限与同路径；C 可接 HOME |
 | **参考** | PAGE §5.2.1 |
 
-#### P1-A-02 · clone 工作区 · **V1 不做 / backlog**
+#### P1-A-02 · clone 工作区 · 估 4–6d · **全量必做**
 
 | | |
 |---|---|
-| **目标** | 安全副本 + 可选导回 |
-| **状态** | CONTRACT 仅接受 `mountMode=direct`；本卡不进 V1 排期 |
-| **参考** | SYSTEM-DESIGN §4 |
+| **目标** | `mountMode=clone` 安全副本 + 可选导回 |
+| **DoD** | direct/clone 切换有警告；与 C 向导联调 |
+| **依赖** | 与 P1-C-04 同步 |
+| **参考** | PAGE §5.3；CONTRACT v1.2 |
 
 #### P1-A-03 · Codex + dsh 真机验收 · 估 3–5d（dsh）+ Codex 另估
 
@@ -591,7 +584,7 @@ A:    ENV-3 → I2 隔离确认 → I3/I4/I5 → I7/I9 → 支援 I8/I10
 |---|---|
 | **目标** | 会话保持 `running`；发 `permission_needed`；`ResolvePermission` 恢复/拒绝 |
 | **DoD** | 与 P1-B-04/C-09 联调一条完整扩权；**不**新增 snapshot.state 枚举值 |
-| **参考** | CONTRACT v1.1 事件节 |
+| **参考** | CONTRACT v1.2 事件节 |
 
 #### P1-A-06 · 一期隔离证据包 · 估 2–3d
 
@@ -623,15 +616,17 @@ P0-ENV-1/2/3/4
 P0-D3 / D5 可与 ENV 并行
 P0-I11 ← 绑定稳定 + I1 缩略路径
 
-CONTRACT v1.1（已定）
-  ├─► V1-MOCK (C) ──► P1-C-01/02/03/05/06/07/09 UI
-  ├─► V1-BIND (B) ──► V1-GATE-POL
-  └─► V1-ORCH (A) ──► P1-A-01/05
-P1-B-05 + V1-GATE-POL ──► P1-C-08
-P1-A-05 + Gate 扩权回调 ──► P1-C-09
+CONTRACT v1.2（全量，本分支）
+  ├─► FULL-MOCK (C) ──► P1-C-* 全屏打磨
+  ├─► FULL-BIND (B) ──► FULL-GATE（含 OAuth）
+  └─► FULL-ORCH (A) ──► P1-A-01/02/05 + PTY
+P1-B-05 + FULL-GATE ──► P1-C-08
+P1-A-05 + Gate 扩权 ──► P1-C-09
+P1-A-02 clone ──► P1-C-04
+API-09 PTY ──► P1-C-08
 ```
 
-**时间不够删减顺序**：C-11 视觉 → 第二 MCP → Codex →（已裁）clone / PTY / OAuth。
+**本分支不因时间删减**：clone / PTY / OAuth **均保留**。  
 **不可删**：真 Agent、真认证 MCP、隔离强制、凭据外置、停止清理、CONTRACT 形状一致。
 
 ---
@@ -658,19 +653,20 @@ P1-A-05 + Gate 扩权回调 ──► P1-C-09
 - [ ] I8 / I9 / I10 / I11
 - [ ] P0-C-DOC-1/2/3
 
-**V1 契约落地**
-- [x] SYSTEM-DESIGN / CONTRACT v1.1 / PAGE-API-MAP 定案
-- [x] `internal/contracts` + desktop 方法占位
-- [ ] V1-MOCK（C）
-- [ ] V1-BIND generate（B）
-- [ ] V1-ORCH 多会话/扩权（A）
-- [ ] V1-GATE-POL 一览/账号/Prefs（B）
+**全量契约落地（本分支）**
+- [x] SYSTEM-DESIGN v2 / CONTRACT v1.2 / PAGE-API-MAP  
+- [x] `internal/contracts` + desktop 占位（含 OAuth/PTY）  
+- [x] FULL-MOCK 骨架（C UI stub）  
+- [ ] FULL-BIND generate（B）  
+- [ ] FULL-ORCH 多会话/clone/扩权/PTY（A）  
+- [ ] FULL-GATE 一览/账号/OAuth/Prefs（B）  
 
-**P1 产品**
-- [ ] 侧栏可导航（C-01）
-- [ ] HOME 接 listSessions
-- [ ] 扩权 Modal 或权限一览可演示
-- [ ] 第二 Agent 真机一条路径
+**全量 PAGE 产品**
+- [x] 侧栏 HOME/模型/工具/设置 + 顶栏会话切换（stub）  
+- [x] 四步向导 / 模型 OpenAPI / 工具双轨 / 工作台 PTY·扩权（stub）  
+- [ ] HOME 接真 listSessions / 上限文案联调  
+- [ ] OAuth / clone / PTY live 各至少一条  
+- [ ] 第二 Agent 真机一条路径  
 
 ---
 
@@ -678,14 +674,14 @@ P1-A-05 + Gate 扩权回调 ──► P1-C-09
 
 | 文档 | 用途 |
 |---|---|
-| [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) | **架构 + 模块拆分 + ABC 分工（总纲）** |
-| [CONTRACT.md](CONTRACT.md) | **接口定义唯一来源（v1.1）** |
+| [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) | **架构 + 模块拆分 + ABC（v2 全量）** |
+| [CONTRACT.md](CONTRACT.md) | **接口唯一来源（v1.2 全量）** |
 | [PAGE-API-MAP.md](PAGE-API-MAP.md) | 屏 ↔ API |
+| [PAGE-DESIGN.md](PAGE-DESIGN.md) | **本分支产品真源** |
 | [MODULE-DESIGN.md](MODULE-DESIGN.md) | 替身与文件归属 |
-| [PAGE-DESIGN.md](PAGE-DESIGN.md) | 完整桌面 IA 与交互 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 长期控制/执行面 |
 | [ACCEPTANCE.md](ACCEPTANCE.md) | 编号与证据格式 |
 | [MANUAL-INTEGRATION-TEST.md](MANUAL-INTEGRATION-TEST.md) | 逐步人工用例 |
 | [DECISIONS.md](DECISIONS.md) | 上游与版本登记 |
-| [DEV-A.md](DEV-A.md) / [DEV-C.md](DEV-C.md) | 角色笔记 |
+| [DEV-A.md](DEV-A.md) / [DEV-B.md](DEV-B.md) / [DEV-C.md](DEV-C.md) | 角色笔记 |
 | [demos/README.md](../demos/README.md) | 演示与工作区 |
