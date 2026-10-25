@@ -19,7 +19,7 @@ const (
 	EventTypePty               = "pty"
 )
 
-// 公开错误码（与 docs/CONTRACT.md v1.1 一致）。
+// 公开错误码（与 docs/CONTRACT.md v1.2 一致）。
 const (
 	ErrInvalidArgument         = "INVALID_ARGUMENT"
 	ErrAccountNotFound         = "ACCOUNT_NOT_FOUND"

@@ -105,7 +105,7 @@ export async function listAgents() {
   return { agents, error: null };
 }
 
-/** CONTRACT v1.1 GetRuntimeHealth */
+/** CONTRACT v1.2 GetRuntimeHealth */
 export async function getRuntimeHealth() {
   if (scenario === "isolation") {
     return {
@@ -123,7 +123,7 @@ export async function getRuntimeHealth() {
   };
 }
 
-/** CONTRACT v1.1 ListSessions（mock 单会话表） */
+/** CONTRACT v1.2 ListSessions（mock 单会话表） */
 export async function listSessions() {
   if (!session) return { sessions: [], error: null };
   return {

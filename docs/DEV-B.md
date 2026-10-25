@@ -102,9 +102,9 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 
 只看 C 的页面时，在 `frontend` 执行 `npm run dev`，不要加 `?live=1`。浏览器 mock 不会创建沙箱，也不会启动 Gate。
 
-### 明确未做
+### 明确未做（历史两天记录）
 
-两天范围之外，本记录没有实现：
+当时两天范围之外、本记录没有实现：
 
 - OAuth / SSO、钥匙串或任何重启后仍在的凭据
 - 多会话、`switchModel`、clone / 导回、完整 PTY、会话内追加提问
@@ -112,6 +112,8 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 - 官方 MCP Go SDK 客户端
 - 窗口导航锁定与 CSP
 - 真实上游协议组合的验收证据
+
+**分支 `feat/page-design-full`（2026-10-25）**：上列 OAuth / 多会话 / `switchModel` / clone / PTY **改回范围内**（见 [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) v1.2、[TASK-SPLIT-ABC](TASK-SPLIT-ABC.md) v2.0）。DesktopAPI 方法名已占位；真实现与证据仍待 B（Gate OAuth）与 A（PTY/clone 编排）接线。其余项（配额、官方 MCP SDK、CSP 等）仍不在本分支必做。
 
 连接探测当时把 HTTP 404 和其他小于 400 的状态当成成功后再写入 Secrets。这在后续审查里被标为缺陷，并已由后续提交改掉，不属于本节的完成项。
 

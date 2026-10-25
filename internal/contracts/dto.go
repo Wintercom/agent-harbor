@@ -1,6 +1,6 @@
 // Package contracts 存放前后端共享的可序列化 DTO。
 // 负责人：A 主笔，B 复核绑定兼容，C 核对页面字段。
-// 字段与 docs/CONTRACT.md v1.1 一致，不包含业务实现。
+// 字段与 docs/CONTRACT.md v1.2 一致，不包含业务实现。
 package contracts
 
 // AppError 是前端可见的业务错误。message 使用固定可读模板，不附加原始上游细节。

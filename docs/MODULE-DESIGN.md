@@ -1,6 +1,6 @@
 # 两天版模块设计与并行开发
 
-本文件定义 Go/Wails 包边界、替身与文件归属。V1 **架构总纲与 ABC 分工**见 [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；方法与数据以 [CONTRACT.md](CONTRACT.md) v1.1 为唯一来源；屏级绑定见 [PAGE-API-MAP.md](PAGE-API-MAP.md)。目录见 [DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)。长期 ARCHITECTURE.md 不把未裁定能力算进交付。
+本文件定义 Go/Wails 包边界、替身与文件归属。V1 **架构总纲与 ABC 分工**见 [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；方法与数据以 [CONTRACT.md](CONTRACT.md) v1.2 为唯一来源；屏级绑定见 [PAGE-API-MAP.md](PAGE-API-MAP.md)。目录见 [DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)。本分支（`feat/page-design-full`）以 PAGE-DESIGN 全量为准，含 OAuth/clone/PTY。
 
 ## 1. 检查结论与补齐范围
 

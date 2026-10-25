@@ -6,7 +6,7 @@
 | 日期 | 2026-10-25 |
 | 分支目标 | 按 [PAGE-DESIGN](PAGE-DESIGN.md) **完整**实现导航与各屏；**不裁** OAuth / clone / PTY；**不按交付排期砍范围** |
 | 产品屏 | [PAGE-DESIGN](PAGE-DESIGN.md) |
-| **接口唯一来源** | [CONTRACT](CONTRACT.md) v1.1 |
+| **接口唯一来源** | [CONTRACT](CONTRACT.md) v1.2 |
 | 屏级绑定表 | [PAGE-API-MAP](PAGE-API-MAP.md) |
 | 包级细则 / 替身 | [MODULE-DESIGN](MODULE-DESIGN.md) |
 | 任务卡 | [TASK-SPLIT-ABC](TASK-SPLIT-ABC.md) |

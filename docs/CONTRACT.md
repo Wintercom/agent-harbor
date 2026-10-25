@@ -1,4 +1,4 @@
-# 接口契约 v1.1（两天核心 + V1 桌面扩展）
+# 接口契约 v1.2（全量 PAGE-DESIGN · feat/page-design-full）
 
 | 项 | 内容 |
 |---|---|

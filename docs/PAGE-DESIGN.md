@@ -776,7 +776,7 @@ V1 禁止：自定义 binary 路径、Base URL + API Key 当作「添加 Agent�
 ## 9. 与架构 API 的绑定
 
 **架构总纲**：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)。
-**接口唯一来源**：[CONTRACT.md](CONTRACT.md) v1.1。
+**接口唯一来源**：[CONTRACT.md](CONTRACT.md) v1.2（本分支全量：含 OAuth/clone/PTY）。
 **屏级绑定**：[PAGE-API-MAP.md](PAGE-API-MAP.md)。
 
 | 页面 | DesktopAPI（已定） |

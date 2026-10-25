@@ -146,7 +146,7 @@ python3 -m http.server 5173
 
 - Connect / CreateSession / Stop / Event **不变**；向导仍走现有 setup。
 - 健康与列表 **非正式契约字段**，待 P0.5-API-01/02；勿记入 I1–I11。
-- 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；接口：[CONTRACT.md](CONTRACT.md) v1.1；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
+- 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) v2；接口：[CONTRACT.md](CONTRACT.md) v1.2；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
 
 ---
 
