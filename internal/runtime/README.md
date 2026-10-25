@@ -1,5 +1,7 @@
 # 隔离运行时
 
+`clone` 在应用数据目录 `AgentHarbor/sessions` 下创建独立副本，Runtime 仅授权副本读写，原目录不加入沙箱规则。拒绝符号链接和特殊文件，复制上限为单文件 64 MiB、总内容 1 GiB、10 万个节点；超限或取消会回滚。副本随 Runtime 清理删除，V1 不自动导回原目录。
+
 负责人：A。两天版只实现已验证目标 macOS 上的 Seatbelt / sandbox-exec 后端；已实现严格单进程 Runtime、默认拒绝的 Seatbelt profile 和真实系统探针测试。Health 会验证授权与拒绝边界；准备/会话计时器均失败关闭。当前禁止创建后代，不支持 Bash/外部 git；仍需真实 Agent/上游联调。详细证据及限制见 [研发 A 开发记录](../../docs/DEV-A.md)。
 
 ## 当前文件

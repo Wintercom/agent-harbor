@@ -256,6 +256,7 @@ type EndpointRule struct {
 type PolicyRequest struct {
     Workspace string
     AgentID string
+    MountMode string
     Model AccountInfo
     MCP AccountInfo
 }
@@ -331,6 +332,7 @@ type RuntimeSpec struct {
 type Handle struct {
     ID string
     PrivateHome string
+    Workspace string // 实际执行路径，clone 时为 Runtime 自有副本
 }
 type Exit struct {
     Code int
@@ -471,7 +473,7 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 - **v1.1**：健康/列表/扩权/多账号/Prefs 等。
 - **v1.2（本分支）**：恢复并定义 OAuth、`clone`、`SwitchModel`、PTY（`WritePty`/`ResizePty` + 事件 `pty`）。形状未实现时可 `UNIMPLEMENTED`，**不得缺方法名**。
 
-当前实现注记：macOS Runtime 仍为严格单进程子集；PTY/clone 真实现由 A 排期，UI/mock 本分支先通。证据见 [DEV-A](DEV-A.md)。
+当前实现注记：macOS Runtime 仍为严格单进程子集；已支持 clone 安全副本（拒绝符号链接及特殊文件），原目录仍作为并发互斥键，副本随 Runtime 清理删除。真实 PTY 与 Agent 多轮协议仍须继续验证。证据见 [DEV-A](DEV-A.md)。
 
 公开 Event 须满足 `contracts.Event.Validate`。本文是并行实现的唯一方法/字段来源；变更先改本文与 `internal/contracts`，再 sync mock/bindings。
 

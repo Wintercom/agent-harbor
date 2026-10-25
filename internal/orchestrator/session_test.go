@@ -56,11 +56,15 @@ func (f *fixture) step(name string) error {
 }
 
 func (f *fixture) Health(context.Context) error { return f.step("health") }
-func (f *fixture) Create(context.Context, runtime.RuntimeSpec) (runtime.Handle, error) {
+func (f *fixture) Create(_ context.Context, input runtime.RuntimeSpec) (runtime.Handle, error) {
 	if err := f.step("create"); err != nil {
 		return runtime.Handle{}, err
 	}
-	return runtime.Handle{ID: "runtime", PrivateHome: "/private/test-home"}, nil
+	workspace := input.Workspace
+	if input.MountMode == "clone" {
+		workspace = "/private/test-copy"
+	}
+	return runtime.Handle{ID: "runtime", PrivateHome: "/private/test-home", Workspace: workspace}, nil
 }
 func (f *fixture) Exec(_ context.Context, _ runtime.Handle, _ runtime.LaunchSpec, output func(contracts.OutputData)) (runtime.Process, error) {
 	if err := f.step("exec"); err != nil {
@@ -136,7 +140,11 @@ func (p fakePolicy) Build(_ context.Context, req policy.PolicyRequest) (policy.P
 	if err := p.f.step("policy"); err != nil {
 		return policy.PolicySnapshot{}, err
 	}
-	return policy.PolicySnapshot{Workspace: "/test/workspace", MountMode: "direct", MCPID: req.MCP.ID}, nil
+	mode := req.MountMode
+	if mode == "" {
+		mode = "direct"
+	}
+	return policy.PolicySnapshot{Workspace: req.Workspace, MountMode: mode, MCPID: req.MCP.ID}, nil
 }
 func (f *fixture) Lookup(_ context.Context, id string) (contracts.AccountInfo, error) {
 	if err := f.step("lookup-" + id); err != nil {
@@ -400,6 +408,25 @@ func TestAllowsTwoDifferentWorkspacesAndCapsThird(t *testing.T) {
 	await(t, o, two.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
 }
 
+func TestCloneSnapshotKeepsOriginalWorkspaceLocked(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	input := spec()
+	input.MountMode = "clone"
+	s, err := o.Create(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := awaitState(t, o, s.SessionID, contracts.StateRunning)
+	if running.Workspace != "/private/test-copy" {
+		t.Fatalf("未使用副本路径：%+v", running)
+	}
+	_, err = o.Create(context.Background(), input)
+	assertCode(t, err, "WORKSPACE_BUSY")
+	_, _ = o.Stop(context.Background(), s.SessionID)
+	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
 func TestProvisionFailuresRollback(t *testing.T) {
 	for _, tc := range []struct {
 		step, code      string
@@ -454,7 +481,7 @@ func TestStopTakesOwnershipOfLateResources(t *testing.T) {
 				t.Fatalf("Stop 未快速返回：%+v %v", stopping, err)
 			}
 			_, err = o.Create(context.Background(), spec())
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 			close(f.release)
 			end := awaitState(t, o, s.SessionID, contracts.StateStopped)
 			if !end.CleanupComplete {
@@ -492,7 +519,7 @@ func TestCleanupFailureRetainsLockAndCanRetry(t *testing.T) {
 			}
 			assertCode(t, end.Error, "CLEANUP_FAILED")
 			_, err := o.Create(context.Background(), spec())
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 			f.mu.Lock()
 			f.destroyFails, f.revokeFails = false, false
 			f.mu.Unlock()
@@ -566,7 +593,7 @@ func TestValidationAndSingleSessionLock(t *testing.T) {
 		if err == nil {
 			success++
 		} else {
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 		}
 	}
 	if success != 1 {

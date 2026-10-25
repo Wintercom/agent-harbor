@@ -145,3 +145,11 @@ git diff --check
 新增 `List` 和 `Destroy` 服务方法。`List` 保留终态摘要，`Destroy` 只删除已确认 `cleanupComplete=true` 的 stopped/failed 记录；运行中、准备中或清理未完成的会话必须先 Stop/重试清理。Shutdown 会遍历并等待所有活动会话完成清理。
 
 本批验证：`go test ./...`、`go vet ./...`、`git diff --check` 通过。clone、扩权和 PTY 仍按 FULL-ORCH 后续卡实现，当前不将占位绑定或 mock 视为真实能力通过。
+
+## 2026-10-25：clone 工作区落地
+
+Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `AgentHarbor/sessions` 创建会话副本，仅向 Agent 授权副本。Handle.Workspace 返回实际执行目录，clone 会话快照显示副本路径；会话互斥仍使用规范化后的原始目录。停止、失败回滚和销毁底层 Runtime 均删除副本，原目录不自动导回。
+
+复制使用 `os.Root` 限定源目录范围；拒绝符号链接、特殊文件，单文件上限 64 MiB、总内容 1 GiB、节点数 10 万，逐块检查取消。复制得到独立文件并保留用户执行位；不继承 setuid/setgid 或组/其他用户权限。复制期间原目录仍可能被外部程序修改，副本不承诺文件系统原子快照。
+
+验证覆盖副本修改不影响原文件、链接拒绝、取消、Policy 挂载模式校验、快照副本路径及原目录锁。真实 macOS Runtime 的副本创建与 Destroy 删除测试通过；远程 Agent/模型联调仍待执行。

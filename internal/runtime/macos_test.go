@@ -441,7 +441,7 @@ func TestMacOSRejectsUnsafeSpecs(t *testing.T) {
 	r := NewMacOS()
 	base := probeSpec(t)
 	for _, modify := range []func(*RuntimeSpec){
-		func(s *RuntimeSpec) { s.MountMode = "clone" }, func(s *RuntimeSpec) { s.Workspace = "/" },
+		func(s *RuntimeSpec) { s.MountMode = "invalid" }, func(s *RuntimeSpec) { s.Workspace = "/" },
 		func(s *RuntimeSpec) { s.AllowedTCP = []string{"0.0.0.0:1234"} },
 		func(s *RuntimeSpec) { s.AllowedTCP = []string{"127.0.0.1:" + strconv.Itoa(65536)} },
 		func(s *RuntimeSpec) { s.ReadOnlyPaths = []string{"/usr/bin/sudo"} },
@@ -452,6 +452,52 @@ func TestMacOSRejectsUnsafeSpecs(t *testing.T) {
 			_ = r.Destroy(context.Background(), handle)
 			t.Fatal("接受不安全运行规格")
 		}
+	}
+}
+
+func TestMacOSCloneUsesCopyAndCleansIt(t *testing.T) {
+	r := NewMacOS()
+	spec := probeSpec(t)
+	spec.MountMode = "clone"
+	source := filepath.Join(spec.Workspace, "original.txt")
+	if err := os.WriteFile(source, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handle, err := r.Create(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Destroy(context.Background(), handle) })
+	if handle.Workspace == spec.Workspace || handle.Workspace == "" {
+		t.Fatal("未创建副本")
+	}
+	copyPath := filepath.Join(handle.Workspace, "original.txt")
+	if err := os.WriteFile(copyPath, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(source)
+	if err != nil || string(data) != "original" {
+		t.Fatalf("原目录被修改：%q %v", data, err)
+	}
+	if err := r.Destroy(context.Background(), handle); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(handle.Workspace); !os.IsNotExist(err) {
+		t.Fatalf("副本未删除：%v", err)
+	}
+}
+
+func TestMacOSCloneDeniesOriginalWorkspace(t *testing.T) {
+	r := NewMacOS()
+	spec := probeSpec(t)
+	spec.MountMode = "clone"
+	source := filepath.Join(spec.Workspace, "original.txt")
+	if err := os.WriteFile(source, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exit, _ := runProbe(t, r, spec, "read", source)
+	if exit.Code != 13 {
+		t.Fatalf("原工作区未被拒绝：%+v", exit)
 	}
 }
 

@@ -105,7 +105,7 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 	if err := r.Health(ctx); err != nil {
 		return Handle{}, err
 	}
-	if spec.SessionID == "" || spec.MountMode != "direct" || (!offline && len(spec.AllowedTCP) == 0) || len(spec.ReadOnlyPaths) == 0 {
+	if spec.SessionID == "" || (spec.MountMode != "direct" && spec.MountMode != "clone") || (!offline && len(spec.AllowedTCP) == 0) || len(spec.ReadOnlyPaths) == 0 {
 		return Handle{}, runtimeError("INVALID_ARGUMENT")
 	}
 	workspace, err := canonicalPath(spec.Workspace)
@@ -128,7 +128,7 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 		}
 		readOnly = append(readOnly, resolved)
 	}
-	root, err := os.MkdirTemp("/private/tmp", "agent-harbor-session-")
+	root, err := sessionRoot(spec.MountMode, workspace)
 	if err != nil {
 		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
 	}
@@ -144,6 +144,13 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 	}
 	if err := os.Mkdir(filepath.Join(home, "tmp"), 0700); err != nil {
 		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+	}
+	if spec.MountMode == "clone" {
+		clonePath := filepath.Join(root, "workspace")
+		if err := cloneWorkspace(ctx, workspace, clonePath); err != nil {
+			return Handle{}, err
+		}
+		workspace = clonePath
 	}
 	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP)
 	if err != nil {
@@ -168,7 +175,7 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 	if _, err := rand.Read(id[:]); err != nil {
 		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	handle := Handle{ID: hex.EncodeToString(id[:]), PrivateHome: home}
+	handle := Handle{ID: hex.EncodeToString(id[:]), PrivateHome: home, Workspace: workspace}
 	e := &entry{handle: handle, root: root, workspace: workspace, profile: profilePath, readOnly: make(map[string]bool)}
 	for _, path := range readOnly {
 		e.readOnly[path] = true

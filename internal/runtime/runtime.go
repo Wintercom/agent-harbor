@@ -18,6 +18,7 @@ type RuntimeSpec struct {
 type Handle struct {
 	ID          string
 	PrivateHome string
+	Workspace   string // Runtime 实际挂载路径；clone 时是会话副本
 }
 
 type Exit struct {
