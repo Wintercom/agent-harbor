@@ -18,4 +18,5 @@
 
 <!-- begin:observations -->
 2026-10-25：唯一 upstream 成员实际收到模型消息、MCP initialize/initialized/tools/list/DELETE，以及错误认证请求；Go 测试通过，没有静默未接线成员。日志在本机 /tmp/harbor-fix-simulation.ndjson，不提交请求日志。
+2026-10-25 dsh 增量：固定模型前缀 `/upstream/anthropic` 经模拟网关转发到唯一成员 `/anthropic/v1/messages`，实际 POST 返回 200；原模型、MCP 握手与认证失败回归通过。日志在本机 /tmp/harbor-dsh-simulation.ndjson；本轮参考官方源码和已发布 npm 包确定路径，Orbit 搜索未取得适用资源，不复用无关服务。fixture 不代表 DeepSeek 远程验收。
 <!-- end:observations -->

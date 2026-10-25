@@ -66,7 +66,7 @@ func (k *Kit) resolve() (string, error) {
 }
 
 func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
-	info := kits.KitInfo{Agent: contracts.AgentInfo{ID: "claude", Name: "Claude Code", Reason: "未安装、版本不支持或受限检测未通过。"}, ReadOnlyPaths: []string{}}
+	info := kits.KitInfo{Agent: contracts.AgentInfo{ID: "claude", Name: "Claude Code", ModelProfileID: "demo-model", Reason: "未安装、版本不支持或受限检测未通过。"}, ReadOnlyPaths: []string{}}
 	if ctx.Err() != nil {
 		return info, kitError("CANCELLED")
 	}

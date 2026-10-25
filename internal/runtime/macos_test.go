@@ -267,6 +267,33 @@ func TestMacOSFileBoundaryAndNoFork(t *testing.T) {
 	}
 }
 
+func TestMacOSReadOnlyInstallationDirectory(t *testing.T) {
+	r := NewMacOS()
+	spec := probeSpec(t)
+	install := workspace(t)
+	file := filepath.Join(install, "runtime-file")
+	if err := os.WriteFile(file, []byte("installation-only"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	spec.ReadOnlyPaths = append(spec.ReadOnlyPaths, install)
+	exit, text := runProbe(t, r, spec, "read", file)
+	if exit.Code != 0 || text != "installation-only" {
+		t.Fatalf("安装读取失败 %+v %q", exit, text)
+	}
+	exit, _ = runProbe(t, r, spec, "write", file)
+	if exit.Code != 13 {
+		t.Fatalf("安装可写 %+v", exit)
+	}
+	for _, bad := range []string{"/private/tmp", "/Users", os.Getenv("HOME"), spec.Workspace} {
+		unsafe := spec
+		unsafe.ReadOnlyPaths = append([]string{probePath}, bad)
+		if h, err := r.Create(context.Background(), unsafe); err == nil {
+			r.Destroy(context.Background(), h)
+			t.Fatalf("允许危险目录 %s", bad)
+		}
+	}
+}
+
 func TestMacOSExactGateNetwork(t *testing.T) {
 	r := NewMacOS()
 	spec := probeSpec(t)

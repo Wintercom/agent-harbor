@@ -9,7 +9,7 @@ http.createServer(async (req, res) => {
   }
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { return send(400, {error:'invalid-json'}); } }
   const path = req.url.split('?')[0];
-  if (path === '/v1/messages' && req.method === 'POST') {
+  if ((path === '/v1/messages' || path === '/anthropic/v1/messages') && req.method === 'POST') {
     if (req.headers['x-api-key'] !== 'fixture-model') return send(401, {type:'error'});
     if (body.model !== 'fixture-model-name' || body.max_tokens !== 1) return send(400, {type:'error'});
     return send(200, {id:'fixture-message',type:'message',role:'assistant',model:body.model,content:[{type:'text',text:'OK'}],stop_reason:'max_tokens',usage:{input_tokens:1,output_tokens:1}});

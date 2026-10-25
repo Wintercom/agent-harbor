@@ -57,7 +57,9 @@ func makeProfile(workspace, home string, readOnly, addresses []string) (string, 
 			return "", runtimeError("AGENT_UNSUPPORTED")
 		}
 		if info.IsDir() {
-			return "", runtimeError("INVALID_ARGUMENT")
+			fmt.Fprintf(&rules, "(allow file-read* file-map-executable (subpath %s))\n", quoted)
+			fmt.Fprintf(&rules, "(allow file-read-metadata (path-ancestors %s))\n", quoted)
+			continue
 		}
 		fmt.Fprintf(&rules, "(allow file-read* file-map-executable (literal %s))\n", quoted)
 		if info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {

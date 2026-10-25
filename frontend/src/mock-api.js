@@ -12,6 +12,7 @@ const FIXED = {
     version: "2.1.292",
     available: true,
     reason: "",
+    modelProfileId: "demo-model",
   },
   modelProfileId: "demo-model",
   mcpProfileId: "demo-mcp",
@@ -89,19 +90,17 @@ export function isMockTransport() {
 }
 
 export async function listAgents() {
+  const agents = [
+    { ...FIXED.agent },
+    { id: "dsh", name: "DeepSeek dsh", version: "0.2.1-rc.2", available: true, reason: "", modelProfileId: "dsh-model" },
+  ];
   if (scenario === "isolation") {
     return {
-      agents: [
-        {
-          ...FIXED.agent,
-          available: false,
-          reason: "隔离能力不可用（模拟）",
-        },
-      ],
+      agents: agents.map((agent) => ({...agent, available: false, reason: "隔离能力不可用（模拟）"})),
       error: null,
     };
   }
-  return { agents: [{ ...FIXED.agent }], error: null };
+  return { agents, error: null };
 }
 
 export async function selectWorkspace() {
@@ -121,10 +120,10 @@ export async function connectModel(input) {
       error: err("INVALID_ARGUMENT", "profileId、name、apiKey 均必填"),
     };
   }
-  if (input.profileId !== FIXED.modelProfileId) {
+  if (![FIXED.modelProfileId, "dsh-model"].includes(input.profileId)) {
     return {
       account: null,
-      error: err("INVALID_ARGUMENT", "仅支持固定 profileId=demo-model"),
+      error: err("INVALID_ARGUMENT", "模型 profile 不受支持"),
     };
   }
   if (busy || (session && !["stopped", "failed"].includes(session.state))) {
@@ -217,16 +216,19 @@ export async function createSession(spec) {
       error: err("INVALID_ARGUMENT", "请先连接模型账号"),
     };
   }
+  if (modelAccount.profileId !== (spec.agentId === "dsh" ? "dsh-model" : "demo-model")) {
+    return {session: null, error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配")};
+  }
   if (!mcpAccount || spec.mcpIds[0] !== mcpAccount.id) {
     return {
       session: null,
       error: err("INVALID_ARGUMENT", "请先连接 MCP 账号"),
     };
   }
-  if (spec.agentId !== FIXED.agent.id) {
+  if (![FIXED.agent.id, "dsh"].includes(spec.agentId)) {
     return {
       session: null,
-      error: err("INVALID_ARGUMENT", "仅支持 agentId=claude"),
+      error: err("INVALID_ARGUMENT", "Agent 不受支持"),
     };
   }
 

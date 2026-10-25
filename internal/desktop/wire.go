@@ -8,6 +8,7 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/liyufei916/agent-harbor/internal/kits"
 	"github.com/liyufei916/agent-harbor/internal/kits/claude"
+	"github.com/liyufei916/agent-harbor/internal/kits/dsh"
 	"github.com/liyufei916/agent-harbor/internal/orchestrator"
 	"github.com/liyufei916/agent-harbor/internal/runtime"
 )
@@ -27,13 +28,22 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if err != nil {
 		return err
 	}
-	reg, err := kits.NewRegistry(map[string]kits.Kit{"claude": kit})
+	dshModel := strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL"))
+	if dshModel == "" {
+		dshModel = "deepseek-flash"
+	}
+	dshKit, err := dsh.New(os.Getenv("HARBOR_DSH_NODE"), os.Getenv("HARBOR_DSH_INSTALLATION"), dshModel)
+	if err != nil {
+		return err
+	}
+	agentKits := map[string]kits.Kit{"claude": kit, "dsh": dshKit}
+	reg, err := kits.NewRegistry(agentKits)
 	if err != nil {
 		return err
 	}
 	svc, err := orchestrator.New(appCtx, orchestrator.Dependencies{
 		Runtime: runtime.NewMacOS(),
-		Kits:    map[string]kits.Kit{"claude": kit},
+		Kits:    agentKits,
 		Catalog: a.secrets,
 		Policy:  a.policy,
 		Gate:    a.gate,

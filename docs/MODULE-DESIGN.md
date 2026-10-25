@@ -97,7 +97,7 @@ flowchart TB
 
 前端 transport 最小接口为 listAgents、selectWorkspace、connectModel、connectMcp、createSession、getSession、stopSession、onEvent。全部业务调用返回 Promise<Response>；onEvent(callback) 返回取消函数，事件载荷就是 CONTRACT.md 的 Event，不再套一层。Wails transport 包装 PascalCase 生成方法；mock transport 不导入生成绑定，可在普通浏览器独立启动。
 
-前端固定 mock 数据：Agent id=claude；模型 id=mock-model、profileId=demo-model；MCP id=mock-mcp、profileId=demo-mcp；工作区=/demo/project。不得放真实 Key。正常创建返回 provisioning，依次推送 running、文本 output、MCP allowed 审计、stopping、stopped；State/Error 字段及 seq 严格遵循契约。脚本可重复执行并支持提前 Stop；另外提供认证失败、SESSION_BUSY、ISOLATION_UNAVAILABLE、cleanupComplete=false 四个可选场景。所有 mock 只验证 UI/协议处理，不进入正式执行面。
+前端固定 mock 数据：Agent id=claude 或 dsh，模型 profileId 分别为 demo-model 或 dsh-model；MCP id=mock-mcp、profileId=demo-mcp；工作区=/demo/project。不得放真实 Key。正常创建返回 provisioning，依次推送 running、文本 output、MCP allowed 审计、stopping、stopped；State/Error 字段及 seq 严格遵循契约。脚本可重复执行并支持提前 Stop；另外提供认证失败、SESSION_BUSY、ISOLATION_UNAVAILABLE、cleanupComplete=false 四个可选场景。所有 mock 只验证 UI/协议处理，不进入正式执行面。
 
 Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisioning 竞争、清理失败等，不访问真实 Secrets。假 Runtime 不能用普通宿主机 shell 作为实际隔离运行降级。生产入口不自动回退任何 fake，模拟与真实运行明确切换，正式安全验收必须禁用 mock。
 
@@ -128,3 +128,7 @@ Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisionin
 当前状态：共享 Go 类型、编排及其测试 fake 已落地；严格单进程 Runtime/Kit 已实现，不代表子进程能力完成；**C 的浏览器 mock 两页与场景替身已落地**（见 [DEV-C.md](DEV-C.md)），Wails v3 绑定、构建和原生桌面冒烟已通过；真实上游任务仍待完成。A 证据见 [DEV-A.md](DEV-A.md)。能按契约并行开发，不代表已经完成可运行交付或消除外部集成风险。
 
 2026-10-25 修复：连接测试由 SessionService.WithConnection 与 Create 原子互斥，桌面不再维护 busy 副本。退出在 ShouldQuit/窗口关闭钩子中异步确认 Shutdown；失败保留窗口，成功后才清空凭据并退出。修复与证据见 [ABC 审查](ABC-INTEGRATION-REVIEW.md#修复进展)。
+
+## dsh 范围增量（2026-10-25）
+
+A 新增 `internal/kits/dsh` 与 Runtime 专用安装目录校验；B 装配双 Kit、独立 dsh-model 和受信模型路径前缀；C 页面选择 Agent 并清空旧模型引用。DTO 新增可选 modelProfileId，真实桌面与 mock 均消费，状态机与资源所有权不变。版本、安装与证据见 [dsh 适配](DSH-INTEGRATION.md)。

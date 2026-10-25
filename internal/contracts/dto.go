@@ -12,11 +12,12 @@ type AppError struct {
 
 // AgentInfo 描述本机可检测的 Agent 能力。
 type AgentInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Version        string `json:"version"`
+	Available      bool   `json:"available"`
+	Reason         string `json:"reason"`
+	ModelProfileID string `json:"modelProfileId,omitempty"`
 }
 
 // ConnectInput 为模型/MCP 连接的单向输入；APIKey 不得回显或写入事件。

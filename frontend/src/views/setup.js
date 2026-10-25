@@ -10,10 +10,13 @@ export const DEMO_TASK =
 export function mountSetup(root, ctx) {
   root.innerHTML = `
     <h2>配置</h2>
-    <p class="sub">凭据仅在提交连接时清空；成功只保留账号引用。profileId 固定为 demo-model / demo-mcp。</p>
+    <p class="sub">连接返回后清空凭据；切换 Agent 后需要重新连接对应模型。</p>
     <div class="grid">
       <section class="card">
         <h3>Agent</h3>
+        <label class="field">执行 Agent
+          <select id="agent-select"></select>
+        </label>
         <p class="meta" id="agent-status">检测中…</p>
         <div class="actions">
           <button type="button" class="btn" id="btn-refresh-agents">重新检测</button>
@@ -83,6 +86,8 @@ export function mountSetup(root, ctx) {
   `;
 
   const els = {
+    agentSelect: root.querySelector("#agent-select"),
+    modelProfile: root.querySelector("#model-profile"),
     agentStatus: root.querySelector("#agent-status"),
     scenario: root.querySelector("#scenario"),
     modelName: root.querySelector("#model-name"),
@@ -126,6 +131,26 @@ export function mountSetup(root, ctx) {
     }
   }
 
+  let agents = [];
+  function selectAgent(id) {
+    const a = agents.find((item) => item.id === id);
+    const changed = ctx.state.agentId !== id;
+    ctx.state.agentId = id;
+    ctx.state.agentAvailable = !!a?.available;
+    els.modelProfile.value = a?.modelProfileId || (id === "dsh" ? "dsh-model" : "demo-model");
+    if (changed) {
+      ctx.state.modelAccount = null;
+      els.modelKey.value = "";
+      els.modelStatus.textContent = "已切换 Agent，请重新连接模型";
+      els.msg.textContent = "";
+    }
+    els.agentStatus.textContent = a
+      ? `${a.name} ${a.version || ""} · ${a.available ? "可用" : `不可用：${a.reason || ""}`}`
+      : "无可用 Agent";
+    refreshStart();
+  }
+  els.agentSelect.onchange = () => selectAgent(els.agentSelect.value);
+
   async function refreshAgents() {
     const res = await api.listAgents();
     if (res.error) {
@@ -134,18 +159,17 @@ export function mountSetup(root, ctx) {
       refreshStart();
       return;
     }
-    const a = (res.agents || [])[0];
-    if (!a) {
-      els.agentStatus.textContent = "无可用 Agent";
-      ctx.state.agentAvailable = false;
-    } else {
-      ctx.state.agentId = a.id;
-      ctx.state.agentAvailable = !!a.available;
-      els.agentStatus.innerHTML = a.available
-        ? `<span class="ok">● ${a.name} ${a.version}</span>`
-        : `<span class="bad">○ ${a.name} 不可用 · ${a.reason || ""}</span>`;
-    }
-    refreshStart();
+    agents = res.agents || [];
+    els.agentSelect.replaceChildren(...agents.map((a) => {
+      const option = document.createElement("option");
+      option.value = a.id;
+      option.textContent = `${a.name}${a.available ? "" : "（不可用）"}`;
+      return option;
+    }));
+    const id = agents.some((a) => a.id === ctx.state.agentId)
+      ? ctx.state.agentId : agents[0]?.id || "";
+    els.agentSelect.value = id;
+    selectAgent(id);
   }
 
   els.scenario.value = api.getMockScenario();
@@ -169,9 +193,10 @@ export function mountSetup(root, ctx) {
       return;
     }
     els.btnModel.disabled = true;
+    els.agentSelect.disabled = true;
     try {
       const res = await api.connectModel({
-        profileId: "demo-model",
+        profileId: els.modelProfile.value,
         name,
         apiKey: key,
       });
@@ -185,6 +210,7 @@ export function mountSetup(root, ctx) {
       }
     } finally {
       els.btnModel.disabled = false;
+      els.agentSelect.disabled = false;
       refreshStart();
     }
   };

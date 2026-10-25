@@ -13,6 +13,11 @@ import (
 // ProbeExecutable 在无网络、无子进程限制下检测 CLI，不借用宿主登录态。
 // 仅供受信 Kit 使用，不绑定到桌面或暴露给 Agent。
 func ProbeExecutable(ctx context.Context, command string, args []string) (result string, resultErr error) {
+	return ProbeInstallation(ctx, command, args, nil)
+}
+
+// ProbeInstallation 用明确的只读运行文件检测解释型 CLI，不加载宿主配置。
+func ProbeInstallation(ctx context.Context, command string, args, readOnly []string) (result string, resultErr error) {
 	workspace, err := os.MkdirTemp("/private/tmp", "agent-harbor-inspect-")
 	if err != nil {
 		return "", runtimeError("AGENT_UNSUPPORTED")
@@ -21,7 +26,7 @@ func ProbeExecutable(ctx context.Context, command string, args []string) (result
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	r := NewMacOS()
-	handle, err := r.create(ctx, RuntimeSpec{SessionID: "inspect", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: []string{command}}, true)
+	handle, err := r.create(ctx, RuntimeSpec{SessionID: "inspect", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: append([]string{command}, readOnly...)}, true)
 	if err != nil {
 		return "", err
 	}
