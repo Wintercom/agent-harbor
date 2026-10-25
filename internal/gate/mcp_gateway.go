@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -140,7 +141,7 @@ func (g *mcpGateway) writeFilteredList(w http.ResponseWriter, resp *http.Respons
 	defer resp.Body.Close()
 	idle, total := g.h.streamTimeouts()
 	reader := &deadlineReader{r: resp.Body, idle: idle, deadline: time.Now().Add(total)}
-	raw, err := io.ReadAll(io.LimitReader(reader, 2<<20))
+	raw, err := readToolsList(reader, resp.Header.Get("Content-Type"), 2<<20)
 	if err != nil && len(raw) == 0 {
 		http.Error(w, "upstream timeout", streamTimeoutStatus(err))
 		return err
@@ -154,6 +155,37 @@ func (g *mcpGateway) writeFilteredList(w http.ResponseWriter, resp *http.Respons
 	w.WriteHeader(resp.StatusCode)
 	_, werr := w.Write(out)
 	return werr
+}
+
+// readToolsList 只读取完整的 tools/list 事件。Streamable HTTP 的 SSE 响应可能
+// 在发送事件后保持连接，等待 EOF 会让 dsh 启动同步一直超时。
+func readToolsList(reader io.Reader, contentType string, limit int64) ([]byte, error) {
+	if !strings.HasPrefix(contentType, "text/event-stream") {
+		return io.ReadAll(io.LimitReader(reader, limit))
+	}
+	scanner := bufio.NewScanner(io.LimitReader(reader, limit))
+	scanner.Buffer(make([]byte, 4096), int(limit))
+	var event, out bytes.Buffer
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		event.Write(line)
+		event.WriteByte('\n')
+		if len(bytes.TrimSpace(line)) == 0 {
+			if bytes.Contains(event.Bytes(), []byte(`"tools"`)) {
+				out.Write(event.Bytes())
+				return out.Bytes(), nil
+			}
+			out.Write(event.Bytes())
+			event.Reset()
+		}
+	}
+	if event.Len() > 0 {
+		out.Write(event.Bytes())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func toolAllowed(allow []string, tool string) bool {
