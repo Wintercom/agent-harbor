@@ -97,6 +97,19 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "目标主机未通过出站校验（须为可解析公网地址）。", false)
 		}
 	}
+	skipProbe := in.SkipProbe && kind == "model" && profileID == policy.ProfileCustom
+	if skipProbe {
+		meta := contracts.AccountInfo{
+			Kind: kind, Name: name, ProfileID: profileID,
+			Host: prof.Host, BasePath: prof.BasePath, Model: prof.Model,
+		}
+		id, err := c.secrets.Put(ctx, meta, []byte(key))
+		if err != nil {
+			return contracts.AccountInfo{}, err
+		}
+		meta.ID = id
+		return meta, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer c.client.CloseIdleConnections()
@@ -221,28 +234,48 @@ func (c *Connections) probeOpenAIResponses(ctx context.Context, prof policy.Fixe
 	return ctx.Err()
 }
 
-// probeModelsList 用 GET /v1/models 验证 Key，避免把「模型名不对」误报成认证失败。
+// probeModelsList 用 GET /v1/models 验证 Key；多认证头轮试（LiteLLM 部署差异大）。
 func (c *Connections) probeModelsList(ctx context.Context, prof policy.FixedProfile, key string) error {
 	u := strings.TrimRight(prof.Origin, "/") + prof.BasePath + "/v1/models"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return ErrUpstreamDown
+	type hdr struct{ k, v string }
+	attempts := [][]hdr{
+		{{"Authorization", "Bearer " + key}},
+		{{"Authorization", key}},
+		{{"api-key", key}},
+		{{"X-Api-Key", key}},
+		{{"Authorization", "Bearer " + key}, {"X-Api-Key", key}},
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return mapProbeErr(ctx, err)
+	var last error
+	for _, hs := range attempts {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return ErrUpstreamDown
+		}
+		req.Header.Set("Accept", "application/json")
+		for _, h := range hs {
+			req.Header.Set(h.k, h.v)
+		}
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return mapProbeErr(ctx, err)
+		}
+		raw, _ := readProbeBody(resp)
+		code := resp.StatusCode
+		resp.Body.Close()
+		if code >= 200 && code < 300 {
+			return nil
+		}
+		if code == 401 || code == 403 {
+			last = authProbeError(prof.Host, code, raw)
+			continue
+		}
+		// 404/5xx：该路径可能未开 models 列表，不据此判 Key 无效，交给后续 /v1/messages。
+		return nil
 	}
-	raw, _ := readProbeBody(resp)
-	resp.Body.Close()
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return authProbeError(prof.Host, raw)
+	if last != nil {
+		return last
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ErrUpstreamDown
-	}
-	return nil
+	return ErrUpstreamAuth
 }
 
 func readAnthropicProbeOK(ctx context.Context, resp *http.Response) error {
@@ -304,7 +337,7 @@ func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile
 		raw, _ := readProbeBody(resp)
 		resp.Body.Close()
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			return nil, authProbeError(prof.Host, raw)
+			return nil, authProbeError(prof.Host, resp.StatusCode, raw)
 		}
 		return nil, ErrUpstreamDown
 	}
@@ -336,7 +369,7 @@ func isUpstreamAuthErr(err error) bool {
 }
 
 // authProbeError 把上游 401/403 正文收成固定中文提示，不回传 Key/哈希等敏感片段。
-func authProbeError(host string, raw []byte) error {
+func authProbeError(host string, status int, raw []byte) error {
 	low := strings.ToLower(string(raw))
 	host = strings.ToLower(host)
 	msg := "上游认证失败"
@@ -344,13 +377,16 @@ func authProbeError(host string, raw []byte) error {
 	case strings.Contains(low, "expected to start with 'sk-'") || strings.Contains(low, `expected to start with "sk-"`):
 		msg = "上游要求 API Key 以 sk- 开头（LiteLLM 虚拟 Key）"
 	case strings.Contains(low, "invalid proxy server token") || strings.Contains(low, "token_not_found") || strings.Contains(low, "litellm_verification"):
-		msg = "上游拒绝了该 Key（LiteLLM 未登记或已失效）。请在 LiteLLM/七牛侧确认 Key 仍有效，且地址为 https://llmapi.qiniu.io"
+		msg = "上游拒绝了该 Key（LiteLLM 未登记或已失效）。请在签发方确认 Key 仍有效"
 	case strings.Contains(host, "qnaigc") && (strings.Contains(low, "invalid api key") || strings.Contains(low, "authentication_error")):
-		msg = "上游认证失败：API Key 无效。api.qnaigc.com 与 llmapi.qiniu.io 不是同一套 Key；请到 portal.qiniu.com/ai-inference 复制官方 Key，或改用 LiteLLM 地址"
+		msg = "上游认证失败：API Key 无效。api.qnaigc.com 与 llmapi.qiniu.io 不是同一套 Key"
 	case strings.Contains(low, "invalid api key") || strings.Contains(low, "invalid x-api-key") || strings.Contains(low, "authentication_error"):
 		msg = "上游认证失败：API Key 无效"
 	case len(bytes.TrimSpace(raw)) == 0:
 		msg = "上游认证失败（无错误正文）"
+	}
+	if status > 0 {
+		msg = msg + " HTTP " + strconv.Itoa(status)
 	}
 	return contracts.NewAppError(contracts.ErrUpstreamAuthFailed, msg, false)
 }

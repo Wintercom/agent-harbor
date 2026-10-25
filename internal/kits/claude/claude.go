@@ -293,12 +293,12 @@ func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
 		info.Agent.Reason = "已安装 " + version + "，当前要求 " + want + "（HARBOR_CLAUDE_REQUIRE_VERSION）。"
 		return info, nil
 	}
-	help, err := k.inspect(ctx, launch.Command, append(append([]string{}, launch.Args...), "--bare", "--help"), launch.ReadOnly)
+	help, err := k.inspect(ctx, launch.Command, append(append([]string{}, launch.Args...), "--help"), launch.ReadOnly)
 	if err != nil {
 		if ctx.Err() != nil {
 			return info, kitError("CANCELLED")
 		}
-		info.Agent.Reason = "已安装 " + version + "。" + detectProbeReason(launch.Label, "--bare --help", err)
+		info.Agent.Reason = "已安装 " + version + "。" + detectProbeReason(launch.Label, "--help", err)
 		return info, nil
 	}
 	var missing []string
@@ -363,8 +363,9 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if err != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
+	// 2.1.x 已无 --bare；用 --print + settings/MCP 白名单实现受限非交互启动。
 	args := append(append([]string{}, launch.Args...),
-		"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
+		"--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
 		"--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath,
 		"--setting-sources", "", "--permission-mode", "dontAsk", "--disable-slash-commands", "--no-chrome",
 		"--tools", "Read,Write,Edit", "--model", k.model,

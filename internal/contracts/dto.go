@@ -23,12 +23,14 @@ type AgentInfo struct {
 // ConnectInput 为模型/MCP 连接的单向输入；APIKey 不得回显或写入事件。
 // 自定义模型：Origin 为 https://host[:port][/basePath]（path 会收成 BasePath）；固定 profile 时 Origin 为空。
 // Model 可选，探测/出站模型名；空则按主机推断（如 deepseek→deepseek-chat）。
+// SkipProbe 仅自定义模型：跳过上游探测仍保存（出站主机校验照做）；会话时仍可能因 Key 无效失败。
 type ConnectInput struct {
 	ProfileID string `json:"profileId"`
 	Name      string `json:"name"`
 	APIKey    string `json:"apiKey"`
 	Origin    string `json:"origin,omitempty"`
 	Model     string `json:"model,omitempty"`
+	SkipProbe bool   `json:"skipProbe,omitempty"`
 }
 
 // AccountInfo 是脱敏后的账号元信息。
