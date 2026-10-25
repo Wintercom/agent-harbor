@@ -2,17 +2,17 @@
 
 已定：Go 主业务、简单 HTML/CSS/JavaScript、Python 验收辅助；单应用、单会话、单任务、direct 演示工作区、宿主机内存凭据；Claude Code 优先，一个固定模型组合和一个远程 Streamable HTTP 认证 MCP。详细边界以 AGENTS.md 为准。
 
-关于 Wails 版本：`main` 近期确认本轮基线为 **Wails v2**，并写明 v3 仍处测试阶段、切换前须单独验证绑定/事件/构建/退出清理。本分支（研发 B）已按 **Wails v3**（[为什么选择 Wails](https://v3.wails.io/zh-cn/quick-start/why-wails/)）落地桌面桥与 `frontend/bindings` / `build/config.yml`；合入 `main` 前须与团队确认是否接受 v3，或回退到 v2 脚手架。接口基线为 [CONTRACT.md](CONTRACT.md) v1，模块规则为 [MODULE-DESIGN.md](MODULE-DESIGN.md)。Go module path 为 `github.com/liyufei916/agent-harbor`，与当前仓库地址一致。依赖版本以真实构建记录为准。
+2026-10-25：用户确认本轮整体采用 **Wails v3.0.0-beta.34**，替代此前 v2 决策。Go module、CLI 与 `@wailsio/runtime` 必须锁定同版，不使用 latest。桌面入口为 `main.go`，受限绑定在 `internal/desktop`，生成绑定在 `frontend/bindings`，配置在 `build/config.yml` 与 `Taskfile.yml`。版本验证见 [Wails v3 评估与验证](WAILS-V3-ASSESSMENT.md)。接口仍以 [CONTRACT.md](CONTRACT.md) v1 为准，不因升级改变 DTO、事件或安全边界。
 
 | 开工首小时登记项 | 负责人 | 当前状态 / 证据要求 |
 |---|---|---|
 | 目标 macOS 版本、CPU、隔离后端可用性 | A | 待验证，记录真实 profile 正/负例；非 root 不等于已隔离 |
-| Go / Wails / Node / 前端工具及 MCP SDK 的确切版本 | B | **本分支已初始化**：Go toolchain 1.26（`go.mod`）、Wails **v3.0.0-beta.34**、Vite **4.5.x**、Node ≥16（建议 18+）；MCP 仍用标准 `net/http` 转发，完整 SDK 待真实上游验证后补记。与 `main` 的 v2 基线冲突，待合入前拍板 |
+| Go / Wails / Node / 前端工具及 MCP SDK 的确切版本 | B | **已统一**：Go toolchain 1.26（`go.mod`）、Wails **v3.0.0-beta.34**、Vite **7.3.7**、Node 20.19+ 或 22.12+（CI 使用 Node 22）；MCP 仍用标准 `net/http` 转发，完整 SDK 待真实上游验证后补记。绑定生成和生产构建已通过，本机 WebView 证据见评估记录 |
 | Claude Code 版本、安装方式及必要只读运行路径 | A | 待检测；不得复制完整用户 HOME/登录配置 |
 | demo-model 的真实提供方、协议、HTTPS origin 与允许路径 | B | profileId 固定 `demo-model`；默认 origin `https://api.deepseek.com`，可用 `HARBOR_DEMO_MODEL_ORIGIN` 覆盖；真实账号与路径待联调验证 |
 | demo-mcp 的真实服务、认证方式、origin、路径、只读工具名 | B/C | profileId 固定 `demo-mcp`；默认占位 origin，可用 `HARBOR_DEMO_MCP_ORIGIN` 覆盖；待选真实服务与账号 |
 | 专用非敏感工作区与一条稳定演示任务 | C/A | **已准备**：目录 `demos/workspace/`（见 [demos/README.md](../demos/README.md)、`./demos/verify-workspace.sh`）；任务文案见 demos 固定脚本。明确会直接改原文件，MCP 操作只读。mock 仍用 `/demo/project`，live/I2 选本目录绝对路径 |
-| 依赖安装、绑定生成、Go/前端独立测试和 Wails 开发命令 | B | **本分支已可执行**（见根 README）：`go test ./internal/...`、`wails3 generate bindings ./...`、`frontend` 下 `npm run build`、`wails3 dev` / `wails3 build`；另有 GitHub Actions CI |
+| 依赖安装、绑定生成、Go/前端独立测试和 Wails 开发命令 | B | **已可执行**（见根 README）：`go test ./internal/...`、`wails3 generate bindings ./...`、`frontend` 下 `npm run build`、`wails3 dev` / `wails3 build`；另有 GitHub Actions CI |
 
 这些未决项阻碍真实端到端验收，但不阻碍基于契约、固定 profileId 和替身进行独立模块开发。实际服务不兼容时保留失败证据，调整受支持组合，不偷偷更改“所有 Agent/MCP 已支持”的产品口径。
 

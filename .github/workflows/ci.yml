@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -67,8 +67,22 @@ jobs:
           echo "$GOBIN" >> "$GITHUB_PATH"
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34
           npm ci --prefix frontend
+          npm test --prefix frontend
+          npm audit --prefix frontend --audit-level=moderate
           wails3 generate bindings ./...
           wails3 build
+
+      - name: Validate macOS application bundle
+        shell: bash
+        run: |
+          wails3 task darwin:package
+          plutil -lint bin/AgentHarbor.app/Contents/Info.plist
+          test "$(plutil -extract CFBundleExecutable raw -o - bin/AgentHarbor.app/Contents/Info.plist)" = AgentHarbor
+          test -x bin/AgentHarbor.app/Contents/MacOS/AgentHarbor
+          codesign --verify --deep --strict bin/AgentHarbor.app
+
+      - name: Validate native WebView bindings and shutdown
+        run: go test -tags production,harbor_desktop -run TestNativeDesktopBindingsAndShutdown -v .
 
   python:
     name: Security evidence checks

@@ -8,10 +8,10 @@ import * as mock from "./mock-api.js";
 let transport = mock;
 let mode = "mock"; // mock | live
 
-function wrapTransportError(e) {
+function wrapTransportError() {
   return {
     code: "INTERNAL_ERROR",
-    message: e && e.message ? String(e.message) : "前端调用失败",
+    message: "桌面调用失败，请重试。",
     retryable: true,
   };
 }

@@ -107,4 +107,4 @@ python3 -m http.server 5173
 | 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js` |
 | 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项 |
 
-不修改桌面 Go 入口与会话状态机；不手改 `frontend/wailsjs/`。
+不修改桌面 Go 入口与会话状态机；不手改 `frontend/bindings/`。

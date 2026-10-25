@@ -10,4 +10,4 @@
 
 ## Claude Code 专用规范
 
-Wails v3 的逐模块验证范围与剩余验收见 [兼容性评估](docs/WAILS-V3-ASSESSMENT.md)；构建通过不代表真实桌面闭环通过。
+已统一采用 Wails v3.0.0-beta.34，Go/CLI/前端 runtime 锁定同版；前端 Vite 7.3.7，Node 20.19+ 或 22.12+。桌面只走 live，初始化失败不降级 mock。逐模块检查、原生 WebView 冒烟与剩余真实上游验收见 [升级验证](docs/WAILS-V3-ASSESSMENT.md)。

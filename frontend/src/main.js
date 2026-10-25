@@ -1,8 +1,9 @@
 /**
  * 页面装配入口（产品 C）。
- * 默认 mock；Wails v3 绑定目录为 frontend/bindings/（B 生成，勿手改）。
+ * 桌面使用 live，普通浏览器使用 mock；Wails v3 绑定目录为 frontend/bindings/（B 生成，勿手改）。
  */
 import * as api from "./api.js";
+import { initializeTransport } from "./startup.js";
 import { mountSetup } from "./views/setup.js";
 import { mountSession } from "./views/session.js";
 
@@ -55,20 +56,7 @@ function isWailsShell() {
 }
 
 async function boot() {
-  api.useMock();
-  const params = new URLSearchParams(location.search);
-  if (params.get("scenario")) {
-    api.setMockScenario(params.get("scenario"));
-  }
-  const wantLive = params.get("live") === "1" || (params.get("live") !== "0" && !params.get("scenario") && isWailsShell());
-  if (wantLive) {
-    try {
-      await api.useLive();
-    } catch (e) {
-      console.warn("live transport 不可用，保持 mock:", e.message || e);
-      api.useMock();
-    }
-  }
+  await initializeTransport(api, { shell: isWailsShell(), search: location.search });
   syncBadge();
 
   document.querySelectorAll(".tab").forEach((btn) => {
@@ -77,7 +65,13 @@ async function boot() {
 
   mountSetup(setupRoot, ctx);
   sessionView = mountSession(sessionRoot, ctx);
+  window.addEventListener("pagehide", () => sessionView.destroy(), { once: true });
   ctx.showTab("setup");
 }
 
-boot();
+boot().catch(() => {
+  badge.textContent = "连接失败";
+  badge.className = "badge bad";
+  setupRoot.textContent = "桌面连接初始化失败，请重新启动应用。";
+  document.querySelectorAll(".tab").forEach((button) => { button.disabled = true; });
+});

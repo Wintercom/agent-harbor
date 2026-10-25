@@ -1,12 +1,12 @@
 # Go + Wails 目录设计
 
-适用范围：两位研发、一位产品/前端，三人两天核心版。Go 承担业务后端，Wails 承担桌面桥接，Python 只用于验收辅助。目录骨架与研发 B 的 Gate/Policy/Secrets/Wails 入口已落地；编排、隔离、Kit 与完整页面仍待 A/C。
+适用范围：两位研发、一位产品/前端，三人两天核心版。Go 承担业务后端，Wails v3 承担桌面桥接，Python 用于验收辅助。编排、严格单进程 Runtime、Kit、Gate/Policy/Secrets、桌面绑定与配置/工作台均已有实现，真实模型/MCP 任务仍待验收。
 
 具体模块边界、依赖与并行执行见 [MODULE-DESIGN.md](MODULE-DESIGN.md)，准确签名与行为以 [CONTRACT.md](CONTRACT.md) 为准；本文件只描述文件归属，不重复定义接口。
 
 ## 1. 目标目录
 
-采用单 Go module、单桌面应用。桌面框架为 **Wails v3**（根目录 `main.go` / `app.go` / `bindings.go`，配置见 `build/config.yml` 与 `Taskfile.yml`）；此前讨论的 `cmd/harbor/` 不另建。版本与命令见 [DECISIONS.md](DECISIONS.md)。
+采用单 Go module、单桌面应用。桌面框架为 **Wails v3**（根目录 `main.go` 与 `internal/desktop`，配置见 `build/config.yml` 与 `Taskfile.yml`）；此前讨论的 `cmd/harbor/` 不另建。版本与命令见 [DECISIONS.md](DECISIONS.md)。
 
 以下为目标结构：实现文件与构建产物均按需生成，不表示当前已存在。模块目录配置精简 README，测试就近放置。
 
@@ -91,22 +91,22 @@ agent-harbor/
 | 成员 | 独立开发范围 | 共同边界 |
 |---|---|---|
 | 研发 A | orchestrator、runtime、kits、安全负例 | 与 B 定义 Gate/Runtime 接口，负责业务装配及集成闭环 |
-| 研发 B | gate、policy、secrets、main.go、app.go、构建配置 | 与 A 定义 DTO/事件，提供可供 C 调用的绑定及启动环境 |
+| 研发 B | gate、policy、secrets、main.go、internal/desktop、构建配置 | 与 A 定义 DTO/事件，提供可供 C 调用的绑定及启动环境 |
 | 产品 C | frontend 的手写页面、产品验收与演示 | 向 A/B 提供页面数据需求，使用模拟事件先开发，再接实际绑定 |
 
 ```text
 frontend 视图
     → frontend/src/api.js
     → Wails 生成绑定
-    → app.go（输入校验与业务适配）
+    → internal/desktop（输入校验与业务适配）
     → orchestrator → policy / gate / kits / runtime
                         gate → secrets
 
-runtime / gate → 注入的事件回调 → app.go → Wails 事件 → frontend
+runtime / gate → 注入的事件回调 → internal/desktop → Wails 事件 → frontend
 ```
 
 - main.go 负责框架启动；A 的编排构造/工厂装配业务模块，B 接入框架生命周期，双方避免同时大改入口。
-- app.go 绑定对象只导出必要业务方法，内部服务字段不导出；不绑定 Secrets、Runtime 或 Gate 对象本身，不提供通用命令/文件访问接口。
+- internal/desktop 绑定对象只导出必要业务方法，内部服务字段不导出；不绑定 Secrets、Runtime 或 Gate 对象本身，不提供通用命令/文件访问接口。
 - contracts 仅描述前端可见数据，不放 Wails、文件/网络 IO 或业务逻辑。GateBinding、Sentinel、Runtime handle 等保留在后端模块。
 - Go 包间通过构造参数、局部接口和回调协作；Gate/Runtime 不反向导入 orchestrator，不建立全局服务容器或循环依赖。
 - 前端不直接连接 Gate 或上游，不自行构造授权。敏感连接表单只单向提交，状态与输出以 Go 事件为准。
@@ -124,9 +124,9 @@ runtime / gate → 注入的事件回调 → app.go → Wails 事件 → fronten
 | `src/main/gate/` | `internal/gate/` |
 | `src/main/policy/` | `internal/policy/` |
 | `src/main/secrets/` | `internal/secrets/` |
-| `src/main/` 的入口说明 | 根 main.go/app.go 的装配与桥接说明 |
+| `src/main/` 的入口说明 | main.go/internal/desktop 的装配与桥接说明 |
 | `src/shared/` | `internal/contracts/`；前端使用生成的对应类型 |
-| `src/preload/` | 不建立同名 Go 模块；桥接职责由 app.go 与生成绑定承担 |
+| `src/preload/` | 不建立同名 Go 模块；桥接职责由 internal/desktop 与生成绑定承担 |
 | `src/renderer/` | `frontend/` |
 | `security/`、`demos/` | 保留，已更新 Go/Wails 的运行前置条件 |
 

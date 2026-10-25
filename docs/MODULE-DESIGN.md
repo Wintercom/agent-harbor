@@ -20,7 +20,7 @@ flowchart TB
         V --> F
     end
     subgraph HOST[Go 宿主机可信控制面]
-        B[app.go：受限绑定 / 事件适配]
+        B[internal/desktop：受限绑定 / 事件适配]
         O[A：Orchestrator]
         P[B：Policy]
         G[B：Gate]
@@ -48,7 +48,7 @@ flowchart TB
     A -->|只允许 Gate 数据端口| G
     G --> M[固定模型 HTTPS 上游]
     G --> T[固定认证 MCP 上游]
-    O -.会话事件经 app.go 回到前端.-> B
+    O -.会话事件经 internal/desktop 回到前端.-> B
 ```
 
 图中服务调用与包依赖需区分：Gate 使用 PolicySnapshot 判定授权，不调用 Runtime；Kit 接收编排映射出的 URL/Sentinel，不导入 Gate。Runtime 不导入 Kit，LaunchSpec 由 Runtime 定义、Kit 返回。运行时边界由操作系统强制执行，Go 接口本身不是安全隔离。
@@ -58,7 +58,7 @@ flowchart TB
 | 模块 / 负责人 | 唯一负责 | 输入 → 输出 | 明确不负责 | 可独立验证 |
 |---|---|---|---|---|
 | contracts / A 首次合入、B 复核、C 核对 | 可序列化 DTO、公开错误与事件 | Go 定义 → 生成前端模型 | 业务状态机、IO、内部服务句柄 | JSON 示例与字段校验 |
-| 根 main.go/app.go / B | Wails 生命周期、白名单绑定、错误转换与事件桥接 | 固定 DTO → Response / harbor:event | 再造状态机、任意命令/文件接口 | 注入假 SessionService/Connections |
+| main.go/internal/desktop / B | Wails 生命周期、白名单绑定、错误转换与事件桥接 | 固定 DTO → Response / harbor:event | 再造状态机、任意命令/文件接口 | 注入假 SessionService/Connections |
 | frontend / C | 表单、输出、状态展示、提示与用户操作 | api.js 方法/事件 → 视图 | Gate/上游调用、密钥持久化、Go 逻辑 | 浏览器独立 mock transport |
 | orchestrator / A | 单会话锁、生命周期、流程、取消、回滚与终态 | SessionSpec + 注入服务 → Snapshot / Event | 存真凭据、解析 MCP、编写系统隔离规则 | 注入假 Gate/Policy/Runtime/Kit/Catalog |
 | runtime / A | 私有 HOME、配置落盘、OS 约束、进程树及临时数据 | RuntimeSpec + LaunchSpec → Handle / Process / 输出 | 账号、MCP 授权、UI、模型协议 | 真实 profile + 无敏感受限探测程序 |
@@ -74,14 +74,14 @@ flowchart TB
 
 | 资源 | 创建/持有方 | 正常关闭 | 失败处理 |
 |---|---|---|---|
-| Wails 窗口、全局应用 context | B，main.go/app.go | 应用退出调用编排 Shutdown，完成后退出 | Shutdown 错误必须报告，不能只关闭窗口忽略 Agent |
+| Wails 窗口、全局应用 context | B，main.go 与 internal/desktop | 应用退出调用编排 Shutdown，完成后退出 | Shutdown 错误必须报告，不能只关闭窗口忽略 Agent |
 | 会话 ID、锁、状态、事件 seq | A，Orchestrator | 资源清理确认后释放 | failed 且 cleanupComplete=false 保留锁 |
 | Sentinel、回环监听器、MCP/HTTP 连接 | B，Gate | Revoke 本地失效并取消、关闭 | Start 部分失败也自行释放；致命回调交编排清理 |
 | 私有 HOME、profile、Agent 进程树 | A，Runtime | Destroy 确认终止并移除 | Exec 部分失败清理子资源，编排仍兜底 Destroy |
 | 账号与上游真实凭据 | B，Secrets | 应用退出释放 | 连接失败不保存；会话停止只撤销能力 |
 | 事件监听与页面输出缓存 | C，api.js/视图 | 卸载取消订阅，尾部缓存有上限 | 状态丢失调用 GetSession 恢复，不伪造 running |
 
-装配仅做一次：A 在 orchestrator 提供业务构造函数，B 在 main.go/app.go 创建具体组件并注入，A 不修改 Wails 初始化文件；B 不进入 session.go 重写状态。应用退出清理可使用新 context，不能沿用已取消的会话 context。
+装配仅做一次：A 在 orchestrator 提供业务构造函数，B 在 main.go 与 internal/desktop 创建具体组件并注入，A 不修改 Wails 初始化文件；B 不进入 session.go 重写状态。应用退出清理可使用新 context，不能沿用已取消的会话 context。
 
 ## 5. 并行开发的替身约定
 
@@ -95,7 +95,7 @@ flowchart TB
 | B 的代理/网关 | 外部模型与 MCP | B 在测试中启动本机受控认证上游，覆盖流、401、超时和取消 | 通过后用已登记真实账号验证；不把 fixture 标为兼容通过 |
 | A 的 Runtime | 模型和 MCP | A 启动无敏感回环测试监听器，只供精确端口放行探测 | profile 验证后注入真实 Gate.AllowedTCP |
 
-前端 transport 最小接口为 listAgents、selectWorkspace、connectModel、connectMcp、createSession、getSession、stopSession、onEvent。全部业务调用返回 Promise<Response>；onEvent(callback) 返回取消函数，事件载荷就是 CONTRACT.md 的 Event，不再套一层。Wails transport 包装 PascalCase 生成方法；mock transport 不导入 wailsjs，可在普通浏览器独立启动。
+前端 transport 最小接口为 listAgents、selectWorkspace、connectModel、connectMcp、createSession、getSession、stopSession、onEvent。全部业务调用返回 Promise<Response>；onEvent(callback) 返回取消函数，事件载荷就是 CONTRACT.md 的 Event，不再套一层。Wails transport 包装 PascalCase 生成方法；mock transport 不导入生成绑定，可在普通浏览器独立启动。
 
 前端固定 mock 数据：Agent id=claude；模型 id=mock-model、profileId=demo-model；MCP id=mock-mcp、profileId=demo-mcp；工作区=/demo/project。不得放真实 Key。正常创建返回 provisioning，依次推送 running、文本 output、MCP allowed 审计、stopping、stopped；State/Error 字段及 seq 严格遵循契约。脚本可重复执行并支持提前 Stop；另外提供认证失败、SESSION_BUSY、ISOLATION_UNAVAILABLE、cleanupComplete=false 四个可选场景。所有 mock 只验证 UI/协议处理，不进入正式执行面。
 
@@ -107,10 +107,10 @@ Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisionin
 |---|---|---|
 | internal/contracts、CONTRACT.md | A 首次落地；B 复核绑定兼容性 | C 提字段需求；共享变更先更新契约再同步双方，不各自复制 |
 | internal/orchestrator、runtime、kits、security | A | B/C 通过接口及验收反馈协作 |
-| 根 Go/Wails 配置、app.go/main.go、gate/policy/secrets、build | B | A 提供业务构造函数，不同时修改入口 |
+| 根 Go/Wails 配置、main.go 与 internal/desktop、gate/policy/secrets、build | B | A 提供业务构造函数，不同时修改入口 |
 | frontend/package.json 及构建/生成配置 | B 初始化 | C 通过已提供脚本开发，改依赖先与 B 协调 |
 | frontend 手写视图、api.js/mock-api.js、demos | C | B 配合生成绑定，A/B 不另起一套页面 |
-| 生成的 frontend/wailsjs | B 负责生成，三人都不手改 | 从 Go DTO/绑定重建，不能拷贝修改绕过生成问题 |
+| 生成的 frontend/bindings | B 负责生成，三人都不手改 | 从 Go DTO/绑定重建，不能拷贝修改绕过生成问题 |
 
 所有人先使用共同确认的 Go module path。B 在首小时交付 go.mod 与 Wails 构建骨架，A 同期落契约，二者需要一次短暂同步；不能假装这一步完全无依赖。之后每人只提交自己的模块和必要共享契约变更，避免整仓格式化造成冲突。
 
@@ -125,4 +125,4 @@ Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisionin
 
 一个检查点未过，负责人记录失败证据、影响模块和下一步；其他人继续用同契约替身开发。接口可用性问题由 A/B 当场解决；外部凭据/机器问题不能靠修改签名掩盖。第 3 小时隔离仍无法成立则重估演示范围，不降低安全边界冒充成功。
 
-当前状态：共享 Go 类型、编排及其测试 fake 已落地；严格单进程 Runtime/Kit 已实现，不代表子进程能力完成；**C 的浏览器 mock 两页与场景替身已落地**（见 [DEV-C.md](DEV-C.md)），Wails、B 替身、真实上游及桌面 live 集成仍待完成。A 证据见 [DEV-A.md](DEV-A.md)。能按契约并行开发，不代表已经完成可运行交付或消除外部集成风险。
+当前状态：共享 Go 类型、编排及其测试 fake 已落地；严格单进程 Runtime/Kit 已实现，不代表子进程能力完成；**C 的浏览器 mock 两页与场景替身已落地**（见 [DEV-C.md](DEV-C.md)），Wails v3 绑定、构建和原生桌面冒烟已通过；真实上游任务仍待完成。A 证据见 [DEV-A.md](DEV-A.md)。能按契约并行开发，不代表已经完成可运行交付或消除外部集成风险。
