@@ -2,6 +2,10 @@
 
 @AGENTS.md
 
+A 已补扩权等待/决策生命周期和桌面转发，GateSpec 提供可选会话回调；真实 Gate 触发与 Policy 应用尚待 B 接入，不能当作扩权闭环已验收。详见 [研发 A 开发记录](docs/DEV-A.md)。
+
+Claude 多轮使用 Kit 编码的 stream-json 消息和可取消串行 stdin；dsh headless 仍为单任务，不能仅保持 stdin 打开就声明多轮。验证边界见 [研发 A 开发记录](docs/DEV-A.md)。
+
 全量分支 A 已接入 clone 工作区副本、原目录互斥及清理测试；安全边界与验证见 [研发 A 开发记录](docs/DEV-A.md)。后续 PR 目标为 `feat/page-design-full`。
 
 当前技术栈、三人分工与两天交付范围以 AGENTS.md 的「当前开发基线」为准；[核心架构与模块划分](docs/MVP-2D3P.md) 已同步 Go/Wails 和新分工。

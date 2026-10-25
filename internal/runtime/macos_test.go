@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -46,6 +47,14 @@ func helper(args []string) int {
 		return 14
 	}
 	switch args[0] {
+	case "input-lines":
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+		if scanner.Err() != nil {
+			return 2
+		}
 	case "read":
 		data, err := os.ReadFile(args[1])
 		if err != nil {
@@ -498,6 +507,50 @@ func TestMacOSCloneDeniesOriginalWorkspace(t *testing.T) {
 	exit, _ := runProbe(t, r, spec, "read", source)
 	if exit.Code != 13 {
 		t.Fatalf("原工作区未被拒绝：%+v", exit)
+	}
+}
+
+func TestMacOSInteractiveInputKeepsProcessAcrossRounds(t *testing.T) {
+	r := NewMacOS()
+	handle, err := r.Create(context.Background(), probeSpec(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := r.Destroy(context.Background(), handle); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	output := make(chan string, 8)
+	process, err := r.Exec(ctx, handle, LaunchSpec{Command: probePath, Args: []string{"--harbor-runtime-probe", "input-lines"}, Interactive: true, Stdin: []byte("first"), EncodeInput: func(data []byte) ([]byte, error) { return []byte("framed:" + string(data) + "\n"), nil }}, func(data contracts.OutputData) { output <- data.Text })
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor := func(want string) {
+		t.Helper()
+		var got string
+		for !strings.Contains(got, want) {
+			select {
+			case s := <-output:
+				got += s
+			case <-ctx.Done():
+				t.Fatalf("未收到轮次 %q：%q", want, got)
+			}
+		}
+	}
+	waitFor("framed:first")
+	interactive := process.(InteractiveProcess)
+	if err := interactive.Write(ctx, []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("framed:second")
+	if err := r.Destroy(context.Background(), handle); err != nil {
+		t.Fatal(err)
+	}
+	if err := interactive.Write(ctx, []byte("after-stop")); err == nil {
+		t.Fatal("停止后仍接受输入")
 	}
 }
 

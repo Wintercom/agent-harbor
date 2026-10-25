@@ -287,15 +287,25 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 	args := append([]string{"-f", e.profile, command}, launch.Args...)
 	cmd := exec.Command("/usr/bin/sandbox-exec", args...)
 	cmd.Dir, cmd.Env = e.workspace, env
-	var stdin io.WriteCloser
+	var stdin *os.File
 	if launch.Interactive {
-		stdin, err = cmd.StdinPipe()
+		var pipe io.WriteCloser
+		pipe, err = cmd.StdinPipe()
+		if err == nil {
+			stdin = pipe.(*os.File)
+		}
 		if err != nil {
 			return nil, runtimeError("ISOLATION_UNAVAILABLE")
 		}
 	} else {
 		cmd.Stdin = bytes.NewReader(launch.Stdin)
 	}
+	started := false
+	defer func() {
+		if !started && stdin != nil {
+			_ = stdin.Close()
+		}
+	}()
 	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, runtimeError("ISOLATION_UNAVAILABLE")
@@ -314,10 +324,13 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 		stderrWriter.Close()
 		return nil, runtimeError("ISOLATION_UNAVAILABLE")
 	}
+	started = true
 	stdoutWriter.Close()
 	stderrWriter.Close()
 	p := &macProcess{cmd: cmd, done: make(chan struct{}), rootDone: make(chan struct{})}
-	p.stdin = stdin
+	if stdin != nil {
+		p.input = newProcessInput(stdin, launch.EncodeInput)
+	}
 	e.process = p
 	var readers sync.WaitGroup
 	readers.Add(2)
@@ -347,7 +360,7 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 		}
 	}()
 	if launch.Interactive && len(launch.Stdin) > 0 {
-		if _, err := p.stdin.Write(launch.Stdin); err != nil {
+		if err := p.Write(ctx, launch.Stdin); err != nil {
 			p.kill(true)
 			return nil, runtimeError("ISOLATION_UNAVAILABLE")
 		}
@@ -403,26 +416,21 @@ type macProcess struct {
 	result         Exit
 	cancelled      bool
 	confirmed      bool
-	stdin          io.WriteCloser
+	input          *processInput
 }
 
 var _ InteractiveProcess = (*macProcess)(nil)
 
-func (p *macProcess) Write(data []byte) error {
-	p.mu.Lock()
-	stdin := p.stdin
+func (p *macProcess) Write(ctx context.Context, data []byte) error {
+	if p.input == nil {
+		return runtimeError("UNIMPLEMENTED")
+	}
 	select {
 	case <-p.rootDone:
-		p.mu.Unlock()
 		return runtimeError("INVALID_ARGUMENT")
 	default:
 	}
-	p.mu.Unlock()
-	if stdin == nil || len(data) == 0 {
-		return runtimeError("UNIMPLEMENTED")
-	}
-	_, err := stdin.Write(data)
-	return err
+	return p.input.write(ctx, data)
 }
 
 func (p *macProcess) Resize(cols, rows int) error {
@@ -443,8 +451,8 @@ func (p *macProcess) kill(cancelled bool) {
 	if err := p.cmd.Process.Kill(); err == nil {
 		p.cancelled = cancelled
 	}
-	if p.stdin != nil {
-		_ = p.stdin.Close()
+	if p.input != nil {
+		_ = p.input.pipe.Close()
 	}
 }
 

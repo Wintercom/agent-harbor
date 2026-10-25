@@ -244,6 +244,8 @@ type SessionService interface {
     List(context.Context) ([]SessionSummary, error)
     Destroy(context.Context, string) (SessionSnapshot, error)
     ResolvePermission(context.Context, ResolvePermissionInput) error
+    WritePty(context.Context, PtyInput) error
+    ResizePty(context.Context, PtyInput) error
     Shutdown(context.Context) error
 }
 type AccountCatalog interface {
@@ -276,6 +278,7 @@ type GateSpec struct {
     Policy PolicySnapshot
     ModelAccountID string
     MCPAccountID string
+    RequestPermission func(context.Context, PermissionNeeded) (string, error)
 }
 type GateBinding struct {
     ModelBaseURL string
@@ -309,6 +312,8 @@ type LaunchSpec struct {
     Args []string
     Env map[string]string
     Stdin []byte
+    Interactive bool
+    EncodeInput func([]byte) ([]byte, error) // Kit 负责协议编码，仅用于内部接口
     ConfigFiles []ConfigFile
 }
 type KitInput struct {
@@ -342,6 +347,11 @@ type Exit struct {
 type Process interface {
     Wait() Exit // 返回前完成 stdout/stderr 读取与最终输出回调
 }
+type InteractiveProcess interface {
+    Process
+    Write(context.Context, []byte) error // 完整消息串行写入；支持取消
+    Resize(cols, rows int) error
+}
 type Runtime interface {
     Health(context.Context) error
     Create(context.Context, RuntimeSpec) (Handle, error)
@@ -349,6 +359,8 @@ type Runtime interface {
     Destroy(context.Context, Handle) error
 }
 ```
+
+内部扩权回调 `GateSpec.RequestPermission` 由 A 按会话注入。仅接受 `Action=connect` 和小写精确主机名（不含 URL、端口、通配符或本机地址）；同一会话每个目标只允许一个挂起请求，最多 8 个。返回 `deny|once|project`，取消/停止返回 CANCELLED；无回调、回调失败或超时必须拒绝。批准只表示用户决策，B 的 Gate/Policy 仍须执行 DNS/IP 出站校验、按原工作区存 project 规则、限制 once 仅用于原请求并重新求值；不得直接转发任意目标或注入当前账号凭据。当前 Gate 尚未触发此回调，不表示真实扩权流已验收。
 
 ### dsh 契约增量（2026-10-25）
 

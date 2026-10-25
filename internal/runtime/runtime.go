@@ -35,7 +35,7 @@ type Process interface {
 // Runtime 实现必须把写入限制在该会话的 stdin，不得执行 shell 拼接。
 type InteractiveProcess interface {
 	Process
-	Write([]byte) error
+	Write(context.Context, []byte) error
 	Resize(cols, rows int) error
 }
 
@@ -56,6 +56,7 @@ type LaunchSpec struct {
 	Args        []string
 	Env         map[string]string
 	Stdin       []byte
-	Interactive bool // 保持 stdin 打开，允许同一会话多轮输入
+	Interactive bool                         // 保持 stdin 打开，允许同一会话多轮输入
+	EncodeInput func([]byte) ([]byte, error) // Kit 提供协议编码；Runtime 只负责受控写入
 	ConfigFiles []ConfigFile
 }

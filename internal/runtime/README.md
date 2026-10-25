@@ -16,6 +16,8 @@
 
 ## 输入与输出
 
+交互 stdin 由 Kit 的 `EncodeInput` 编码首轮和后续消息，Runtime 串行写入并响应 context 取消。Claude 使用 JSONL 协议，dsh headless 使用单任务 EOF；此通道没有终端设备，Resize 仍返回 UNIMPLEMENTED。
+
 接收规范化工作区、已确定的网络端口及 Kit LaunchSpec，返回输出流、退出通知与可销毁句柄。不解释账号、MCP 或授权弹窗，也不接收真实模型/MCP 凭据。
 
 ## 强制边界

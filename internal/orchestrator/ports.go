@@ -19,6 +19,7 @@ type SessionService interface {
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
 	List(context.Context) ([]contracts.SessionSummary, error)
 	Destroy(context.Context, string) (contracts.SessionSnapshot, error)
+	ResolvePermission(context.Context, contracts.ResolvePermissionInput) error
 	WritePty(context.Context, contracts.PtyInput) error
 	ResizePty(context.Context, contracts.PtyInput) error
 	Shutdown(context.Context) error

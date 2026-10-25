@@ -47,6 +47,7 @@ type session struct {
 	wait           <-chan runtime.Exit
 	process        runtime.Process
 	interactive    bool
+	permissions    map[string]*permissionRequest
 	cleanupDone    chan struct{}
 	finished       chan struct{}
 	retry          chan struct{}
@@ -344,7 +345,7 @@ func (o *Service) WritePty(ctx context.Context, input contracts.PtyInput) error 
 	if ctx.Err() != nil {
 		return publicError("CANCELLED")
 	}
-	if input.SessionID == "" || len(input.Data) == 0 || len(input.Data) > 32768 || strings.ContainsRune(input.Data, '\x00') {
+	if input.SessionID == "" || !utf8.ValidString(input.Data) || len(input.Data) == 0 || len(input.Data) > 32768 || strings.ContainsRune(input.Data, '\x00') {
 		return publicError("INVALID_ARGUMENT")
 	}
 	o.mu.Lock()
@@ -353,9 +354,13 @@ func (o *Service) WritePty(ctx context.Context, input contracts.PtyInput) error 
 		o.mu.Unlock()
 		return publicError("SESSION_NOT_FOUND")
 	}
-	if s.snapshot.State != contracts.StateRunning || s.process == nil || !s.interactive {
+	if s.snapshot.State != contracts.StateRunning || s.process == nil {
 		o.mu.Unlock()
 		return publicError("INVALID_ARGUMENT")
+	}
+	if !s.interactive {
+		o.mu.Unlock()
+		return publicError("UNIMPLEMENTED")
 	}
 	process := s.process
 	o.mu.Unlock()
@@ -363,7 +368,12 @@ func (o *Service) WritePty(ctx context.Context, input contracts.PtyInput) error 
 	if !ok {
 		return publicError("UNIMPLEMENTED")
 	}
-	if err := interactive.Write([]byte(input.Data)); err != nil {
+	if err := interactive.Write(ctx, []byte(input.Data)); err != nil {
+		// 写入中断可能留下半条协议消息，必须清理会话，不能继续接收下一轮。
+		var app *contracts.AppError
+		if !errors.As(err, &app) || app.Code != "INVALID_ARGUMENT" {
+			o.fail(s, err, "INTERNAL_ERROR")
+		}
 		return safeError(err, "INTERNAL_ERROR")
 	}
 	return nil
@@ -523,7 +533,9 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID},
+	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
+		return o.RequestPermission(call, s.snapshot.SessionID, request)
+	}},
 		func(data contracts.AuditData) { o.audit(s, data) }, func(err error) { o.fail(s, err, "INTERNAL_ERROR") })
 	if err != nil {
 		return err
@@ -579,9 +591,9 @@ func (o *Service) provision(s *session) error {
 	if process == nil {
 		return publicError("ISOLATION_UNAVAILABLE")
 	}
+	o.mu.Lock()
 	s.process = process
 	s.interactive = launch.Interactive
-	o.mu.Lock()
 	defer o.mu.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()

@@ -89,7 +89,7 @@ func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
 	if err != nil {
 		return info, nil
 	}
-	for _, flag := range []string{"--bare", "--print", "--strict-mcp-config", "--mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts", "--permission-mode", "--disable-slash-commands", "--tools"} {
+	for _, flag := range []string{"--bare", "--print", "--input-format", "stream-json", "--strict-mcp-config", "--mcp-config", "--setting-sources", "--no-session-persistence", "--permission-prompts", "--permission-mode", "--disable-slash-commands", "--tools"} {
 		if !strings.Contains(help, flag) {
 			return info, nil
 		}
@@ -137,10 +137,24 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	}
 	return runtime.LaunchSpec{
 		Command:     command,
-		Args:        []string{"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "text", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath, "--setting-sources", "", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--disable-slash-commands", "--no-chrome", "--tools", "Read,Write,Edit", "--model", k.model},
+		Args:        []string{"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath, "--setting-sources", "", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--disable-slash-commands", "--no-chrome", "--tools", "Read,Write,Edit", "--model", k.model},
 		Env:         map[string]string{"ANTHROPIC_BASE_URL": input.ModelBaseURL, "ANTHROPIC_API_KEY": input.Sentinel, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"},
 		Stdin:       []byte(input.Task),
 		Interactive: true,
+		EncodeInput: encodeMessage,
 		ConfigFiles: []runtime.ConfigFile{{RelativePath: "harbor-mcp.json", Content: mcp}, {RelativePath: "harbor-settings.json", Content: settings}},
 	}, nil
+}
+
+// 每个用户轮次是一条 JSONL，正文中的换行和引号不能注入协议记录。
+func encodeMessage(data []byte) ([]byte, error) {
+	if !utf8.Valid(data) || len(data) == 0 || len(data) > 32768 || strings.TrimSpace(string(data)) == "" || strings.ContainsRune(string(data), 0) {
+		return nil, kitError("INVALID_ARGUMENT")
+	}
+	message := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": string(data)}}
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		return nil, kitError("INVALID_ARGUMENT")
+	}
+	return append(encoded, '\n'), nil
 }

@@ -180,10 +180,17 @@ func (d *DesktopAPI) RevokeRememberedHost(in contracts.RevokeHostInput) contract
 	return contracts.EmptyResponse{Error: unimplemented()}
 }
 
-// ResolvePermission 扩权决策（V1.1 占位）。
+// ResolvePermission 将扩权决策转交给唯一的会话状态机。
 func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) contracts.EmptyResponse {
-	_ = in
-	return contracts.EmptyResponse{Error: unimplemented()}
+	resolver, ok := d.app.sessionRef().(interface {
+		ResolvePermission(context.Context, contracts.ResolvePermissionInput) error
+	})
+	if !ok {
+		return contracts.EmptyResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return contracts.EmptyResponse{Error: mapError(resolver.ResolvePermission(ctx, in))}
 }
 
 // GetUIPrefs 读取 UI 偏好（V1.1 占位，返回默认值形状）。
