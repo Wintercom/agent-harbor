@@ -1,5 +1,13 @@
 # 研发 A 开发记录
 
+## 扩权等待与决策生命周期
+
+A 已实现 `RequestPermission`/`ResolvePermission`，等待期间保持 running；用 `permission_needed` 告知 UI，允许 deny/once/project，重复决策和无挂起请求返回 INVALID_ARGUMENT。按会话及精确主机隔离等待，最多 8 个，同一目标不重复挂起；请求取消、超时、Stop、Shutdown 均通过 context 解除等待。Sentinel、URL、通配符、本机地址不能进入扩权载荷。
+
+回调通过 GateSpec 注入，桌面 ResolvePermission 仅做错误映射和转发。A 不在编排层存项目白名单，也不直接转发网络请求。B 尚须接入 Gate 真实触发、DNS/IP 校验、once 单次消费和按原工作区持久化 project 规则，再重新求值请求；当前原有拒绝逻辑保持有效，不能称为真实扩权闭环通过。
+
+测试覆盖三种决策、running 状态不变、重复/过期决策、跨会话拒绝、Stop/请求取消解除等待、非法目标及桌面转发。
+
 ## 2026-10-24：共享契约与编排首批实现
 
 工作树基于 `ce2d47b`，本轮尚未提交。下节记录首批成果；最新 Runtime/Kit 实现与限制见文末第二批记录。当前不是可运行桌面应用，也不是研发 A 全部交付完成。
@@ -102,6 +110,20 @@ B 可将 `runtime.NewMacOS()` 和 `claude.New(固定CLI路径, 固定模型名)`
 
 最新验证：`go test -race ./...`、`go vet ./...`、`git diff --check` 通过；真实 Claude 离线测试需 `HARBOR_TEST_CLAUDE=1`，本机 2.1.292 版本/初始化检查通过。真实模型、MCP、完整子进程能力和 Wails 仍待 B 联调。
 
+## 2026-10-25：同会话多轮输入
+
+Runtime 新增 `InteractiveProcess` 和 `LaunchSpec.Interactive`。交互 Kit 启动时保持受控 stdin，不再在首轮任务后关闭；Orchestrator 暴露 `WritePty`/`ResizePty`，校验会话仍处于 running 且确实由交互 Kit 启动，再把后续轮次写入同一进程。交互输出通过既有 `harbor:event` 以 `pty` 载荷回传，停止/销毁时由 Runtime 关闭 stdin 并清理进程。
+
+此批曾将 Claude 与 dsh 都声明交互模式，但仅保持 stdin 打开不足以支持多轮；下节协议修复替代该声明。Codex 仍需按其 app-server 协议单独接入。当前 macOS `Resize` 只校验尺寸并返回 `UNIMPLEMENTED`，尚未接入真实 PTY/窗口大小控制。
+
+### 多轮协议及输入取消修复
+
+Claude 改为 `--input-format stream-json`，由 Kit 的 EncodeInput 将首轮和后续轮次编码为独立 user JSONL 消息，正文换行不会成为额外协议记录。同一进程保留对话上下文，但真实模型上下文连续性仍须联调验收。dsh headless `-` 是 EOF 单任务输入，已恢复关闭 stdin 并拒绝多轮，防止首轮等待输入而卡住；dsh 多轮仍待实现。
+
+Runtime 输入串行化，阻塞写入响应 context 取消/超时；写入中断可能产生半条消息，编排会取消并清理会话。进程能力发布改为在编排锁内完成，避免输出/输入回调与初始化竞争。真实终端 resize 仍为 UNIMPLEMENTED，JSONL 通道不冒充真实 PTY。
+
+验证：先用失败测试重现旧 text/headless 配置，再验证消息转义、并发写入不交错、阻塞写入取消；真实 macOS 受限进程两轮输入和停止后拒绝输入通过，本机 Claude 固定版本离线检测及无上游初始化通过。这些均不等于远程模型多轮验收。
+
 ## 2026-10-24：Runtime 资源墓碑
 
 Destroy 成功后保留最小句柄墓碑，使重复 Destroy 继续幂等；同时清空 profile、工作区、私有目录、只读路径和进程引用，避免长时间运行的桌面应用累计敏感元数据。新增测试检查这些字段释放，并确认重复 Destroy 与已销毁句柄执行均符合契约。
@@ -131,8 +153,19 @@ git diff --check
 以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
 
 2026-10-25 最新接线与修复状态见 [ABC 架构及联调审查](ABC-INTEGRATION-REVIEW.md#修复进展)。上文按日期保留的“待 Wails/真实组件装配”是历史记录；当前已完成装配，但真实上游任务与完整业务验收仍待执行。
-## 2026-10-25 Codex 受控子进程 Runtime
 
-在严格单进程 Runtime 基础上增加显式 `RuntimeSpec.AllowChildProcesses`。只有 Codex Kit 的 `KitInfo.NeedsChildProcesses=true` 时，编排层才调用 `HealthFor(..., true)` 并创建受控 profile；Claude/dsh 保持 `deny process-fork`。
+## 2026-10-25：feat/page-design-full 编排首批实现
 
-受控 profile 仍使用默认拒绝、禁止提权、Gate-only 网络和私有 HOME，仅允许固定 shell/工具路径。执行入口设置独立进程组，Destroy/取消时同时终止根进程组并等待确认。`go test -tags harbor_platform ./internal/runtime` 已验证严格模式拒绝 fork、受控模式可运行白名单工具。真实 Codex 模型任务和工具链仍待人工联调。
+在 `feat/page-design-full` 分支按 `GO-CHECKLIST.md` 启动 FULL-ORCH。编排层已从全局单会话锁改为最多两个非终态会话：创建前规范化工作区路径并拒绝同目录并发，准备中、运行中和清理失败的会话都会占用槽位；不同工作区可并行运行。连接测试仍与任一活动会话互斥，避免账号目录与运行时资源并发变更。
+
+新增 `List` 和 `Destroy` 服务方法。`List` 保留终态摘要，`Destroy` 只删除已确认 `cleanupComplete=true` 的 stopped/failed 记录；运行中、准备中或清理未完成的会话必须先 Stop/重试清理。Shutdown 会遍历并等待所有活动会话完成清理。
+
+本批验证：`go test ./...`、`go vet ./...`、`git diff --check` 通过。clone、扩权和 PTY 仍按 FULL-ORCH 后续卡实现，当前不将占位绑定或 mock 视为真实能力通过。
+
+## 2026-10-25：clone 工作区落地
+
+Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `AgentHarbor/sessions` 创建会话副本，仅向 Agent 授权副本。Handle.Workspace 返回实际执行目录，clone 会话快照显示副本路径；会话互斥仍使用规范化后的原始目录。停止、失败回滚和销毁底层 Runtime 均删除副本，原目录不自动导回。
+
+复制使用 `os.Root` 限定源目录范围；拒绝符号链接、特殊文件，单文件上限 64 MiB、总内容 1 GiB、节点数 10 万，逐块检查取消。复制得到独立文件并保留用户执行位；不继承 setuid/setgid 或组/其他用户权限。复制期间原目录仍可能被外部程序修改，副本不承诺文件系统原子快照。
+
+验证覆盖副本修改不影响原文件、链接拒绝、取消、Policy 挂载模式校验、快照副本路径及原目录锁。真实 macOS Runtime 的副本创建与 Destroy 删除测试通过；远程 Agent/模型联调仍待执行。

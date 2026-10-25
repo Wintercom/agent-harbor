@@ -2,11 +2,13 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.0 |
-| 更新日期 | 2026-10-23 |
+| 文档版本 | v1.1（**本分支产品真源**：`feat/page-design-full` 全量） |
+| 更新日期 | 2026-10-25 |
 | 产品 | Agent Harbor |
 | 可浏览原型 | `../prototype/index.html` |
-| 关联 | `ARCHITECTURE.md`（逻辑）、`DESIGN.md`（总纲） |
+| 关联 | [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) v1.2、[PAGE-API-MAP](PAGE-API-MAP.md)、`DESIGN.md` |
+| 范围 | **含** OAuth / clone / PTY / 双会话≤2；与 MVP-2D3P「两天裁剪」冲突时 **以本文为准** |
+| 交付形态 | **桌面应用**（Wails）；浏览器仅 mock 预览同套页面，见 [frontend/README](../frontend/README.md) |
 
 ---
 
@@ -769,25 +771,25 @@ V1 禁止：自定义 binary 路径、Base URL + API Key 当作「添加 Agent�
 
 - V1：macOS 桌面窗体；遵循系统标题栏与通知。
 - 扩权优先 App 内模态；App 在后台时用系统通知点击回前台。
-- 不在 V1 做多窗多会话复杂布局；同时建议最多 1 个 `running` 会话（可配置后续放开）。
+- 不做多窗多会话复杂布局；**并行 `running` 上限 2**（见 §5.2），焦点会话用顶栏切换。
 
 ---
 
 ## 9. 与架构 API 的绑定
 
-**架构总纲**：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)。
-**接口唯一来源**：[CONTRACT.md](CONTRACT.md) v1.1。
-**屏级绑定**：[PAGE-API-MAP.md](PAGE-API-MAP.md)。
+**架构总纲**：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) v2。
+**接口唯一来源**：[CONTRACT.md](CONTRACT.md) v1.2（全量：含 OAuth/clone/PTY/SwitchModel）。
+**屏级绑定**：[PAGE-API-MAP.md](PAGE-API-MAP.md)（与下表一致；有出入以 CONTRACT + PAGE-API-MAP 为准）。
 
-| 页面 | DesktopAPI（已定） |
+| 页面 | DesktopAPI（本分支已定） |
 |---|---|
 | 壳 / Onboarding / 阻断 | `GetRuntimeHealth`；`GetUIPrefs` / `SetUIPrefs` |
 | HOME | `ListSessions` `StopSession` `DestroySession` |
-| 新会话 | `ListAgents` `SelectWorkspace` `ListAccounts` `Connect*` `CreateSession`（mountMode=direct；mcpIds 0..8） |
-| 工作台 | `GetSession` `StopSession` `GetPermissionOverview` + Event（含 `permission_needed`）；**无 PTY** |
+| 新会话 | `ListAgents` `SelectWorkspace` `ListAccounts` `Connect*` `CreateSession`（`mountMode`=direct\|clone；mcpIds 0..8） |
+| 工作台 | `GetSession` `StopSession` `SwitchModel` `GetPermissionOverview` `WritePty`/`ResizePty` + Event（`state`/`output`/`pty`/`audit`/`error`/`permission_needed`） |
 | 模型 | `ConnectModel`（可带 origin）`ListAccounts` `RemoveAccount` |
-| 工具 | `ConnectMcp`（Token）`ListAccounts` `RemoveAccount`；**无 OAuth** |
-| 设置 | `ListAgents` `GetRuntimeHealth` 记住主机与 Overview 同源 API |
+| 工具 | `ConnectMcp`（Token）**或** `StartMcpOAuth`/`CancelMcpOAuth`；`ListAccounts` `RemoveAccount` |
+| 设置 | `ListAgents` `GetRuntimeHealth` 记住主机与 Overview 同源 API；Prefs |
 | 扩权 | `ResolvePermission` + 事件 `permission_needed` |
 
 状态展示必须以 Orchestrator 事件为准，页面不本地猜「是否已隔离」。UI 只经 `frontend/src/api.js`，不直连 Gate / Secrets / Runtime。

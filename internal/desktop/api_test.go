@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
@@ -70,25 +71,92 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 	if agents.Error != nil || len(agents.Agents) != 3 || agents.Agents[0].ID != "claude" || agents.Agents[1].ID != "codex" || agents.Agents[2].ID != "dsh" || agents.Agents[1].ModelProfileID != "codex-model" {
 		t.Fatalf("%+v", agents)
 	}
-}
-
-func TestGetRuntimeHealthUsesRuntimeProbe(t *testing.T) {
-	app := NewApp()
-	app.runtime = fakeRuntimeHealth{}
-	resp := NewDesktopAPI(app).GetRuntimeHealth()
-	if !resp.Available || resp.IsolationLevel != "macos-seatbelt" || resp.Error != nil {
-		t.Fatalf("健康检查未通过: %+v", resp)
+	health := api.GetRuntimeHealth()
+	if health.Error != nil && health.Error.Code == contracts.ErrUnimplemented {
+		t.Fatalf("Health 仍未接线: %+v", health)
+	}
+	// 非 Darwin25/arm64 时 Available=false 且带隔离错误，属预期；不得再报「尚未接线」
+	if health.Reason == "健康检查尚未接线" {
+		t.Fatalf("仍返回占位文案: %+v", health)
 	}
 }
 
-type fakeRuntimeHealth struct{}
+func TestStartCancelMcpOAuth(t *testing.T) {
+	app := NewApp()
+	api := NewDesktopAPI(app)
+	started := api.StartMcpOAuth(contracts.StartMcpOAuthInput{
+		Name: "Notion", Origin: "https://auth.example.test",
+	})
+	if started.Error != nil || started.PendingID == "" || !strings.Contains(started.AuthURL, "127.0.0.1") {
+		t.Fatalf("%+v", started)
+	}
+	cancelled := api.CancelMcpOAuth(started.PendingID)
+	if cancelled.Error != nil {
+		t.Fatalf("%+v", cancelled)
+	}
+	again := api.CancelMcpOAuth(started.PendingID)
+	if again.Error == nil {
+		t.Fatal("重复取消应失败")
+	}
+}
 
-func (fakeRuntimeHealth) Health(context.Context) error { return nil }
+func TestListAccountsAndPrefs(t *testing.T) {
+	app := NewApp()
+	api := NewDesktopAPI(app)
+	_, err := app.secrets.Put(context.Background(), contracts.AccountInfo{
+		Kind: "model", Name: "demo", ProfileID: "demo-model", Host: "api.example.test",
+	}, []byte("secret-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := api.ListAccounts("model")
+	if listed.Error != nil || len(listed.Accounts) != 1 || listed.Accounts[0].Host != "api.example.test" {
+		t.Fatalf("%+v", listed)
+	}
+	prefs := api.SetUIPrefs(contracts.UIPrefs{SidebarCollapsed: true, AutoCollapseWorkbench: false})
+	if prefs.Error != nil || prefs.Prefs == nil || !prefs.Prefs.SidebarCollapsed {
+		t.Fatalf("%+v", prefs)
+	}
+	again := api.GetUIPrefs()
+	if again.Error != nil || again.Prefs == nil || again.Prefs.AutoCollapseWorkbench {
+		t.Fatalf("%+v", again)
+	}
+	sessions := api.ListSessions()
+	if sessions.Error == nil || sessions.Error.Code != contracts.ErrOrchestratorUnavailable {
+		t.Fatalf("未装配编排时应失败: %+v", sessions)
+	}
+	app.SetSessionService(&recordingSession{})
+	sessions = api.ListSessions()
+	if sessions.Error != nil || len(sessions.Sessions) != 1 {
+		t.Fatalf("%+v", sessions)
+	}
+}
 
 type recordingSession struct {
 	last          contracts.SessionSpec
 	connectionErr error
 	shutdownErr   error
+}
+
+type permissionSession struct {
+	recordingSession
+	input contracts.ResolvePermissionInput
+}
+
+func (s *permissionSession) ResolvePermission(_ context.Context, input contracts.ResolvePermissionInput) error {
+	s.input = input
+	return contracts.NewAppError(contracts.ErrInvalidArgument, "无挂起的扩权请求。", false)
+}
+
+func TestResolvePermissionForwardsToSessionService(t *testing.T) {
+	app := NewApp()
+	svc := &permissionSession{}
+	app.SetSessionService(svc)
+	input := contracts.ResolvePermissionInput{SessionID: "session", Target: "docs.example.test", Decision: "once"}
+	response := NewDesktopAPI(app).ResolvePermission(input)
+	if svc.input != input || response.Error == nil || response.Error.Code != contracts.ErrInvalidArgument {
+		t.Fatalf("决策未转交：%+v %+v", svc.input, response)
+	}
 }
 
 func (r *recordingSession) Create(_ context.Context, spec contracts.SessionSpec) (contracts.SessionSnapshot, error) {
@@ -105,6 +173,14 @@ func (r *recordingSession) Get(context.Context, string) (contracts.SessionSnapsh
 
 func (r *recordingSession) Stop(context.Context, string) (contracts.SessionSnapshot, error) {
 	return contracts.SessionSnapshot{State: "stopping"}, nil
+}
+
+func (r *recordingSession) List(context.Context) ([]contracts.SessionSummary, error) {
+	return []contracts.SessionSummary{{SessionID: "fake-session", State: "running", Workspace: "/demo", AgentID: "claude"}}, nil
+}
+
+func (r *recordingSession) Destroy(_ context.Context, id string) (contracts.SessionSnapshot, error) {
+	return contracts.SessionSnapshot{SessionID: id, State: "stopped", CleanupComplete: true}, nil
 }
 
 func (r *recordingSession) Shutdown(context.Context) error { return r.shutdownErr }

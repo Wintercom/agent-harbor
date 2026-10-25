@@ -19,6 +19,7 @@ type RuntimeSpec struct {
 type Handle struct {
 	ID          string
 	PrivateHome string
+	Workspace   string // Runtime 实际挂载路径；clone 时是会话副本
 }
 
 type Exit struct {
@@ -29,6 +30,14 @@ type Exit struct {
 
 type Process interface {
 	Wait() Exit // 返回前完成 stdout/stderr 读取与最终输出回调
+}
+
+// InteractiveProcess 是可在同一会话内继续接收输入的受控进程。
+// Runtime 实现必须把写入限制在该会话的 stdin，不得执行 shell 拼接。
+type InteractiveProcess interface {
+	Process
+	Write(context.Context, []byte) error
+	Resize(cols, rows int) error
 }
 
 type Runtime interface {
@@ -54,5 +63,7 @@ type LaunchSpec struct {
 	Args        []string
 	Env         map[string]string
 	Stdin       []byte
+	Interactive bool                         // 保持 stdin 打开，允许同一会话多轮输入
+	EncodeInput func([]byte) ([]byte, error) // Kit 提供协议编码；Runtime 只负责受控写入
 	ConfigFiles []ConfigFile
 }

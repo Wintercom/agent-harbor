@@ -37,6 +37,15 @@ func TestBuildHappyPath(t *testing.T) {
 	if snap.Model.Origin != "https://api.example.test" {
 		t.Fatalf("origin=%s", snap.Model.Origin)
 	}
+	request := PolicyRequest{Workspace: dir, AgentID: "claude", MountMode: "clone", Model: contracts.AccountInfo{ID: "m1", Kind: "model", ProfileID: ProfileDemoModel, Host: "api.example.test"}, MCP: contracts.AccountInfo{ID: "t1", Kind: "mcp", ProfileID: ProfileDemoMCP, Host: "mcp.example.test"}}
+	copyPolicy, err := b.Build(context.Background(), request)
+	if err != nil || copyPolicy.MountMode != "clone" {
+		t.Fatalf("clone 策略未保留：%+v %v", copyPolicy, err)
+	}
+	request.MountMode = "invalid"
+	if _, err := b.Build(context.Background(), request); err == nil {
+		t.Fatal("接受未知挂载模式")
+	}
 }
 
 func TestDenyHomeWorkspace(t *testing.T) {

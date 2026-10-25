@@ -15,6 +15,8 @@ func TestDesktopExposesOnlyContractMethods(t *testing.T) {
 		"GetRuntimeHealth": true, "GetPermissionOverview": true,
 		"ListRememberedHosts": true, "RevokeRememberedHost": true, "ResolvePermission": true,
 		"GetUIPrefs": true, "SetUIPrefs": true,
+		"SwitchModel": true, "StartMcpOAuth": true, "CancelMcpOAuth": true,
+		"WritePty": true, "ResizePty": true,
 	}
 	if typ.NumMethod() != len(want) {
 		t.Fatalf("绑定方法数=%d", typ.NumMethod())

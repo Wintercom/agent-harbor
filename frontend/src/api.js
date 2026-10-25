@@ -167,6 +167,21 @@ export function getUIPrefs() {
 export function setUIPrefs(prefs) {
   return call("setUIPrefs", prefs);
 }
+export function switchModel(input) {
+  return call("switchModel", input);
+}
+export function startMcpOAuth(input) {
+  return call("startMcpOAuth", input);
+}
+export function cancelMcpOAuth(pendingId) {
+  return call("cancelMcpOAuth", pendingId);
+}
+export function writePty(input) {
+  return call("writePty", input);
+}
+export function resizePty(input) {
+  return call("resizePty", input);
+}
 export function selectWorkspace() {
   return call("selectWorkspace");
 }

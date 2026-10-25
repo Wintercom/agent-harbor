@@ -1,6 +1,6 @@
 // Package contracts 存放前后端共享的可序列化 DTO。
 // 负责人：A 主笔，B 复核绑定兼容，C 核对页面字段。
-// 字段与 docs/CONTRACT.md v1.1 一致，不包含业务实现。
+// 字段与 docs/CONTRACT.md v1.2 一致，不包含业务实现。
 package contracts
 
 // AppError 是前端可见的业务错误。message 使用固定可读模板，不附加原始上游细节。
@@ -45,7 +45,7 @@ type SessionSpec struct {
 	ModelAccountID string   `json:"modelAccountId"`
 	MCPIDs         []string `json:"mcpIds"`
 	Task           string   `json:"task"`
-	MountMode      string   `json:"mountMode,omitempty"` // 仅 direct；缺省=direct
+	MountMode      string   `json:"mountMode,omitempty"` // direct 或 clone；缺省=direct
 }
 
 // SessionSnapshot 是会话对外快照。
@@ -191,4 +191,37 @@ type DesktopAPI interface {
 	ResolvePermission(ResolvePermissionInput) EmptyResponse
 	GetUIPrefs() UIPrefsResponse
 	SetUIPrefs(UIPrefs) UIPrefsResponse
+	SwitchModel(SwitchModelInput) SessionResponse
+	StartMcpOAuth(StartMcpOAuthInput) McpOAuthResponse
+	CancelMcpOAuth(pendingID string) EmptyResponse
+	WritePty(PtyInput) EmptyResponse
+	ResizePty(PtyInput) EmptyResponse
+}
+
+// SwitchModelInput 切换会话当前模型（影响之后出站）。
+type SwitchModelInput struct {
+	SessionID      string `json:"sessionId"`
+	ModelAccountID string `json:"modelAccountId"`
+}
+
+// StartMcpOAuthInput 启动 MCP OAuth。
+type StartMcpOAuthInput struct {
+	Name      string `json:"name"`
+	ProfileID string `json:"profileId"`
+	Origin    string `json:"origin,omitempty"`
+}
+
+// McpOAuthResponse OAuth 启动结果。
+type McpOAuthResponse struct {
+	AuthURL   string    `json:"authUrl"`
+	PendingID string    `json:"pendingId"`
+	Error     *AppError `json:"error"`
+}
+
+// PtyInput PTY 写入或改尺寸。
+type PtyInput struct {
+	SessionID string `json:"sessionId"`
+	Data      string `json:"data,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
 }

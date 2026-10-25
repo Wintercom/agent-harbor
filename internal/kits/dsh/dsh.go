@@ -140,5 +140,5 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if err != nil {
 		return runtime.LaunchSpec{}, err
 	}
-	return runtime.LaunchSpec{Command: node, Args: []string{script, "--profile", "harbor", "--json", "-"}, Env: map[string]string{"DSH_HOME": filepath.Join(input.PrivateHome, "dsh"), "DSH_TELEMETRY_DISABLED": "1", "DEEPSEEK_API_KEY": input.Sentinel}, Stdin: []byte(input.Task), ConfigFiles: files}, nil
+	return runtime.LaunchSpec{Command: node, Args: []string{script, "--profile", "harbor", "--json", "-"}, Env: map[string]string{"DSH_HOME": filepath.Join(input.PrivateHome, "dsh"), "DSH_TELEMETRY_DISABLED": "1", "DEEPSEEK_API_KEY": input.Sentinel}, Stdin: []byte(input.Task), Interactive: false, ConfigFiles: files}, nil
 }

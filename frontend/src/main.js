@@ -1,6 +1,5 @@
 /**
- * 页面装配：按 PAGE-DESIGN 侧栏壳 + 路由。
- * 桌面 live / 浏览器 mock；bindings 由 B 生成勿手改。
+ * PAGE-DESIGN 全量壳：顶栏会话切换 + 侧栏 HOME/模型/工具/设置
  */
 import * as api from "./api.js";
 import { initializeTransport } from "./startup.js";
@@ -15,12 +14,13 @@ import { mountBlock } from "./views/block.js";
 
 const badge = document.getElementById("mode-badge");
 const sidebar = document.getElementById("sidebar");
-const navSession = document.getElementById("nav-session");
 const healthDot = document.getElementById("health-dot");
 const healthText = document.getElementById("health-text");
 const onboardRoot = document.getElementById("onboarding-root");
 const blockRoot = document.getElementById("block-root");
 const shell = document.getElementById("app-shell");
+const sessionSwitchWrap = document.getElementById("session-switch-wrap");
+const sessionSwitch = document.getElementById("session-switch");
 
 const views = {
   home: document.getElementById("view-home"),
@@ -42,23 +42,60 @@ const ctx = {
     agents: [],
     modelAccount: null,
     mcpAccount: null,
+    accounts: [],
     workspace: "",
     sessionId: "",
     lastSnapshot: null,
     sessionHistory: [],
     health: null,
+    uiPrefs: {
+      sidebarCollapsed: false,
+      autoCollapseWorkbench: true,
+      askClearOnStop: true,
+      clearOnStopDefault: "keep",
+    },
   },
   navigate(name) {
     navigate(name);
   },
+  showBlock(reason) {
+    showBlock(reason || ctx.state.health?.reason);
+  },
+  applyUIPrefs(prefs) {
+    applyUIPrefs(prefs);
+  },
   async stopSession(id) {
     const res = await api.stopSession(id);
     if (res.session) upsertHistory(res.session);
+    syncSessionSwitch();
+    return res;
+  },
+  async destroySession(id) {
+    const res = await api.destroySession(id);
+    if (!res.error) {
+      ctx.state.sessionHistory = (ctx.state.sessionHistory || []).filter(
+        (s) => s.sessionId !== id,
+      );
+      if (ctx.state.sessionId === id) {
+        ctx.state.sessionId = "";
+        ctx.state.lastSnapshot = null;
+      }
+    }
+    syncSessionSwitch();
     return res;
   },
   onAccountsChanged() {},
-  refreshHome() {
+  async refreshHome() {
+    try {
+      const res = await api.listSessions();
+      if (!res.error && Array.isArray(res.sessions)) {
+        for (const s of res.sessions) upsertHistory(s);
+      }
+    } catch (_) {
+      /* mock/live 暂缺时用本地历史 */
+    }
     if (currentRoute === "home") mountHome(views.home, ctx);
+    syncSessionSwitch();
   },
   refreshHealth() {
     return refreshHealth();
@@ -72,7 +109,7 @@ const ctx = {
       sessionStorage.setItem("harbor-session-id", snapshot.sessionId);
     } catch {}
     sessionView.resetForNewSession(snapshot);
-    navSession.classList.remove("hidden");
+    syncSessionSwitch();
     navigate("session", { autoCollapse: true });
   },
   async openSession(sessionId) {
@@ -85,11 +122,10 @@ const ctx = {
       sessionStorage.setItem("harbor-session-id", res.session.sessionId);
     } catch {}
     sessionView.resetForNewSession(res.session);
-    navSession.classList.remove("hidden");
+    syncSessionSwitch();
     navigate("session");
   },
   showTab(name) {
-    // session 回配置 → 新会话向导
     if (name === "session") navigate("session");
     else if (name === "setup") navigate("wizard");
   },
@@ -105,10 +141,32 @@ function upsertHistory(snapshot) {
     workspace: snapshot.workspace,
     agentId: snapshot.agentId,
     cleanupComplete: snapshot.cleanupComplete,
+    mountMode: snapshot.mountMode,
+    mcpIds: snapshot.mcpIds,
   };
   if (i >= 0) list[i] = { ...list[i], ...row };
   else list.unshift(row);
   ctx.state.sessionHistory = list.slice(0, 20);
+}
+
+function syncSessionSwitch() {
+  const running = (ctx.state.sessionHistory || []).filter((s) =>
+    ["provisioning", "running", "stopping"].includes(s.state),
+  );
+  if (!running.length) {
+    sessionSwitchWrap.classList.add("hidden");
+    return;
+  }
+  sessionSwitchWrap.classList.remove("hidden");
+  sessionSwitch.replaceChildren(
+    ...running.map((s) => {
+      const o = document.createElement("option");
+      o.value = s.sessionId;
+      o.textContent = `${s.agentId} · ${s.workspace}`;
+      if (s.sessionId === ctx.state.sessionId) o.selected = true;
+      return o;
+    }),
+  );
 }
 
 function syncBadge() {
@@ -118,14 +176,14 @@ function syncBadge() {
     badge.className = "badge mock";
     if (banner) {
       banner.textContent =
-        "PAGE-DESIGN 壳 + 模拟数据。不能记入 I1–I11。多会话/扩权等接口见 TASK-SPLIT P0.5。";
+        "feat/page-design-full · PAGE-DESIGN 全量（含 OAuth/clone/PTY）。mock 不能记入 I1–I11。";
     }
   } else {
     badge.textContent = "真实绑定";
     badge.className = "badge live";
     if (banner) {
       banner.textContent =
-        "真实绑定：任务去掉 mock/search；工作区用 demos/workspace。";
+        "真实绑定：按 PAGE-DESIGN 全量；未接线方法可能返回 UNIMPLEMENTED。";
     }
   }
 }
@@ -140,7 +198,7 @@ function isWailsShell() {
   return typeof window !== "undefined" && !!window._wails;
 }
 
-function setSidebarCollapsed(collapsed) {
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
   sidebar.classList.toggle("collapsed", collapsed);
   const btn = document.getElementById("sidebar-toggle");
   if (btn) {
@@ -150,6 +208,26 @@ function setSidebarCollapsed(collapsed) {
   try {
     localStorage.setItem("harbor-sidebar-collapsed", collapsed ? "1" : "0");
   } catch {}
+  if (persist) {
+    ctx.state.uiPrefs = {
+      ...(ctx.state.uiPrefs || {}),
+      sidebarCollapsed: !!collapsed,
+    };
+    api.setUIPrefs(ctx.state.uiPrefs).catch(() => {});
+  }
+}
+
+function applyUIPrefs(prefs) {
+  if (!prefs) return;
+  ctx.state.uiPrefs = {
+    ...(ctx.state.uiPrefs || {}),
+    sidebarCollapsed: !!prefs.sidebarCollapsed,
+    autoCollapseWorkbench: prefs.autoCollapseWorkbench !== false,
+    askClearOnStop: prefs.askClearOnStop !== false,
+    clearOnStopDefault:
+      prefs.clearOnStopDefault === "clear" ? "clear" : "keep",
+  };
+  setSidebarCollapsed(!!prefs.sidebarCollapsed, { persist: false });
 }
 
 function navigate(name, opts = {}) {
@@ -160,16 +238,24 @@ function navigate(name, opts = {}) {
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.classList.toggle("on", btn.getAttribute("data-route") === name);
   });
-  if (name === "home") mountHome(views.home, ctx);
+  if (name === "home") {
+    ctx.refreshHome();
+  }
   if (name === "wizard") wizardView = mountWizard(views.wizard, ctx);
   if (name === "models") mountModels(views.models, ctx);
   if (name === "tools") mountTools(views.tools, ctx);
   if (name === "settings") mountSettings(views.settings, ctx);
   if (name === "session") {
-    navSession.classList.remove("hidden");
+    if (!ctx.state.sessionId) {
+      sessionView?.showEmpty?.() || sessionView?.resetForNewSession?.(null);
+    }
     if (opts.autoCollapse) {
-      const pref = localStorage.getItem("harbor-sidebar-user-expanded");
-      if (pref !== "1") setSidebarCollapsed(true);
+      const auto = ctx.state.uiPrefs?.autoCollapseWorkbench !== false;
+      let userExpanded = false;
+      try {
+        userExpanded = localStorage.getItem("harbor-sidebar-user-expanded") === "1";
+      } catch {}
+      if (auto && !userExpanded) setSidebarCollapsed(true);
     }
   }
   if (ctx.state.health && ctx.state.health.available === false && name === "wizard") {
@@ -177,6 +263,34 @@ function navigate(name, opts = {}) {
   } else {
     hideBlock();
   }
+}
+
+function healthChecks(health) {
+  if (!health) return [];
+  if (health.available) {
+    return [
+      {
+        ok: true,
+        name: "隔离环境",
+        detail: health.isolationLevel
+          ? `可用 · ${health.isolationLevel}`
+          : "可用",
+      },
+      { ok: true, name: "安全闸口", detail: "可创建新会话" },
+    ];
+  }
+  return [
+    {
+      ok: false,
+      name: "隔离环境",
+      detail: health.reason || "当前无法建立隔离环境",
+    },
+    {
+      ok: false,
+      name: "安全闸口",
+      detail: "依赖隔离就绪；不会无隔离启动 Agent",
+    },
+  ];
 }
 
 async function refreshHealth() {
@@ -189,14 +303,30 @@ async function refreshHealth() {
       ? "隔离就绪（占位）"
       : "隔离就绪"
     : "隔离不可用";
-  if (!ok) healthText.title = health.reason || "";
+  if (!ok) healthText.title = health.reason || "点击查看说明";
+  else healthText.title = "";
+  const healthEl = document.getElementById("health-light");
+  healthEl?.classList.toggle("clickable", !ok);
+  if (currentRoute === "home") mountHome(views.home, ctx);
   return health;
 }
 
 function showBlock(reason) {
+  const health = ctx.state.health;
   blockRoot.classList.remove("hidden");
   mountBlock(blockRoot, {
-    reason,
+    reason: reason || health?.reason || "ISOLATION_UNAVAILABLE",
+    checks: healthChecks(health),
+    async onRecheck() {
+      const h = await refreshHealth();
+      if (h?.available) {
+        hideBlock();
+        if (currentRoute === "wizard") navigate("wizard");
+        else navigate(currentRoute || "home");
+        return;
+      }
+      showBlock(h?.reason);
+    },
     onSettings: () => {
       hideBlock();
       navigate("settings");
@@ -239,10 +369,18 @@ async function boot() {
   syncBadge();
 
   try {
-    if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
-      setSidebarCollapsed(true);
+    const prefsRes = await api.getUIPrefs();
+    if (prefsRes?.prefs) applyUIPrefs(prefsRes.prefs);
+    else if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
+      setSidebarCollapsed(true, { persist: false });
     }
-  } catch {}
+  } catch {
+    try {
+      if (localStorage.getItem("harbor-sidebar-collapsed") === "1") {
+        setSidebarCollapsed(true, { persist: false });
+      }
+    } catch {}
+  }
 
   document.getElementById("sidebar-toggle").onclick = () => {
     const next = !sidebar.classList.contains("collapsed");
@@ -258,6 +396,14 @@ async function boot() {
     );
   });
 
+  document.getElementById("health-light")?.addEventListener("click", () => {
+    if (ctx.state.health?.available === false) showBlock(ctx.state.health.reason);
+  });
+
+  sessionSwitch.onchange = () => {
+    if (sessionSwitch.value) ctx.openSession(sessionSwitch.value);
+  };
+
   window.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
       e.preventDefault();
@@ -267,13 +413,14 @@ async function boot() {
 
   sessionView = mountSession(views.session, ctx);
   api.onEvent((ev) => {
-    if (ev.type === "state_changed" && ev.state) upsertHistory(ev.state);
+    if (ev.type === "state_changed" && ev.state) {
+      upsertHistory(ev.state);
+      syncSessionSwitch();
+    }
   });
 
   const health = await refreshHealth();
-  if (maybeOnboarding(health)) {
-    /* 引导中 */
-  } else {
+  if (!maybeOnboarding(health)) {
     navigate(ctx.state.sessionId ? "session" : "home");
   }
 
@@ -289,6 +436,7 @@ async function boot() {
         const res = await api.getSession(id);
         if (res.session) upsertHistory(res.session);
       }
+      syncSessionSwitch();
     } finally {
       recovering = false;
     }
@@ -322,7 +470,4 @@ boot().catch(() => {
   shell.classList.remove("hidden");
   views.home.classList.remove("hidden");
   views.home.textContent = "桌面连接初始化失败，请重新启动应用。";
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    button.disabled = true;
-  });
 });

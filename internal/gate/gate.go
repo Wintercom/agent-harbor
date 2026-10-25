@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,9 @@ type GateSpec struct {
 	Policy         policy.PolicySnapshot
 	ModelAccountID string
 	MCPAccountID   string
+	// 可选的宿主机扩权决策回调；nil 时必须拒绝，不能自动放行。
+	// 返回决策后 Gate/Policy 仍须重新求值授权，不得直接绕过固定规则。
+	RequestPermission func(context.Context, contracts.PermissionNeeded) (string, error)
 }
 
 // GateBinding 返回给编排层的注入信息（不得进入前端 DTO）。
@@ -59,6 +63,8 @@ type sessionRuntime struct {
 	done       chan struct{}
 	audit      func(contracts.AuditData)
 	fatal      func(error)
+	// extraHosts：扩权追加的主机 → once|project（会话期；once 消费后删除）
+	extraHosts map[string]string
 }
 
 // Harbor 是控制面出站闸口。
@@ -275,4 +281,63 @@ func (h *Harbor) emitFatal(rt *sessionRuntime, err error) {
 // Health 返回闸口进程自身存活状态。
 func (h *Harbor) Health() string {
 	return "ok"
+}
+
+// SetModelAccount 更新运行中会话的模型账号（仅影响之后出站代填；不改 Origin）。
+func (h *Harbor) SetModelAccount(sessionID, accountID string) error {
+	if sessionID == "" || accountID == "" {
+		return fmt.Errorf("gate: incomplete model account update")
+	}
+	if _, err := h.secrets.Lookup(context.Background(), accountID); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.revoked || rt.ctx.Err() != nil {
+		return ErrSessionNotFound
+	}
+	rt.spec.ModelAccountID = accountID
+	return nil
+}
+
+// AllowExtraHost 将扩权通过的主机记入会话（once 仅一次；project 会话期有效）。
+func (h *Harbor) AllowExtraHost(sessionID, host, scope string) error {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if sessionID == "" || host == "" {
+		return fmt.Errorf("gate: incomplete host allow")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.revoked || rt.ctx.Err() != nil {
+		return ErrSessionNotFound
+	}
+	if rt.extraHosts == nil {
+		rt.extraHosts = make(map[string]string)
+	}
+	if scope != "once" && scope != "project" {
+		scope = "once"
+	}
+	rt.extraHosts[host] = scope
+	return nil
+}
+
+// HasExtraHost 查询是否已扩权；once 命中后消费删除。
+func (h *Harbor) HasExtraHost(sessionID, host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.extraHosts == nil {
+		return false
+	}
+	scope, ok := rt.extraHosts[host]
+	if !ok {
+		return false
+	}
+	if scope == "once" {
+		delete(rt.extraHosts, host)
+	}
+	return true
 }

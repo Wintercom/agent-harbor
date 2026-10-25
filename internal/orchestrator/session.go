@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +45,9 @@ type session struct {
 	handle         runtime.Handle
 	gateStarted    bool
 	wait           <-chan runtime.Exit
+	process        runtime.Process
+	interactive    bool
+	permissions    map[string]*permissionRequest
 	cleanupDone    chan struct{}
 	finished       chan struct{}
 	retry          chan struct{}
@@ -91,6 +96,12 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 	if _, ok := o.deps.Kits[spec.AgentID]; !ok {
 		return contracts.SessionSnapshot{}, publicError("AGENT_UNSUPPORTED")
 	}
+	if spec.MountMode == "" {
+		spec.MountMode = "direct"
+	}
+	if spec.MountMode != "direct" && spec.MountMode != "clone" {
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return contracts.SessionSnapshot{}, publicError("INTERNAL_ERROR")
@@ -100,15 +111,33 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 	if o.closing || o.app.Err() != nil {
 		return contracts.SessionSnapshot{}, publicError("CANCELLED")
 	}
-	if o.active != nil || o.connectionDone != nil {
+	if o.connectionDone != nil {
 		return contracts.SessionSnapshot{}, publicError("SESSION_BUSY")
 	}
+	workspace, err := canonicalWorkspace(spec.Workspace)
+	if err != nil {
+		return contracts.SessionSnapshot{}, publicError("WORKSPACE_DENIED")
+	}
+	activeCount := 0
+	for _, existing := range o.sessions {
+		if existing.snapshot.CleanupComplete {
+			continue
+		}
+		activeCount++
+		if existing.snapshot.Workspace != "" && sameWorkspace(existing.spec.Workspace, workspace) {
+			return contracts.SessionSnapshot{}, publicError("WORKSPACE_BUSY")
+		}
+	}
+	if activeCount >= 2 {
+		return contracts.SessionSnapshot{}, publicError("SESSION_LIMIT")
+	}
+	spec.Workspace = workspace
 	spec.MCPIDs = append([]string(nil), spec.MCPIDs...)
 	sessionCtx, cancel := context.WithCancel(o.app)
 	s := &session{spec: spec, ctx: sessionCtx, cancel: cancel, retry: make(chan struct{}, 1), cleanupDone: make(chan struct{}), finished: make(chan struct{})}
 	s.started = time.Now()
-	s.snapshot = contracts.SessionSnapshot{SessionID: hex.EncodeToString(id[:]), Workspace: spec.Workspace, AgentID: spec.AgentID}
-	o.sessions[s.snapshot.SessionID], o.active = s, s
+	s.snapshot = contracts.SessionSnapshot{SessionID: hex.EncodeToString(id[:]), Workspace: workspace, AgentID: spec.AgentID}
+	o.sessions[s.snapshot.SessionID] = s
 	o.stateLocked(s, contracts.StateProvisioning)
 	initial := snapshot(s)
 	go o.run(s)
@@ -162,7 +191,7 @@ func (o *Service) WithConnection(ctx context.Context, action func(context.Contex
 		o.mu.Unlock()
 		return publicError("CANCELLED")
 	}
-	if o.active != nil || o.connectionDone != nil {
+	if hasActiveSessionLocked(o) || o.connectionDone != nil {
 		o.mu.Unlock()
 		return publicError("SESSION_BUSY")
 	}
@@ -187,7 +216,12 @@ func (o *Service) WithConnection(ctx context.Context, action func(context.Contex
 func (o *Service) Shutdown(ctx context.Context) error {
 	o.mu.Lock()
 	o.closing = true
-	s := o.active
+	var active []*session
+	for _, item := range o.sessions {
+		if !item.snapshot.CleanupComplete {
+			active = append(active, item)
+		}
+	}
 	connectionDone := o.connectionDone
 	if o.connectionCancel != nil {
 		o.connectionCancel()
@@ -200,7 +234,7 @@ func (o *Service) Shutdown(ctx context.Context) error {
 			return publicError("CLEANUP_FAILED")
 		}
 	}
-	if s != nil {
+	for _, s := range active {
 		if _, err := o.Stop(ctx, s.snapshot.SessionID); err != nil {
 			return err
 		}
@@ -235,6 +269,190 @@ func snapshot(s *session) contracts.SessionSnapshot {
 		result.Error = &e
 	}
 	return result
+}
+
+func canonicalWorkspace(path string) (string, error) {
+	if strings.TrimSpace(path) == "" || strings.ContainsRune(path, 0) {
+		return "", errors.New("invalid workspace")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		// Policy/Runtime 负责最终确认工作区存在；编排层仍需能为替身和
+		// 正在创建的目录建立稳定的冲突键。
+		if errors.Is(err, os.ErrNotExist) {
+			return filepath.Clean(abs), nil
+		}
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func sameWorkspace(a, b string) bool {
+	ca, errA := canonicalWorkspace(a)
+	cb, errB := canonicalWorkspace(b)
+	return errA == nil && errB == nil && ca == cb
+}
+
+func hasActiveSessionLocked(o *Service) bool {
+	for _, s := range o.sessions {
+		if !s.snapshot.CleanupComplete {
+			return true
+		}
+	}
+	return false
+}
+
+// List 返回当前应用生命周期内的会话摘要，终态记录会保留到 Destroy。
+func (o *Service) List(ctx context.Context) ([]contracts.SessionSummary, error) {
+	if ctx.Err() != nil {
+		return nil, publicError("CANCELLED")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	result := make([]contracts.SessionSummary, 0, len(o.sessions))
+	for _, s := range o.sessions {
+		result = append(result, contracts.SessionSummary{SessionID: s.snapshot.SessionID, State: s.snapshot.State, Workspace: s.snapshot.Workspace, AgentID: s.snapshot.AgentID, CleanupComplete: s.snapshot.CleanupComplete})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].SessionID < result[j].SessionID })
+	return result, nil
+}
+
+// SwitchModel 切换之后出站所用模型账号；不重建隔离壳与工作区。
+func (o *Service) SwitchModel(ctx context.Context, in contracts.SwitchModelInput) (contracts.SessionSnapshot, error) {
+	if ctx.Err() != nil {
+		return contracts.SessionSnapshot{}, publicError("CANCELLED")
+	}
+	if in.SessionID == "" || in.ModelAccountID == "" {
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	model, err := o.deps.Catalog.Lookup(ctx, in.ModelAccountID)
+	if err != nil || model.ID != in.ModelAccountID || model.Kind != "model" {
+		return contracts.SessionSnapshot{}, publicError("ACCOUNT_NOT_FOUND")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[in.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning && s.snapshot.State != contracts.StateProvisioning {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	expected := "demo-model"
+	if s.spec.AgentID == "dsh" {
+		expected = "dsh-model"
+	}
+	if model.ProfileID != "custom" && model.ProfileID != expected {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	if s.spec.AgentID == "dsh" && model.ProfileID == "custom" {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	s.spec.ModelAccountID = in.ModelAccountID
+	result := snapshot(s)
+	o.mu.Unlock()
+	if updater, ok := o.deps.Gate.(interface {
+		SetModelAccount(string, string) error
+	}); ok {
+		if err := updater.SetModelAccount(in.SessionID, in.ModelAccountID); err != nil {
+			return contracts.SessionSnapshot{}, safeError(err, "INVALID_ARGUMENT")
+		}
+	}
+	return result, nil
+}
+
+// Destroy 仅移除已完成清理的终态记录；运行中的会话必须先 Stop。
+func (o *Service) Destroy(ctx context.Context, id string) (contracts.SessionSnapshot, error) {
+	if ctx.Err() != nil {
+		return contracts.SessionSnapshot{}, publicError("CANCELLED")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	s, ok := o.sessions[id]
+	if !ok {
+		return contracts.SessionSnapshot{}, publicError("SESSION_NOT_FOUND")
+	}
+	if !s.snapshot.CleanupComplete || (s.snapshot.State != contracts.StateStopped && s.snapshot.State != contracts.StateFailed) {
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	result := snapshot(s)
+	delete(o.sessions, id)
+	return result, nil
+}
+
+// WritePty 将后续轮次写入同一会话的交互 stdin，并由 Runtime 输出事件回传。
+func (o *Service) WritePty(ctx context.Context, input contracts.PtyInput) error {
+	if ctx.Err() != nil {
+		return publicError("CANCELLED")
+	}
+	if input.SessionID == "" || !utf8.ValidString(input.Data) || len(input.Data) == 0 || len(input.Data) > 32768 || strings.ContainsRune(input.Data, '\x00') {
+		return publicError("INVALID_ARGUMENT")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[input.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning || s.process == nil {
+		o.mu.Unlock()
+		return publicError("INVALID_ARGUMENT")
+	}
+	if !s.interactive {
+		o.mu.Unlock()
+		return publicError("UNIMPLEMENTED")
+	}
+	process := s.process
+	o.mu.Unlock()
+	interactive, ok := process.(runtime.InteractiveProcess)
+	if !ok {
+		return publicError("UNIMPLEMENTED")
+	}
+	if err := interactive.Write(ctx, []byte(input.Data)); err != nil {
+		// 写入中断可能留下半条协议消息，必须清理会话，不能继续接收下一轮。
+		var app *contracts.AppError
+		if !errors.As(err, &app) || app.Code != "INVALID_ARGUMENT" {
+			o.fail(s, err, "INTERNAL_ERROR")
+		}
+		return safeError(err, "INTERNAL_ERROR")
+	}
+	return nil
+}
+
+func (o *Service) ResizePty(ctx context.Context, input contracts.PtyInput) error {
+	if ctx.Err() != nil {
+		return publicError("CANCELLED")
+	}
+	if input.SessionID == "" {
+		return publicError("INVALID_ARGUMENT")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[input.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning || s.process == nil || !s.interactive {
+		o.mu.Unlock()
+		return publicError("INVALID_ARGUMENT")
+	}
+	process := s.process
+	o.mu.Unlock()
+	interactive, ok := process.(runtime.InteractiveProcess)
+	if !ok {
+		return publicError("UNIMPLEMENTED")
+	}
+	if err := interactive.Resize(input.Cols, input.Rows); err != nil {
+		return safeError(err, "UNIMPLEMENTED")
+	}
+	return nil
 }
 
 func (o *Service) emitLocked(s *session, e contracts.Event) {
@@ -353,11 +571,11 @@ func (o *Service) provision(s *session) error {
 	if model.ID != s.spec.ModelAccountID || mcp.ID != s.spec.MCPIDs[0] || model.Kind != "model" || mcp.Kind != "mcp" {
 		return publicError("INVALID_ARGUMENT")
 	}
-	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, Model: model, MCP: mcp})
+	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, MountMode: s.spec.MountMode, Model: model, MCP: mcp})
 	if err != nil {
 		return safeError(err, "WORKSPACE_DENIED")
 	}
-	if !filepath.IsAbs(p.Workspace) || p.MountMode != "direct" || p.MCPID != mcp.ID {
+	if !filepath.IsAbs(p.Workspace) || (p.MountMode != "direct" && p.MountMode != "clone") || p.MCPID != mcp.ID {
 		return publicError("WORKSPACE_DENIED")
 	}
 	o.mu.Lock()
@@ -366,7 +584,9 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID},
+	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
+		return o.RequestPermission(call, s.snapshot.SessionID, request)
+	}},
 		func(data contracts.AuditData) { o.audit(s, data) }, func(err error) { o.fail(s, err, "INTERNAL_ERROR") })
 	if err != nil {
 		return err
@@ -392,6 +612,14 @@ func (o *Service) provision(s *session) error {
 	if handle.ID == "" || !filepath.IsAbs(handle.PrivateHome) {
 		return publicError("ISOLATION_UNAVAILABLE")
 	}
+	if p.MountMode == "clone" {
+		if !filepath.IsAbs(handle.Workspace) || handle.Workspace == p.Workspace {
+			return publicError("ISOLATION_UNAVAILABLE")
+		}
+		o.mu.Lock()
+		s.snapshot.Workspace = handle.Workspace
+		o.mu.Unlock()
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -415,6 +643,8 @@ func (o *Service) provision(s *session) error {
 		return publicError("ISOLATION_UNAVAILABLE")
 	}
 	o.mu.Lock()
+	s.process = process
+	s.interactive = launch.Interactive
 	defer o.mu.Unlock()
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -498,7 +728,11 @@ func (o *Service) output(s *session, data contracts.OutputData) {
 }
 
 func (o *Service) outputLocked(s *session, data contracts.OutputData) {
-	o.emitLocked(s, contracts.Event{Type: "output", Output: &data})
+	if s.interactive {
+		o.emitLocked(s, contracts.Event{Type: contracts.EventTypePty, Pty: &data})
+		return
+	}
+	o.emitLocked(s, contracts.Event{Type: contracts.EventTypeOutput, Output: &data})
 }
 
 func (o *Service) drainEarlyLocked(s *session) {

@@ -4,16 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Harbor</title>
-    <script type="module" crossorigin src="/assets/index-CLXfvGUN.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-qE0HK8mx.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/assets/index-jcE4W5Vn.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CJcE6vRz.css">
   </head>
   <body>
     <div id="onboarding-root" class="onboarding-layer hidden"></div>
     <div class="shell" id="app-shell">
+      <header class="titlebar" id="titlebar">
+        <strong class="titlebar-brand">Agent Harbor</strong>
+        <span id="mode-badge" class="badge mock">模拟模式</span>
+        <span class="spacer"></span>
+        <label class="session-switch hidden" id="session-switch-wrap">
+          <span class="meta">当前会话</span>
+          <select id="session-switch" aria-label="切换会话"></select>
+        </label>
+      </header>
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
           <strong>Agent Harbor</strong>
-          <span id="mode-badge" class="badge mock">模拟模式</span>
           <p class="sidebar-tagline">密钥留在本机 · Agent 隔离运行</p>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav">
@@ -33,13 +44,9 @@
             <span class="nav-ico" aria-hidden="true">⚙</span>
             <span class="nav-label">设置</span>
           </button>
-          <button type="button" class="nav-item hidden" data-route="session" id="nav-session" title="工作台">
-            <span class="nav-ico" aria-hidden="true">▣</span>
-            <span class="nav-label">工作台</span>
-          </button>
         </nav>
         <div class="sidebar-foot">
-          <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" title="展开侧栏">«</button>
+          <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" title="收缩侧栏">«</button>
           <div class="health" id="health-light" title="隔离状态">
             <span class="health-dot" id="health-dot"></span>
             <span class="health-text" id="health-text">检测中…</span>
@@ -48,7 +55,7 @@
       </aside>
       <div class="main-col">
         <p class="warn-banner" id="mode-banner">
-          按 PAGE-DESIGN 壳层：HOME / 模型 / 工具 / 设置。两天契约方法仍可用；多会话等接口待 P0.5 冻结。
+          分支 feat/page-design-full：按 PAGE-DESIGN 全量实现（含 OAuth / clone / PTY）。mock ≠ I 验收。
         </p>
         <main id="view-home" class="view"></main>
         <main id="view-wizard" class="view hidden"></main>
@@ -56,10 +63,10 @@
         <main id="view-tools" class="view hidden"></main>
         <main id="view-settings" class="view hidden"></main>
         <main id="view-session" class="view hidden"></main>
-        <!-- 保留旧配置挂载点供单测 / 兼容；默认隐藏 -->
         <main id="view-setup" class="view hidden" aria-hidden="true"></main>
       </div>
     </div>
     <div id="block-root" class="block-layer hidden"></div>
+    <div id="modal-root" class="modal-layer hidden"></div>
   </body>
 </html>

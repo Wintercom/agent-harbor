@@ -76,20 +76,19 @@ python3 -m http.server 5173
 - 真实模式须显示「真实绑定」，禁止把 mock 计入 I1–I11。
 - 预览：`cd frontend && npm run dev`，或 `python3 -m http.server`。
 
-### 明确未做
+### 明确未做（历史两天记录 · 已被本分支覆盖部分）
 
-- 真实凭据与上游
-- 完整 PAGE-DESIGN（HOME / 设置 / 扩权 / 双会话 / PTY）
-- 自动 E2E 测试脚本、`demos/run.sh`
-- 修改 `internal/`、Gate、Runtime、契约字段（页面需求已按现有 CONTRACT 对齐，无新增字段提案）
+当时未做：真实凭据与上游；完整 PAGE-DESIGN（HOME / 设置 / 扩权 / 双会话 / PTY）；自动 E2E；改 `internal/`。
+
+**分支 `feat/page-design-full`**：完整 PAGE stub/mock（含 OAuth UI / clone / PTY 区 / 扩权）**已推进**，见文末「全量 PAGE-DESIGN」节。真实凭据、live OAuth/PTY/clone、自动 E2E 仍待联调；C 仍不改 `internal/`。
 
 ### 后续顺序
 
 1. ~~D4 证据~~ 已记入 ACCEPTANCE §4.1。
-2. 将本分支前端与文档推到 `origin`（当前 GitHub CLI token 若失效需先 `gh auth refresh`）。
-3. 使用 Wails v3 绑定生成和 live transport；准备真实凭据后联调 I1（关闭 mock 真连）。
-4. ~~准备非敏感演示目录与任务文案~~ → `demos/workspace/` + `verify-workspace.sh` + 固定任务；配合 A/B 冲 I2 / I8 / I10 / I11。
-5. 需要新 UI 字段时先提 CONTRACT，再改 api/mock/视图。
+2. ~~推前端与文档~~ → 跟 `feat/page-design-full`。
+3. 联调 I1（真实绑定）；A/B 去 UNIMPLEMENTED。
+4. ~~演示目录~~ → `demos/workspace/` 已有。
+5. 新字段先改 CONTRACT v1.2，再改 api/mock/视图。
 
 ### 演示工作区（2026-10-24）
 
@@ -103,9 +102,9 @@ python3 -m http.server 5173
 
 ---
 
-## 2026-10-25：按 TASK-SPLIT 启动 C 分工
+## 2026-10-25：按 TASK-SPLIT 启动 C 分工（历史）
 
-任务源：[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md)。本轮 **先做 P0 文档与可独立项**；P1 页面等 P0.5 契约冻结。
+任务源：[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md)。当时先做 P0 文档；**契约已定（v1.2），不再等冻结会**。当前以文末全量节为准。
 
 ### 本轮已交付（C）
 
@@ -117,44 +116,80 @@ python3 -m http.server 5173
 | UI | live 下隐藏 mock 场景卡；任务提示；真机任务含 mock/search 时开始前警告；顶栏 banner 随模式切换 |
 | — | 纠正过时表述（live 无默认 DeepSeek/占位 MCP origin） |
 
-### 当前页面边界（跟 main）
+---
 
-- ~~配置 / 工作台两页~~ → 见下节 **PAGE-DESIGN 壳**
-- 桌面强制 live；浏览器默认 mock
-- 无扩权 Modal / PTY / 真双会话；工作台仍为文本输出
+## 2026-10-25：按 PAGE-DESIGN 落地壳（C · 已被全量节取代）
+
+对照 [PAGE-DESIGN.md](PAGE-DESIGN.md)。壳阶段侧栏曾含「工作台」入口、上限文案曾写 1；**`feat/page-design-full` 已改回首版导航与全量能力**，见下节。健康/列表属 CONTRACT v1.2 正式方法。
 
 ---
 
-## 2026-10-25：按 PAGE-DESIGN 落地壳（C）
+## 2026-10-25：分支 feat/page-design-full（全量 PAGE-DESIGN · **当前准绳**）
 
-对照 [PAGE-DESIGN.md](PAGE-DESIGN.md) 与 [TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) P1-C-01～05（契约未冻处用 stub）。
+**目标**：不按交付裁剪；导航与各屏对齐 [PAGE-DESIGN](PAGE-DESIGN.md)。总纲 [SYSTEM-DESIGN v2](SYSTEM-DESIGN.md)；契约 [CONTRACT v1.2](CONTRACT.md)。
 
-### 已落地
+**怎么看效果**：设计目标是 **桌面 App**；日常用浏览器 `cd frontend && npm run dev` 看全量 PAGE（mock）。真连 / 隔离 / Gate 用 `wails3 dev`（真实绑定）。浏览器 mock 不计 I1–I11。
 
-| 路径 | 说明 |
+### 本分支已推进（C / mock）
+
+- 顶栏会话切换；侧栏仅 HOME/模型/工具/设置（工作台不强占）
+- Wizard **四步**（含 clone/direct）
+- 模型自由 OpenAPI；工具 **OAuth | Token** 双轨 UI
+- 工作台：边界条、模型切换、权限一览、扩权 Modal、PTY 区
+- 设置：检测、默认挂载、记住主机、关于
+
+### 2026-10-25 C 开工推进
+
+| 项 | 状态 |
 |---|---|
-| `frontend/index.html` | 侧栏：HOME / 模型 / 工具 / 设置 / 工作台；底栏隔离灯；引导/阻断层 |
-| `frontend/src/main.js` | 路由、`⌘B` 收缩记忆、进工作台可自动缩、健康刷新 |
-| `views/onboarding.js` | 三句引导；隔离失败不可进入 |
-| `views/home.js` | 会话中心（单会话历史摘要；上限文案先写 1） |
-| `views/wizard.js` | 新会话步进条 + 内嵌原 `setup` 配置流 |
-| `views/models.js` / `tools.js` / `settings.js` | 独立配置页；mock 场景进设置 |
-| `views/block.js` | 隔离不可用阻断层 |
-| `mock-api` / `api` | `getRuntimeHealth`、`listSessions` stub；live 缺方法时健康占位可用 |
+| mock 多会话 ≤2 / WORKSPACE_BUSY / SESSION_LIMIT | **已做**（`mock-api.js`） |
+| 向导默认 clone；演示路径 B | **已做** |
+| OAuth pending 轮询 + 取消 /「我已完成」 | **已做**（`tools.js`） |
+| PTY mock 回显 | 已有；随多会话按 sessionId |
+| HOME 同步 `listSessions` | **已做** |
+| 视觉对齐 prototype（Sora/Fraunces、全幅壳） | **已做** |
+| 空态 CTA（HOME/模型/工具）；扩权 Modal toast | **已做** |
+| 设置默认挂载 clone；向导读该偏好 | **已做** |
+| 工作台无会话空态；resizePty | **已做** |
+| UIPrefs：设置页 + boot/侧栏经 Get/SetUIPrefs | **已做**（mock；live 待 B 真落盘） |
 
-### 与两天契约关系
+### 2026-10-25 晚：C 不越界续作
 
-- Connect / CreateSession / Stop / Event **不变**；向导仍走现有 setup。
-- 健康与列表 **非正式契约字段**，待 P0.5-API-01/02；勿记入 I1–I11。
-- 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；接口：[CONTRACT.md](CONTRACT.md) v1.1；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
+| 项 | 状态 |
+|---|---|
+| 撤回误改 `internal/`（Health/origin/OpenAI 桥） | **已撤回**；C 只动 frontend/scripts/vite |
+| mock 多模型/多 MCP 账号 | **已做**；`auth` 场景列表标 ▲ |
+| HOME 上限横幅；向导 SESSION_LIMIT / WORKSPACE_BUSY CTA | **已做** |
+| 模型页表单 UX（占位≠已填、失败保留 Key） | **已做** |
+| 桌面启动：Vite `127.0.0.1` + `dev-desktop.sh` | **已做**（不改 Gate） |
+| demos 三分钟话术对齐全量导航 | **已做** |
+
+### 2026-10-25 续：P1-C-10 + 工作台细抠
+
+| 项 | 状态 |
+|---|---|
+| 隔离阻断页（检测项 / 重新检测 / 无「仍要继续」） | **已做**；红灯可点；HOME CTA |
+| 设置「结束与清理」askClearOnStop | **已做**（UIPrefs mock） |
+| 工作台：边界 awaiting、扩权标 sessionId、权限一览可撤销 | **已做** |
+| 停止确认（询问清除 / 仅停止） | **已做** |
+| `npm test` | **19+**（含 block / prefs） |
+
+### 2026-10-25 晚：跟 A 合入 + DOC-3 阻断如实记
+
+| 项 | 状态 |
+|---|---|
+| `git pull` 对齐远程（多会话/clone/扩权/多轮） | **已拉**；C 不改 `internal/` |
+| 契约核对：扩权不增 state；`permission_needed` + Resolve | **UI/mock 已对齐**；mock 自动弹扩权 + project 写入记住表 |
+| demos：桌面「健康检查尚未接线」说明 | **已写**；三分钟话术含扩权/PTY 多轮 |
+| P0-C-DOC-3 | ACCEPTANCE + evidence-template 记 **I1 阻断**（等 B） |
 
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| P0 | 跟 B 跑 I1/I2 与脱敏证据 | ENV、Detect、Claude 2.1.292 |
-| V1 | mock/页面对齐 CONTRACT v1.1；扩权 Modal、权限一览、HOME x/2 | A/B 真实现 |
-| P1 | Wizard 真四步拆页（仍无 PTY/OAuth/clone） | 已定契约 |
+| 本分支 | 视觉对照 prototype（P1-C-11） | — |
+| 联调 | B 已接线（Health/Accounts/Prefs/OAuth/扩权）；桌面 live 重测 I1 | 真上游进 DECISIONS |
+| P0 | I1 通过后改 DOC-3；配合 I2 演示目录 | ENV |
 
 ### 明确不做（仍禁止）
 

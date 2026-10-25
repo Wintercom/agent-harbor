@@ -32,6 +32,7 @@ type fixture struct {
 	onFatal      func(error)
 	onAudit      func(contracts.AuditData)
 	beforeExec   func(func(contracts.OutputData))
+	interactive  bool
 	events       []contracts.Event
 }
 
@@ -55,11 +56,15 @@ func (f *fixture) step(name string) error {
 }
 
 func (f *fixture) Health(context.Context) error { return f.step("health") }
-func (f *fixture) Create(context.Context, runtime.RuntimeSpec) (runtime.Handle, error) {
+func (f *fixture) Create(_ context.Context, input runtime.RuntimeSpec) (runtime.Handle, error) {
 	if err := f.step("create"); err != nil {
 		return runtime.Handle{}, err
 	}
-	return runtime.Handle{ID: "runtime", PrivateHome: "/private/test-home"}, nil
+	workspace := input.Workspace
+	if input.MountMode == "clone" {
+		workspace = "/private/test-copy"
+	}
+	return runtime.Handle{ID: "runtime", PrivateHome: "/private/test-home", Workspace: workspace}, nil
 }
 func (f *fixture) Exec(_ context.Context, _ runtime.Handle, _ runtime.LaunchSpec, output func(contracts.OutputData)) (runtime.Process, error) {
 	if err := f.step("exec"); err != nil {
@@ -102,6 +107,23 @@ func (p *fakeProcess) Wait() runtime.Exit {
 	return p.result
 }
 
+func (p *fakeProcess) Write(_ context.Context, data []byte) error {
+	p.fixture.mu.Lock()
+	output := p.fixture.onOutput
+	p.fixture.mu.Unlock()
+	if output != nil {
+		output(contracts.OutputData{Stream: "stdout", Text: string(data)})
+	}
+	return nil
+}
+
+func (p *fakeProcess) Resize(cols, rows int) error {
+	if cols < 1 || rows < 1 {
+		return errors.New("invalid size")
+	}
+	return nil
+}
+
 func (f *fixture) Detect(context.Context) (kits.KitInfo, error) {
 	if err := f.step("detect"); err != nil {
 		return kits.KitInfo{}, err
@@ -109,7 +131,7 @@ func (f *fixture) Detect(context.Context) (kits.KitInfo, error) {
 	return kits.KitInfo{Agent: contracts.AgentInfo{ID: "claude", Available: true}, ReadOnlyPaths: []string{"/test/claude"}}, nil
 }
 func (f *fixture) Build(context.Context, kits.KitInput) (runtime.LaunchSpec, error) {
-	return runtime.LaunchSpec{Command: "/test/claude"}, f.step("build")
+	return runtime.LaunchSpec{Command: "/test/claude", Interactive: f.interactive}, f.step("build")
 }
 
 type fakePolicy struct{ f *fixture }
@@ -118,7 +140,11 @@ func (p fakePolicy) Build(_ context.Context, req policy.PolicyRequest) (policy.P
 	if err := p.f.step("policy"); err != nil {
 		return policy.PolicySnapshot{}, err
 	}
-	return policy.PolicySnapshot{Workspace: "/test/workspace", MountMode: "direct", MCPID: req.MCP.ID}, nil
+	mode := req.MountMode
+	if mode == "" {
+		mode = "direct"
+	}
+	return policy.PolicySnapshot{Workspace: req.Workspace, MountMode: mode, MCPID: req.MCP.ID}, nil
 }
 func (f *fixture) Lookup(_ context.Context, id string) (contracts.AccountInfo, error) {
 	if err := f.step("lookup-" + id); err != nil {
@@ -300,6 +326,120 @@ func TestLifecycleAndEvents(t *testing.T) {
 	}
 }
 
+func TestListAndDestroyRetainOnlyExplicitlyDestroyedRecords(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	s := create(t, o)
+	if _, err := o.Destroy(context.Background(), s.SessionID); err == nil {
+		t.Fatal("运行中的会话不应允许 Destroy")
+	} else {
+		assertCode(t, err, "INVALID_ARGUMENT")
+	}
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	f.exit <- runtime.Exit{Code: 0}
+	awaitState(t, o, s.SessionID, contracts.StateStopped)
+	items, err := o.List(context.Background())
+	if err != nil || len(items) != 1 || items[0].SessionID != s.SessionID || !items[0].CleanupComplete {
+		t.Fatalf("终态记录未保留：%+v %v", items, err)
+	}
+	if _, err := o.Destroy(context.Background(), s.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = o.List(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("Destroy 后仍有会话：%+v %v", items, err)
+	}
+}
+
+func TestInteractiveSessionAcceptsAdditionalRounds(t *testing.T) {
+	f := newFixture()
+	f.interactive = true
+	o := setup(t, f, Timeouts{}, nil)
+	s := create(t, o)
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	if err := o.WritePty(context.Background(), contracts.PtyInput{SessionID: s.SessionID, Data: "第二轮\n"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(time.Second)
+	for {
+		f.mu.Lock()
+		found := false
+		for _, event := range f.events {
+			if event.Type == contracts.EventTypePty && event.Pty != nil && strings.Contains(event.Pty.Text, "第二轮") {
+				found = true
+				break
+			}
+		}
+		f.mu.Unlock()
+		if found {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("未收到第二轮 pty 事件")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	_, _ = o.Stop(context.Background(), s.SessionID)
+	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
+func TestNonInteractiveSessionRejectsAdditionalRound(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	s := create(t, o)
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	err := o.WritePty(context.Background(), contracts.PtyInput{SessionID: s.SessionID, Data: "下一轮"})
+	assertCode(t, err, "UNIMPLEMENTED")
+	current, err := o.Get(context.Background(), s.SessionID)
+	if err != nil || current.State != contracts.StateRunning {
+		t.Fatalf("能力拒绝不应停止任务：%+v %v", current, err)
+	}
+}
+
+func TestAllowsTwoDifferentWorkspacesAndCapsThird(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	second := spec()
+	second.Workspace = "/test/other-workspace"
+	third := spec()
+	third.Workspace = "/test/third-workspace"
+	one := create(t, o)
+	two, err := o.Create(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.Create(context.Background(), third); err == nil {
+		t.Fatal("第三个并发会话不应获准")
+	} else {
+		assertCode(t, err, "SESSION_LIMIT")
+	}
+	_, _ = o.Stop(context.Background(), one.SessionID)
+	_, _ = o.Stop(context.Background(), two.SessionID)
+	await(t, o, one.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+	await(t, o, two.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
+func TestCloneSnapshotKeepsOriginalWorkspaceLocked(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	input := spec()
+	input.MountMode = "clone"
+	s, err := o.Create(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := awaitState(t, o, s.SessionID, contracts.StateRunning)
+	if running.Workspace != "/private/test-copy" {
+		t.Fatalf("未使用副本路径：%+v", running)
+	}
+	_, err = o.Create(context.Background(), input)
+	assertCode(t, err, "WORKSPACE_BUSY")
+	_, _ = o.Stop(context.Background(), s.SessionID)
+	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
 func TestProvisionFailuresRollback(t *testing.T) {
 	for _, tc := range []struct {
 		step, code      string
@@ -354,7 +494,7 @@ func TestStopTakesOwnershipOfLateResources(t *testing.T) {
 				t.Fatalf("Stop 未快速返回：%+v %v", stopping, err)
 			}
 			_, err = o.Create(context.Background(), spec())
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 			close(f.release)
 			end := awaitState(t, o, s.SessionID, contracts.StateStopped)
 			if !end.CleanupComplete {
@@ -392,7 +532,7 @@ func TestCleanupFailureRetainsLockAndCanRetry(t *testing.T) {
 			}
 			assertCode(t, end.Error, "CLEANUP_FAILED")
 			_, err := o.Create(context.Background(), spec())
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 			f.mu.Lock()
 			f.destroyFails, f.revokeFails = false, false
 			f.mu.Unlock()
@@ -466,7 +606,7 @@ func TestValidationAndSingleSessionLock(t *testing.T) {
 		if err == nil {
 			success++
 		} else {
-			assertCode(t, err, "SESSION_BUSY")
+			assertCode(t, err, "WORKSPACE_BUSY")
 		}
 	}
 	if success != 1 {

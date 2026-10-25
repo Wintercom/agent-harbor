@@ -6,6 +6,7 @@ export function mountOnboarding(root, { onEnter, health }) {
   root.innerHTML = `
     <div class="onboarding-card">
       <h1>Agent Harbor</h1>
+      <p class="sub">密钥留在本机 · Agent 隔离运行</p>
       <ol class="onboarding-points">
         <li>Agent 在隔离环境中运行</li>
         <li>API Key / 密码只存在你这台电脑上</li>

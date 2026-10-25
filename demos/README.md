@@ -4,34 +4,51 @@
 
 | 模式 | 顶栏徽章 | 怎么开 | 能否记 I1–I11 |
 |---|---|---|---|
-| mock / D4 | **模拟模式** | `frontend` 下静态 HTTP / `npm run dev` | **否** |
-| 桌面 live | **真实绑定** | 仓库根 `wails3 dev`（须先 bindings + env） | 可以记，须有脱敏证据 |
+| mock / D4 | **模拟模式** | `frontend` 下 `npm run dev` → http://127.0.0.1:5173/ | **否** |
+| 桌面 live | **真实绑定** | 仓库根 `./scripts/dev-desktop.sh` 或 `wails3 dev` | 可以记，须有脱敏证据 |
+
+### 桌面一打开就「无法安全启动」？
+
+2026-10-25 起 `GetRuntimeHealth` **已接线** Runtime 探测（不再固定「尚未接线」）。
+
+| 现象 | 含义 |
+|---|---|
+| 侧栏「隔离就绪」 | Darwin 25 / arm64 非 root 上探测通过，可开新会话 |
+| 阻断页 + 隔离错误文案 | 本机不满足 Runtime 准入（或探测失败）；产品禁止无隔离开 Agent |
+| 仍见「尚未接线」 | 旧二进制；请重新 `./scripts/dev-desktop.sh` |
+
+| 要演示… | 请用 |
+|---|---|
+| 全量 PAGE / 扩权 / 双会话 | **浏览器 mock**（下节）或 live（Health 绿后） |
+| I1–I11 | live + 已登记 env；失败如实记 DOC-3 |
+
+设置里切场景 `isolation` 可在 **mock** 下复现阻断页。
 
 ---
 
-## 三分钟 mock 话术（评审用 / D4）
+## 三分钟 mock 话术（全量 PAGE / D4）
 
-前置：`cd frontend && python3 -m http.server 5173`，打开 http://127.0.0.1:5173/  
-顶栏应显示 **模拟模式**。
+前置：`cd frontend && npm run dev`，打开 **http://127.0.0.1:5173/**（勿用 localhost）。顶栏 **模拟模式**；侧栏 **HOME / 模型 / 工具 / 设置**。
 
 | 时间 | 操作 | 期望观众看到 |
 |---|---|---|
-| 0:00 | 指顶栏徽章与 direct 警告 | 凭据只在宿主机、会改原文件 |
-| 0:20 | 模型/MCP 各填示例 Key → 连接 | 输入框清空；账号 id/host，无 Key |
-| 0:50 | 工作区 → 默认任务 → 开始 | provisioning→running |
-| 1:20 | 指输出与审计 | 文本输出；MCP `allowed` |
-| 1:50 | 自动 stopped 或点停止 | 可回配置再开 |
-| 2:10 | 场景「认证失败」再连模型 | `UPSTREAM_AUTH_FAILED` |
-| 2:30 | 场景「隔离不可用」点开始 | `ISOLATION_UNAVAILABLE` |
-| 2:45 | cleanup：开始后停两次 | 先 failed 未清理；再停 → stopped |
+| 0:00 | 指侧栏四入口与顶栏徽章 | 工作台不强占侧栏；凭据只在本机 |
+| 0:20 | 「模型」→ 添加（名+地址+Key，可点 DeepSeek 填地址） | 列表出现一行；Key 提交后清空 |
+| 0:40 | 「工具」→ Token 或 OAuth 轨加一条 | 列表 ● 已连接；无 Key 回显 |
+| 1:00 | HOME → 新会话：工作区（可点演示路径 B）→ Agent → 模型 → 工具可跳过 → 开始 | 默认 clone；进工作台 |
+| 1:20 | 扩权 Modal 弹出（mock 自动）→ 三选一 | 边界琥珀；标会话；无「全网」；状态仍 running |
+| 1:40 | 指 PTY：再输入一行 Enter | 同会话多轮入口（mock 回显） |
+| 2:00 | 再开一条不同路径；同路径应 WORKSPACE_BUSY；第三条 SESSION_LIMIT | HOME 显示 运行中 x/2 |
+| 2:20 | 设置里切「认证失败」看模型 ▲；或 `?scenario=isolation` 看阻断页 | 失败路径有产品文案 |
+| 2:40 | 收尾 | **mock ≠ I1–I11**；live 见下节 |
 
-收尾：这是 UI/契约 **D4**；**不是**真实闭环。真机见下文「十分钟 live」。
+收尾：这是全量 PAGE 的 UI/契约演示；**不是**真实闭环。
 
 ---
 
 ## 十分钟 live 话术（I1/I2 评审向 · P0-C-DOC-2）
 
-**前置（B/A 已备好）**：本机 Claude **2.1.292** 或已装 dsh；已 export 上游 env；`wails3 generate bindings` 后 `wails3 dev`；顶栏 **真实绑定**。
+**前置（B/A 已备好）**：本机 Claude **2.1.292** 或已装 dsh；已 export 上游 env；`wails3 generate bindings` 后 `./scripts/dev-desktop.sh`；顶栏 **真实绑定**；**侧栏须为「隔离就绪」**（若仍「健康检查尚未接线」→ 中止本话术，改 mock 或记阻断）。
 
 | 时间 | 说什么 / 做什么 | 观众应看到 |
 |---|---|---|

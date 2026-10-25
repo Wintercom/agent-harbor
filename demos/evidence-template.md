@@ -16,6 +16,14 @@ HARBOR_DEMO_MCP_ORIGIN / HARBOR_DEMO_MCP_TOOLS：
 工作区绝对路径：
 ```
 
+## Health 接线后重测备忘（2026-10-25）
+
+```text
+变更：GetRuntimeHealth 已接 Runtime.Health（不再固定「尚未接线」）
+重测：./scripts/dev-desktop.sh → 侧栏是否「隔离就绪」→ 再跑 I1
+若仍阻断：记录 reason 原文（隔离不可用 vs 其它）与 OS/CPU
+```
+
 ## I1 桌面真连
 
 ```text

@@ -102,9 +102,9 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 
 只看 C 的页面时，在 `frontend` 执行 `npm run dev`，不要加 `?live=1`。浏览器 mock 不会创建沙箱，也不会启动 Gate。
 
-### 明确未做
+### 明确未做（历史两天记录）
 
-两天范围之外，本记录没有实现：
+当时两天范围之外、本记录没有实现：
 
 - OAuth / SSO、钥匙串或任何重启后仍在的凭据
 - 多会话、`switchModel`、clone / 导回、完整 PTY、会话内追加提问
@@ -112,6 +112,8 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 - 官方 MCP Go SDK 客户端
 - 窗口导航锁定与 CSP
 - 真实上游协议组合的验收证据
+
+**分支 `feat/page-design-full`（2026-10-25）**：上列 OAuth / 多会话 / `switchModel` / clone / PTY **改回范围内**（见 [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) v1.2、[TASK-SPLIT-ABC](TASK-SPLIT-ABC.md) v2.0）。DesktopAPI 方法名已占位；真实现与证据仍待 B（Gate OAuth）与 A（PTY/clone 编排）接线。其余项（配额、官方 MCP SDK、CSP 等）仍不在本分支必做。
 
 连接探测当时把 HTTP 404 和其他小于 400 的状态当成成功后再写入 Secrets。这在后续审查里被标为缺陷，并已由后续提交改掉，不属于本节的完成项。
 
@@ -138,3 +140,71 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 | 2026-10-25 | `5028331`、`19b428b`、`44b08e7` | dsh Kit 装配，以及 MCP `tools/list` 的 SSE 长连接与有限 JSON 响应 |
 
 当前启动命令、环境变量和「未登记则拒绝连接」以根 [README.md](../README.md) 为准。真实模型与认证 MCP 的端到端验收仍待执行。
+
+## 2026-10-25：DesktopAPI 去占位（FULL-BIND 子集）
+
+本分支产品页已齐，桌面仍返回「健康检查尚未接线」会误伤联调。本轮 **B** 将下列方法接到现有控制面 / A 编排（**不改** Orchestrator 状态机）：
+
+| 方法 | 接线 |
+|---|---|
+| `GetRuntimeHealth` | `AttachOrchestrator` 注入的 `runtime.MacOS.Health`；成功 `isolationLevel=seatbelt` |
+| `ListSessions` / `DestroySession` | 转发 `orchestrator.List` / `Destroy` |
+| `ListAccounts` / `RemoveAccount` | `secrets.Store.List` / `Delete`（仍仅内存） |
+| `GetUIPrefs` / `SetUIPrefs` | 进程内偏好（重启丢失；钥匙串见 P1-B-01） |
+| `GetPermissionOverview` | 会话工作区 + 账号主机 + 记住主机；禁止路径类别文案 |
+| `ListRememberedHosts` / `RevokeRememberedHost` | 进程内表；`ResolvePermission(decision=project)` 成功后写入 |
+
+验证：
+
+```sh
+go test ./internal/desktop ./internal/secrets
+```
+
+桌面需重新 `./scripts/dev-desktop.sh`（或 `wails3 dev`）。Darwin 25 / arm64 非 root 上 Health 应可通过；其它环境 `Available=false` 且 reason 为隔离错误文案，**不再**是「尚未接线」。
+
+## 2026-10-25 续：SwitchModel / 自定义 Origin / OAuth 回环 / 扩权挂接
+
+| 项 | 状态 |
+|---|---|
+| `SwitchModel` | 编排更新账号 + `Gate.SetModelAccount`；桌面转发 |
+| 自定义模型 Origin | `profileId=custom` + `origin=https://host`；Policy/Connect 支持（仅 Claude） |
+| `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
+| 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
+
+## 2026-10-25 再续：Prefs 落盘 + Keychain + once 消费
+
+| 项 | 状态 |
+|---|---|
+| UIPrefs / 记住主机 | `~/Library/Application Support/AgentHarbor/ui-state.json`（`NewDesktopApp`） |
+| 凭据持久 | Darwin：优先 Keychain `com.liyufei916.agent-harbor`（探测失败则回退文件）；非 Darwin / 回退：`accounts/keys/*.key`（0600）+ `accounts.json` 元信息 |
+| 退出 | 持久化 Store **不清空**凭据（仅纯内存 `NewApp` 退出时 `Clear`） |
+| `once` 扩权 | `Harbor.HasExtraHost` 命中后删除；跨主机重定向本请求授权后立即消费 |
+
+## 2026-10-25 三续：OAuth 换票 + 安全跟随重定向 + DNS/IP
+
+| 项 | 状态 |
+|---|---|
+| OAuth | 默认 `response_type=code`；回调用 `code` 向 `{origin}/oauth/token` 换票；`HARBOR_MCP_OAUTH_CLIENT_ID`（默认 `agent-harbor`）/`HARBOR_MCP_OAUTH_CLIENT_SECRET`/`HARBOR_MCP_OAUTH_TOKEN_PATH`；仍兼容 `access_token` 查询/fragment |
+| 跨主机重定向 | 用户 `once`/`project` 后 **跟随一跳**；不携带 Authorization/API Key；多跳拒绝 |
+| DNS/IP | `ValidatePublicHostname`：拒绝回环/私网/链路本地/组播/CGNAT；解析结果任一违规即拒 |
+
+## 2026-10-25 四续：浏览器打开 + MCP 跟随 + Connect DNS
+
+| 项 | 状态 |
+|---|---|
+| OAuth | `StartMcpOAuth` 成功后 `open`/`xdg-open` 打开系统浏览器（失败不阻断 pending） |
+| MCP 网关 | 与模型反代同一套 `followCrossHostRedirect`（一跳、无凭据、DNS/IP） |
+| Connect | 非 `AllowInsecureLoopback` 的 profile 在探测前 `ValidatePublicHostname` |
+
+## 2026-10-25：Claude Detect 联调修复（配合 A Kit）
+
+本机常见：`claude --version` 为 `2.1.69` 而旧 Detect 硬钉 `2.1.292`，且帮助已无 `--permission-prompts`，导致「重新检测」一直不可用。现改为能力检测 + 明确 reason；`HARBOR_CLAUDE_BIN` / Homebrew 路径回退；可选 `HARBOR_CLAUDE_REQUIRE_VERSION` 钉版本。
+
+**仍未完**：真实 IdP / 模型 / MCP 的 I1 live 证据；PTY 真终端（A）。
+
+```sh
+go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
+```
+
+
+

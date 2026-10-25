@@ -32,6 +32,7 @@ type EndpointRule struct {
 type PolicyRequest struct {
 	Workspace string
 	AgentID   string
+	MountMode string
 	Model     contracts.AccountInfo
 	MCP       contracts.AccountInfo
 }
@@ -77,15 +78,29 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if strings.TrimSpace(req.AgentID) == "" {
 		return PolicySnapshot{}, ErrInvalidAgent
 	}
-	modelProf, ok := b.profiles[req.Model.ProfileID]
-	if !ok || modelProf.Kind != "model" {
-		return PolicySnapshot{}, ErrUnknownProfile
-	}
 	if req.Model.Kind != "model" {
 		return PolicySnapshot{}, ErrKindMismatch
 	}
-	if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel || req.AgentID == "codex" && req.Model.ProfileID != ProfileCodexModel {
-		return PolicySnapshot{}, ErrKindMismatch
+	var modelProf FixedProfile
+	if req.Model.ProfileID == ProfileCustom {
+		if req.AgentID != "claude" {
+			return PolicySnapshot{}, ErrKindMismatch
+		}
+		origin := "https://" + strings.TrimSpace(req.Model.Host)
+		custom, err := CustomModelProfile(origin, envOr("HARBOR_CLAUDE_MODEL", "custom-model"))
+		if err != nil {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		modelProf = custom
+	} else {
+		var ok bool
+		modelProf, ok = b.profiles[req.Model.ProfileID]
+		if !ok || modelProf.Kind != "model" {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel {
+			return PolicySnapshot{}, ErrKindMismatch
+		}
 	}
 	if !ValidBasePath(modelProf.BasePath) {
 		return PolicySnapshot{}, ErrUnknownProfile
@@ -100,9 +115,16 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if !sameHost(req.Model.Host, modelProf.Host) || !sameHost(req.MCP.Host, mcpProf.Host) {
 		return PolicySnapshot{}, ErrHostMismatch
 	}
+	mountMode := strings.TrimSpace(req.MountMode)
+	if mountMode == "" {
+		mountMode = "direct"
+	}
+	if mountMode != "direct" && mountMode != "clone" {
+		return PolicySnapshot{}, ErrInvalidWorkspace
+	}
 	return PolicySnapshot{
 		Workspace: ws,
-		MountMode: "direct",
+		MountMode: mountMode,
 		Model: EndpointRule{
 			Origin:   modelProf.Origin,
 			BasePath: modelProf.BasePath,

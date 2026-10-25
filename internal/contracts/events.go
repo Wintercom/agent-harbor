@@ -16,9 +16,10 @@ const (
 	EventTypeAudit            = "audit"
 	EventTypeError            = "error"
 	EventTypePermissionNeeded = "permission_needed"
+	EventTypePty              = "pty"
 )
 
-// 公开错误码（与 docs/CONTRACT.md v1.1 一致）。
+// 公开错误码（与 docs/CONTRACT.md v1.2 一致）。
 const (
 	ErrInvalidArgument         = "INVALID_ARGUMENT"
 	ErrAccountNotFound         = "ACCOUNT_NOT_FOUND"
@@ -76,6 +77,7 @@ type Event struct {
 	Audit      *AuditData        `json:"audit"`
 	Error      *AppError         `json:"error"`
 	Permission *PermissionNeeded `json:"permission"`
+	Pty        *OutputData       `json:"pty"`
 }
 
 // Validate 只校验公开事件的数据形状，不执行策略、文件或网络检查。
@@ -97,6 +99,9 @@ func (e Event) Validate() error {
 		payloads++
 	}
 	if e.Permission != nil {
+		payloads++
+	}
+	if e.Pty != nil {
 		payloads++
 	}
 	if payloads != 1 {
@@ -122,6 +127,10 @@ func (e Event) Validate() error {
 	case EventTypePermissionNeeded:
 		if e.Permission == nil || e.Permission.Target == "" || e.Permission.Action == "" {
 			return errors.New("invalid permission event")
+		}
+	case EventTypePty:
+		if e.Pty == nil || (e.Pty.Stream != "stdout" && e.Pty.Stream != "stderr") || e.Pty.Text == "" || strings.ContainsRune(e.Pty.Text, '\x00') {
+			return errors.New("invalid pty event")
 		}
 	default:
 		return errors.New("unknown event type")

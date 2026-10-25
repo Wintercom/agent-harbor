@@ -18,7 +18,7 @@ test("配置页切换 dsh 使用对应 profile 并清空旧模型，刷新保留
     const view=mountSetup(root,ctx);
     await view.refreshAgents();
     const select=nodes.get("#agent-select");
-    assert.equal(select.children.length,3);
+    assert.equal(select.children.length,2);
     select.value="dsh";select.onchange();
     assert.equal(ctx.state.agentId,"dsh");
     assert.equal(ctx.state.modelAccount,null);
@@ -42,10 +42,13 @@ test("mock dsh 会话拒绝 Claude 账号并允许匹配的 dsh 账号", async (
   try {
     await mock.connectModel({profileId:"demo-model",name:"fixture",apiKey:"fixture"});
     await mock.connectMcp({profileId:"demo-mcp",name:"fixture",apiKey:"fixture"});
-    const spec={agentId:"dsh",workspace:"/demo/project",task:"fixture",modelAccountId:"mock-model",mcpIds:["mock-mcp"]};
-    assert.equal((await mock.createSession(spec)).error.code,"INVALID_ARGUMENT");
-    await mock.connectModel({profileId:"dsh-model",name:"fixture",apiKey:"fixture"});
-    const created=await mock.createSession(spec);
+    const claudeSpec={agentId:"dsh",workspace:"/demo/project",task:"fixture",modelAccountId:"mock-model",mcpIds:["mock-mcp"]};
+    assert.equal((await mock.createSession(claudeSpec)).error.code,"INVALID_ARGUMENT");
+    const dshModel=await mock.connectModel({profileId:"dsh-model",name:"fixture-dsh",apiKey:"fixture"});
+    const created=await mock.createSession({
+      ...claudeSpec,
+      modelAccountId: dshModel.account.id,
+    });
     assert.equal(created.session.agentId,"dsh");
     assert.equal(created.error,null);
   } finally {mock.resetMock(); mock.setScenario("normal");}

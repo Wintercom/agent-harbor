@@ -7,13 +7,15 @@
 [![Security checks](https://img.shields.io/badge/security%20checks-Python-3776AB?logo=python&logoColor=white)](security/README.md)
 [![Unit coverage](https://img.shields.io/badge/unit%20coverage-59.2%25-blue)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地契约/编排/严格单进程 Runtime 与 Claude/dsh Kit（[DEV-A.md](docs/DEV-A.md)）；研发 B 已落地 Gate/Policy/Secrets 与 Wails v3 桌面桥（[DEV-B.md](docs/DEV-B.md)）；产品 C 已提供浏览器 mock 配置/工作台并通过 D4（[DEV-C.md](docs/DEV-C.md)）。真实模型/MCP 端到端联调仍待完成。
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。产品真源是 [PAGE-DESIGN](docs/PAGE-DESIGN.md) **全量**（非两天裁剪）；总纲 [SYSTEM-DESIGN](docs/SYSTEM-DESIGN.md) v2，契约 [CONTRACT](docs/CONTRACT.md) v1.2。
+
+分工：A 契约/编排/Runtime/Kit（[DEV-A](docs/DEV-A.md)）；B Gate/Policy/Secrets 与 Wails v3（[DEV-B](docs/DEV-B.md)）；C 全量 PAGE 壳与 mock（[DEV-C](docs/DEV-C.md)，D4 已过）。**交付形态是桌面 App**；浏览器 `frontend` mock 只看 UI，不计 I1–I11。真实模型/MCP/clone/PTY 联调仍待 A/B 接线。
 
 徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。桌面统一使用 Wails v3.0.0-beta.34，Go 依赖、CLI 与前端 runtime 固定同一版本。
 
-仓库：https://github.com/liyufei916/agent-harbor
+仓库：https://github.com/liyufei916/agent-harbor · 当前产品分支 `feat/page-design-full`
 
-可浏览原型（不接真 Runtime）：打开 [`prototype/index.html`](./prototype/index.html)（若有缓存请强制刷新）。
+可浏览原型（不接真 Runtime）：[`prototype/index.html`](./prototype/index.html)。mock 全量 PAGE：`cd frontend && npm run dev` → [http://127.0.0.1:5173/](http://127.0.0.1:5173/)。桌面 live：仓库根 `./scripts/dev-desktop.sh` 或 `wails3 dev`。
 
 ## 研发 B：开发与构建命令
 
@@ -67,9 +69,11 @@ agent-harbor/
 ├── security/ demos/ docs/ scripts/ prototype/
 ```
 
-模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
+模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [SYSTEM-DESIGN](docs/SYSTEM-DESIGN.md)（含 §6.1 易混主责）、[模块设计](docs/MODULE-DESIGN.md)、[接口契约](docs/CONTRACT.md) **v1.2** 与 [TASK-SPLIT](docs/TASK-SPLIT-ABC.md) **v2.0**；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
 
-当前实现：单一 macOS 环境、Claude Code / DeepSeek dsh 两种 Agent 可选、各自固定模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。dsh 为 2026-10-25 授权的范围扩展。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
+**分支 `feat/page-design-full`**：按 [PAGE-DESIGN](docs/PAGE-DESIGN.md) **全量**做；live 新方法可暂 `UNIMPLEMENTED`，**不以排期砍范围**。与 [MVP-2D3P](docs/MVP-2D3P.md)「两天裁剪」冲突时 **以 PAGE-DESIGN / 本分支为准**。
+
+当前基线：macOS、Claude Code / DeepSeek dsh、Gate 反代与认证 MCP；C 侧前端/mock 已对齐全量 PAGE（含阻断页、多账号、工作台/PTY/扩权）；后端新能力多为占位待 A/B 接线。
 
 ## GitHub 推送 / 拉取
 
@@ -94,18 +98,56 @@ HARBOR_NO_COMMIT=1 ./scripts/github-push.sh
 | 接口 | [docs/CONTRACT.md](docs/CONTRACT.md) | 准确签名、事件/错误与生命周期 |
 | 决策/验收 | [docs/DECISIONS.md](docs/DECISIONS.md) / [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | 待验证项、真实检查步骤和证据 |
 | 目录 | [docs/DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md) | Go/Wails 结构、职责和迁移映射 |
-| 当前优先 | [docs/MVP-2D3P.md](./docs/MVP-2D3P.md) | 三人两天架构、核心范围、分工、契约与验收 |
+| 产品真源 | [docs/PAGE-DESIGN.md](./docs/PAGE-DESIGN.md) | 全量页面、导航、文案与交互（本分支准绳） |
+| 任务卡 | [docs/TASK-SPLIT-ABC.md](./docs/TASK-SPLIT-ABC.md) | A/B/C 并行卡；P1-C-* / FULL-* |
+| 参考（非准绳） | [docs/MVP-2D3P.md](./docs/MVP-2D3P.md) | 历史两天裁剪；与 PAGE 冲突以 PAGE 为准 |
 | 导航 | [docs/README.md](./docs/README.md) | 设计文档关系及实现目录入口 |
-| 1 | [docs/DESIGN.md](./docs/DESIGN.md) | 做什么、不做什么、威胁与原则、人周 |
-| 2 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 控制面 / 执行面、Harbor Gate、会话与出站路径 |
-| 3 | [docs/PAGE-DESIGN.md](./docs/PAGE-DESIGN.md) | HOME / 新会话 / 工作台 / 模型 / 工具 / 设置 |
-| 4 | [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) | 分期任务与验收 |
+| 1 | [docs/DESIGN.md](./docs/DESIGN.md) | 做什么、不做什么、威胁与原则 |
+| 2 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 控制面 / 执行面、Harbor Gate、出站路径 |
+| 3 | [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) | 分期任务与验收 |
 | 可选 | [docs/SPIKE-3D3P.md](./docs/SPIKE-3D3P.md) | 短周期证明「密钥不进沙箱」的竖切 |
 
-## 完整 V1 产品要点（长期设计摘要）
+## 全量产品要点（PAGE-DESIGN / `feat/page-design-full`）
 
-- **模型**：自由添加名称 + API 地址 + Key；新会话 / 工作台用下拉选已添加项。
-- **工具**：MCP；浏览器登录 / SSO 或 API Key；列表统一「编辑 / 删除」。
-- **会话**：同时 running ≤ 2；同工作区禁止双开。
-- **安全叙事**：凭证只在本机；沙箱经 Gate 出站，明文密钥不进执行面。
-- **隔离落地**：**一期**工作区 + 进程降权（挡 reboot 靠降权，不靠目录）；**二期**换容器 Runtime。详见 [IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) 与 [DESIGN.md](./docs/DESIGN.md) §7.4 / §7.6。
+**形态与原则**
+
+- **桌面应用**（Wails）；浏览器仅 mock 同套 PAGE。不做 IDE（无目录树 / 编辑器三分栏）。
+- 叙事用语：「隔离运行」「密钥留在本机」「经安全闸口」；无「关闭隔离 / 本机直跑」。
+- 凭证只在本机录入；执行面经 Gate 出站，明文 Key 不进沙箱。
+
+**信息架构**
+
+| 入口 | 作用 |
+|---|---|
+| HOME | 会话中心；运行中 x/2；新会话 / 打开工作台 / 停止 / 销毁 |
+| 新会话 Wizard | 四步：工作区 → Agent → 模型 → 工具（可跳过）；挂载默认安全副本（clone） |
+| 工作台 | 边界条 + 当前模型切换 + PTY + 摘要；顶栏切换焦点会话 |
+| 模型 | **仅** OpenAPI：名称 + 地址 + Key；自由添加；列表无「未配置」占位 |
+| 工具 | MCP **双轨**：浏览器 OAuth/SSO **或** Token；编辑 / 删除 |
+| 设置 | Agent 检测、默认挂载、结束与清理、记住的网站、侧栏偏好、关于 |
+| Onboarding | 一屏三句 + 隔离检测 |
+| 系统打断 | 扩权 Modal；隔离不可用**阻断页**（无「仍要继续」） |
+
+**会话与并发**
+
+- 同时 running（含 provisioning）**≤ 2**；达上限 `SESSION_LIMIT`。
+- **同工作区禁止双开** → `WORKSPACE_BUSY`；换目录或打开已有会话。
+- 销毁二次确认：清隔离运行数据，本机密钥保留。
+
+**工作台与权限**
+
+- 边界条常驻；扩权一句话「谁访什么」；三选一：拒绝 / 仅本次 / 本项目始终允许；**无「全网」**。
+- 权限一览可撤销「本项目始终允许」；与设置「已记住的网站」同一数据。
+- PTY 内嵌回显（mock 可演示；live 待 A/B）；停止可询问是否清除隔离数据。
+
+**隔离与状态灯**
+
+- 侧栏状态灯：隔离就绪 / 不可用（红灯与阻断页一致）；不可用时禁新会话。
+- **一期**工作区 + 进程降权；**二期**容器 Runtime。详见 [IMPLEMENTATION](docs/IMPLEMENTATION.md) / [DESIGN](docs/DESIGN.md) §7.4 / §7.6。
+
+**怎么验收 UI（不计 I）**
+
+```bash
+cd frontend && npm run dev   # mock 全量 PAGE；?scenario=isolation|auth|busy|cleanup
+# 桌面真连：./scripts/dev-desktop.sh   # 或 wails3 dev
+```
