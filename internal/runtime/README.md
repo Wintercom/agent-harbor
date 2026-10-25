@@ -1,6 +1,6 @@
 # 隔离运行时
 
-`clone` 在应用数据目录 `AgentHarbor/sessions` 下创建独立副本，Runtime 仅授权副本读写，原目录不加入沙箱规则。拒绝符号链接和特殊文件，复制上限为单文件 64 MiB、总内容 1 GiB、10 万个节点；超限或取消会回滚。副本随 Runtime 清理删除，V1 不自动导回原目录。
+`clone` 在应用数据目录 `AgentHarbor/sessions` 下创建独立副本，Runtime 仅授权副本读写，原目录不加入沙箱规则。拒绝符号链接和特殊文件，复制上限为单文件 64 MiB、总内容 1 GiB、10 万个节点；超限或取消会回滚。停止时编排层将副本挪到 `AgentHarbor/retained/<sessionId>`，`SyncBackWorkspace` 可合并写回原目录；`DestroySession` 删除保留副本。
 
 负责人：A。macOS Seatbelt / sandbox-exec：Health 仍强制 `deny process-fork`；Agent 会话经 `RuntimeSpec.AllowDescendants` 在只读白名单内允许后代，Stop/Destroy 对 PPID 闭包 SIGKILL。非白名单 Bash/git 默认不可用。证据见 [研发 A 开发记录](../../docs/DEV-A.md)。
 

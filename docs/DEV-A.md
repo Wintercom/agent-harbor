@@ -172,7 +172,7 @@ git diff --check
 
 ## 2026-10-25：clone 工作区落地
 
-Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `AgentHarbor/sessions` 创建会话副本，仅向 Agent 授权副本。Handle.Workspace 返回实际执行目录，clone 会话快照显示副本路径；会话互斥仍使用规范化后的原始目录。停止、失败回滚和销毁底层 Runtime 均删除副本，原目录不自动导回。
+Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `AgentHarbor/sessions` 创建会话副本，仅向 Agent 授权副本。Handle.Workspace 返回实际执行目录，快照 `workspace` 为副本、`sourceWorkspace` 为原目录；会话互斥仍用原目录。停止时将副本挪到 `AgentHarbor/retained/<id>` 供 `SyncBackWorkspace`；`DestroySession` 删除保留副本。
 
 复制使用 `os.Root` 限定源目录范围；拒绝符号链接、特殊文件，单文件上限 64 MiB、总内容 1 GiB、节点数 10 万，逐块检查取消。复制得到独立文件并保留用户执行位；不继承 setuid/setgid 或组/其他用户权限。复制期间原目录仍可能被外部程序修改，副本不承诺文件系统原子快照。
 

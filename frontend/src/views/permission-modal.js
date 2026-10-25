@@ -38,8 +38,12 @@ export function mountPermissionModal(root, { sessionLabel, target, action, onDec
       try {
         await onDecide(decision);
         showToast(labels[decision] || "已处理", "ok");
-      } catch (_) {
-        showToast("处理失败，请重试", "bad");
+      } catch (e) {
+        const detail =
+          e && typeof e.message === "string" && e.message
+            ? e.message.slice(0, 120)
+            : "";
+        showToast(detail ? `处理失败：${detail}` : "处理失败，请重试", "bad");
         root.querySelectorAll("[data-d]").forEach((b) => {
           b.disabled = false;
         });

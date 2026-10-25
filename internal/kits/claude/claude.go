@@ -401,10 +401,15 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 
 // 每个用户轮次是一条 JSONL，正文中的换行和引号不能注入协议记录。
 func encodeMessage(data []byte) ([]byte, error) {
-	if !utf8.Valid(data) || len(data) == 0 || len(data) > 32768 || strings.TrimSpace(string(data)) == "" || strings.ContainsRune(string(data), 0) {
+	if !utf8.Valid(data) || len(data) == 0 || len(data) > 32768 || strings.ContainsRune(string(data), 0) {
 		return nil, kitError("INVALID_ARGUMENT")
 	}
-	message := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": string(data)}}
+	// WritePty 常带尾随 \n；正文去掉行尾空白，避免污染 stream-json content。
+	text := strings.TrimRight(string(data), "\r\n")
+	if strings.TrimSpace(text) == "" {
+		return nil, kitError("INVALID_ARGUMENT")
+	}
+	message := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": text}}
 	encoded, err := json.Marshal(message)
 	if err != nil {
 		return nil, kitError("INVALID_ARGUMENT")

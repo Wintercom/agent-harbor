@@ -46,6 +46,14 @@ function hostKey(host, workspace) {
   return `${normPath(workspace || FIXED.workspace)}::${String(host || "").toLowerCase()}`;
 }
 
+/** 与 secrets.keyHint 对齐：仅末四位，短 Key 遮罩。 */
+function keyHint(apiKey) {
+  const s = String(apiKey || "").trim();
+  if (!s) return "";
+  if (s.length < 4) return "••••";
+  return "…" + s.slice(-4);
+}
+
 function seedRememberedHosts() {
   rememberedHosts.clear();
   rememberedHosts.set(hostKey("api.example.com", FIXED.workspace), {
@@ -201,12 +209,43 @@ export async function listSessions() {
     sessionId: s.sessionId,
     state: s.state,
     workspace: s.workspace,
+    sourceWorkspace: s.sourceWorkspace || s.workspace,
     agentId: s.agentId,
     cleanupComplete: s.cleanupComplete,
     mountMode: s.mountMode,
     mcpIds: [...(s.mcpIds || [])],
   }));
   return { sessions: list, error: null };
+}
+
+/** 将 clone 副本「导回」原工作区（模拟：仅标记成功，不写盘）。 */
+export async function syncBackWorkspace(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return {
+      session: null,
+      error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
+    };
+  }
+  if (session.mountMode !== "clone") {
+    return {
+      session: snapshotOf(sessionId),
+      error: err("INVALID_ARGUMENT", "仅安全副本会话可导回（模拟）"),
+    };
+  }
+  if (session.cleanupComplete && !session.cloneRetained) {
+    return {
+      session: snapshotOf(sessionId),
+      error: err("INVALID_ARGUMENT", "副本已清理，无法导回（模拟）"),
+    };
+  }
+  snapshotOf(sessionId, { syncedBack: true });
+  emit({
+    type: "state_changed",
+    sessionId,
+    state: snapshotOf(sessionId),
+  });
+  return { session: snapshotOf(sessionId), error: null };
 }
 
 export async function destroySession(sessionId) {
@@ -428,6 +467,8 @@ export async function connectModel(input) {
     profileId,
     host,
     origin: input.origin || "",
+    model: input.model || "",
+    keyHint: keyHint(input.apiKey),
   };
   modelAccounts.set(id, account);
   return { account: { ...account }, error: null };
@@ -549,6 +590,7 @@ export async function connectMcp(input) {
     profileId: input.profileId,
     host: "demo-mcp.local",
     authMode: "token",
+    keyHint: keyHint(input.apiKey),
   };
   mcpAccounts.set(id, account);
   return { account: { ...account }, error: null };
@@ -627,7 +669,11 @@ export async function createSession(spec) {
     };
   }
   const ws = normPath(spec.workspace);
-  if (active.some((s) => normPath(s.workspace) === ws)) {
+  if (
+    active.some(
+      (s) => normPath(s.sourceWorkspace || s.workspace) === ws,
+    )
+  ) {
     return {
       session: null,
       error: err(
@@ -638,16 +684,23 @@ export async function createSession(spec) {
   }
 
   const sessionId = `sess-mock-${++sessionNumber}`;
+  const mountMode = spec.mountMode === "direct" ? "direct" : "clone";
   const session = {
     sessionId,
     state: "provisioning",
-    mountMode: spec.mountMode === "direct" ? "direct" : "clone",
+    mountMode,
     mcpIds: [...(spec.mcpIds || [])],
     modelAccountId: spec.modelAccountId,
     seq: 0,
-    workspace: spec.workspace,
+    sourceWorkspace: spec.workspace,
+    workspace:
+      mountMode === "clone"
+        ? `/tmp/harbor-mock-clone/${sessionId}`
+        : spec.workspace,
     agentId: spec.agentId,
     cleanupComplete: false,
+    cloneRetained: false,
+    syncedBack: false,
     error: null,
   };
   sessions.set(sessionId, session);
@@ -739,10 +792,12 @@ function beginStop(sessionId, fromUser) {
       });
       return;
     }
+    const cur = sessions.get(sessionId);
     snapshotOf(sessionId, {
       state: "stopped",
       cleanupComplete: true,
       error: null,
+      cloneRetained: cur?.mountMode === "clone",
     });
     emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
   });

@@ -86,8 +86,24 @@ func TestListFiltersWithoutReturningKeys(t *testing.T) {
 	if len(models) != 1 || models[0].ID != modelID || models[0].Kind != "model" {
 		t.Fatalf("models=%+v", models)
 	}
-	if _, err := s.Resolve(ctx, modelID); err != nil {
+	if models[0].KeyHint != "…-key" {
+		t.Fatalf("keyHint=%q", models[0].KeyHint)
+	}
+	raw, err := s.Resolve(ctx, modelID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if string(raw) != "model-key" {
+		t.Fatalf("resolve leaked shape=%q", raw)
+	}
+}
+
+func TestKeyHintMasksShortKeys(t *testing.T) {
+	if got := keyHint([]byte("ab")); got != "••••" {
+		t.Fatalf("short=%q", got)
+	}
+	if got := keyHint([]byte("sk-proj-abcdefgh")); got != "…efgh" {
+		t.Fatalf("long=%q", got)
 	}
 }
 

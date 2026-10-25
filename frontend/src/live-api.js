@@ -37,6 +37,7 @@ export function createLiveTransport() {
     removeAccount: bind("RemoveAccount"),
     listSessions: bind("ListSessions"),
     destroySession: bind("DestroySession"),
+    syncBackWorkspace: bind("SyncBackWorkspace"),
     getRuntimeHealth: bind("GetRuntimeHealth"),
     getPermissionOverview: bind("GetPermissionOverview"),
     listRememberedHosts: bind("ListRememberedHosts"),

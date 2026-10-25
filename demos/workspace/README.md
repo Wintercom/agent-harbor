@@ -6,7 +6,9 @@
 |---|---|
 | 相对路径 | `demos/workspace/`（相对仓库根） |
 | 允许改动 | 仅本目录；演示任务会创建/覆盖 `hello.txt` |
-| 禁止 | 凭据、`.env`、私钥、工作区外路径、扩权请求 |
+| 禁止 | 凭据、`.env`、私钥、工作区外路径 |
+| 默认 I2 任务 | 勿主动要扩权（见 demos 话术） |
+| 扩权 live | 专用清单 [`permission-live-test.md`](permission-live-test.md)；mock 演示扩权不算通过 |
 | mock | 浏览器 mock 仍返回固定路径 `/demo/project`，**不会**写本目录 |
 
 ## 本机解析绝对路径

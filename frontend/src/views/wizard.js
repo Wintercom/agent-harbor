@@ -105,7 +105,7 @@ export function mountWizard(root, ctx, opts = {}) {
         </div>
         <p class="meta">浏览器 mock 无系统选目录；桌面 live 才弹面板。SSH 密钥等敏感目录不会进入隔离环境。</p>
         <h3>文件怎么进隔离环境？</h3>
-        <label class="radio"><input type="radio" name="mount" value="clone" ${draft.mountMode === "clone" ? "checked" : ""}/> 安全副本（推荐）— 在副本里改，需要时再导回</label>
+        <label class="radio"><input type="radio" name="mount" value="clone" ${draft.mountMode === "clone" ? "checked" : ""}/> 安全副本（推荐）— 在副本里改，工作台可一键导回原文件夹</label>
         <label class="radio"><input type="radio" name="mount" value="direct" ${draft.mountMode === "direct" ? "checked" : ""}/> 直接编辑 — 改动立刻写回该文件夹</label>
         ${draft.mountMode === "direct" ? `<p class="meta warn">直接编辑会修改所选文件夹中的文件。</p>` : ""}
       `;
@@ -276,14 +276,15 @@ export function mountWizard(root, ctx, opts = {}) {
           return;
         }
         msg.textContent = "创建会话…";
-        const res = await api.createSession({
+        const createSpec = {
           workspace: draft.workspace,
           agentId: draft.agentId,
           modelAccountId: draft.modelAccountId,
           mcpIds: draft.mcpIds,
           task: draft.task,
           mountMode: draft.mountMode,
-        });
+        };
+        const res = await api.createSession(createSpec);
         if (res.error) {
           let hint = "";
           let cta = "";
@@ -304,7 +305,7 @@ export function mountWizard(root, ctx, opts = {}) {
         ctx.state.lastTask = draft.task;
         ctx.state.wizardResume = null;
         ctx.state.returnAfterAccount = null;
-        ctx.onSessionCreated(res.session);
+        ctx.onSessionCreated(res.session, createSpec);
       };
       wrap.querySelector("#wz-skip").onclick = () => start(true);
       wrap.querySelector("#wz-start").onclick = () => start(false);

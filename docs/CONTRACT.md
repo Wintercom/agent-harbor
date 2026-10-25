@@ -18,7 +18,7 @@ A/B 将声明落成 Go 类型与绑定，C 按本文 + [PAGE-DESIGN](PAGE-DESIGN
 | 能力 | 约定 |
 |---|---|
 | OAuth | `StartMcpOAuth` → 系统浏览器打开 `authUrl`；桌面在 **127.0.0.1** 收回环回调（具体端口写入 DECISIONS）；成功后账号出现在 `ListAccounts`，pending 清除；UI **轮询**列表或「我已完成登录」再刷；**暂不**新增 `account_changed` 事件；`CancelMcpOAuth` 清 pending |
-| clone | `mountMode=clone` 时 Runtime 在应用数据目录建副本并挂载；快照 `workspace` 为副本路径；清理/Destroy 删副本；**V1 无自动导回合并 API**（可 Finder 打开副本） |
+| clone | `mountMode=clone` 时 Runtime 在应用数据目录建副本并挂载；快照 `workspace` 为副本路径，`sourceWorkspace` 为原目录；停止后保留副本直至 `DestroySession`；**`SyncBackWorkspace`** 将副本合并写回原目录（覆盖同名文件，不删原目录多余文件） |
 | PTY | `WritePty`/`ResizePty` + 事件 `pty`；不支持时 `UNIMPLEMENTED` 或 `INVALID_ARGUMENT`，**不得缺方法名** |
 | 默认挂载 | 向导默认推荐 **clone**；用户可选 direct（须强警告） |
 | 扩权 | 快照 state **不**增加 `awaiting_permission`；仅 `permission_needed` + `ResolvePermission` |
@@ -96,7 +96,11 @@ type SessionSnapshot struct {
     SessionID string `json:"sessionId"`
     State string `json:"state"`
     Seq uint64 `json:"seq"`
-    Workspace string `json:"workspace"`
+    Workspace string `json:"workspace"` // clone 时为副本路径
+    SourceWorkspace string `json:"sourceWorkspace,omitempty"` // 用户原目录
+    MountMode string `json:"mountMode,omitempty"`
+    ModelAccountID string `json:"modelAccountId,omitempty"`
+    MCPIDs []string `json:"mcpIds,omitempty"`
     AgentID string `json:"agentId"`
     CleanupComplete bool `json:"cleanupComplete"`
     Error *AppError `json:"error"`
@@ -105,6 +109,9 @@ type SessionSummary struct {
     SessionID string `json:"sessionId"`
     State string `json:"state"`
     Workspace string `json:"workspace"`
+    SourceWorkspace string `json:"sourceWorkspace,omitempty"`
+    MountMode string `json:"mountMode,omitempty"`
+    MCPIDs []string `json:"mcpIds,omitempty"`
     AgentID string `json:"agentId"`
     CleanupComplete bool `json:"cleanupComplete"`
 }
@@ -194,6 +201,7 @@ type DesktopAPI interface {
     StopSession(string) SessionResponse
     ListSessions() SessionsResponse
     DestroySession(sessionID string) SessionResponse
+    SyncBackWorkspace(sessionID string) SessionResponse // clone → 原目录合并写回
     GetRuntimeHealth() RuntimeHealthResponse
     GetPermissionOverview(sessionID string) PermissionOverviewResponse
     ListRememberedHosts(workspace string) RememberedHostsResponse
@@ -388,7 +396,8 @@ type Runtime interface {
 | GetSession | 最新快照与 seq | 未知 → `SESSION_NOT_FOUND`；无任务正文/凭据 |
 | StopSession | 返回 stopping，事件报清理 | 终态幂等；未知 → `SESSION_NOT_FOUND` |
 | ListSessions | 本应用生命周期内会话摘要 | 含终态直至 Destroy；空 `[]` |
-| DestroySession | 移除终态会话记录 | 非 stopped/failed 或 cleanupComplete=false → `INVALID_ARGUMENT`；未知 → `SESSION_NOT_FOUND` |
+| DestroySession | 移除终态会话记录 | 非 stopped/failed 或 cleanupComplete=false → `INVALID_ARGUMENT`；未知 → `SESSION_NOT_FOUND`；并删除停止后保留的 clone 副本 |
+| SyncBackWorkspace | 将 clone 副本合并写回 `sourceWorkspace` | 仅 `mountMode=clone`；覆盖同名常规文件，不删原目录多余项；无副本/direct → `INVALID_ARGUMENT`；未知 → `SESSION_NOT_FOUND` |
 | GetRuntimeHealth | 隔离/Runtime 探测 | available=false 时 reason 必填；不因此自动放行无隔离启动 |
 | GetPermissionOverview | 只读边界摘要 | 无 Key/Sentinel/完整 Gate URL；sessionId 空则返回「默认/全局」允许摘要（无工作区时 workspace=""） |
 | ListRememberedHosts | 已记住主机 | workspace 空=全部；与设置「管理网站」同源 |

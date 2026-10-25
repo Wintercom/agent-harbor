@@ -42,6 +42,7 @@ type AccountInfo struct {
 	Host      string `json:"host"`
 	BasePath  string `json:"basePath,omitempty"` // 自定义模型 Anthropic 前缀，如 /anthropic
 	Model     string `json:"model,omitempty"`    // 探测成功时的模型名
+	KeyHint   string `json:"keyHint,omitempty"`  // 仅末四位提示，如 …a1b2；永不含完整 Key
 }
 
 // SessionSpec 是创建会话的前端请求。
@@ -61,7 +62,11 @@ type SessionSnapshot struct {
 	SessionID       string    `json:"sessionId"`
 	State           string    `json:"state"`
 	Seq             uint64    `json:"seq"`
-	Workspace       string    `json:"workspace"`
+	Workspace       string    `json:"workspace"`                 // 实际执行路径；clone 时为副本（或停止后保留的副本）
+	SourceWorkspace string    `json:"sourceWorkspace,omitempty"` // 用户所选原目录；direct 时与 Workspace 相同
+	MountMode       string    `json:"mountMode,omitempty"`       // direct | clone
+	ModelAccountID  string    `json:"modelAccountId,omitempty"`
+	MCPIDs          []string  `json:"mcpIds,omitempty"`
 	AgentID         string    `json:"agentId"`
 	CleanupComplete bool      `json:"cleanupComplete"`
 	Error           *AppError `json:"error"`
@@ -69,11 +74,14 @@ type SessionSnapshot struct {
 
 // SessionSummary 是列表用摘要。
 type SessionSummary struct {
-	SessionID       string `json:"sessionId"`
-	State           string `json:"state"`
-	Workspace       string `json:"workspace"`
-	AgentID         string `json:"agentId"`
-	CleanupComplete bool   `json:"cleanupComplete"`
+	SessionID       string   `json:"sessionId"`
+	State           string   `json:"state"`
+	Workspace       string   `json:"workspace"`
+	SourceWorkspace string   `json:"sourceWorkspace,omitempty"`
+	MountMode       string   `json:"mountMode,omitempty"`
+	MCPIDs          []string `json:"mcpIds,omitempty"`
+	AgentID         string   `json:"agentId"`
+	CleanupComplete bool     `json:"cleanupComplete"`
 }
 
 // AgentsResponse 是 ListAgents 的统一返回。
@@ -192,6 +200,8 @@ type DesktopAPI interface {
 	StopSession(string) SessionResponse
 	ListSessions() SessionsResponse
 	DestroySession(sessionID string) SessionResponse
+	// SyncBackWorkspace 将 clone 副本合并写回 SourceWorkspace；direct 会话返回 INVALID_ARGUMENT。
+	SyncBackWorkspace(sessionID string) SessionResponse
 	GetRuntimeHealth() RuntimeHealthResponse
 	GetPermissionOverview(sessionID string) PermissionOverviewResponse
 	ListRememberedHosts(workspace string) RememberedHostsResponse

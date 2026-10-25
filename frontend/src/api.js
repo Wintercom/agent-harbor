@@ -52,6 +52,20 @@ async function call(method, ...args) {
       ) {
         return { error: null, provisional: true };
       }
+      if (method === "syncBackWorkspace" || method === "stopSession") {
+        return {
+          session: null,
+          error: {
+            code: "UNIMPLEMENTED",
+            message:
+              method === "syncBackWorkspace"
+                ? "当前桌面未绑定 SyncBackWorkspace，请重新生成 Wails 绑定后再导回。"
+                : "当前桌面未绑定 StopSession。",
+            retryable: false,
+          },
+          provisional: true,
+        };
+      }
       if (method === "removeAccount") {
         return {
           error: {
@@ -151,6 +165,9 @@ export function listSessions() {
 }
 export function destroySession(sessionId) {
   return call("destroySession", sessionId);
+}
+export function syncBackWorkspace(sessionId) {
+  return call("syncBackWorkspace", sessionId);
 }
 export function listAccounts(kind) {
   return call("listAccounts", kind || "");

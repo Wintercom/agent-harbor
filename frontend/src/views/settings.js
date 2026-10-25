@@ -2,6 +2,7 @@
  * PAGE-DESIGN §5.8 设置（本机默认；无关闭隔离）
  */
 import * as api from "../api.js";
+import { showToast } from "../toast.js";
 
 export function mountSettings(root, ctx) {
   root.innerHTML = `
@@ -76,6 +77,7 @@ export function mountSettings(root, ctx) {
       <h3>关于</h3>
       <p class="meta">分支 feat/page-design-full · 对照 PAGE-DESIGN 全量。</p>
       <p class="meta" id="about-health">—</p>
+      <p class="meta hidden" id="about-onboard-note"></p>
       <div class="actions">
         <button type="button" class="btn" id="btn-rehealth">重新检测隔离</button>
         <button type="button" class="btn" id="btn-reset-onboard">下次启动重新显示引导</button>
@@ -209,14 +211,37 @@ export function mountSettings(root, ctx) {
     };
   }
   root.querySelector("#btn-reset-onboard").onclick = () => {
-    localStorage.removeItem("harbor-onboarded");
-    alert("已清除。刷新页面将再次显示引导。");
+    try {
+      localStorage.removeItem("harbor-onboarded");
+    } catch (_) {
+      showToast("无法写入本机偏好", "bad");
+      return;
+    }
+    showToast("已清除引导标记；下次启动应用将再次显示引导", "ok");
+    const note = root.querySelector("#about-onboard-note");
+    if (note) {
+      note.textContent = "引导将在下次启动时显示（关闭并重开桌面即可）。";
+      note.classList.remove("hidden");
+    }
   };
   root.querySelector("#btn-rehealth").onclick = async () => {
-    const h = await ctx.refreshHealth?.();
-    root.querySelector("#about-health").innerHTML = h?.available
-      ? `<span class="ok">● 隔离可用 ${h.isolationLevel || ""}</span>`
-      : `<span class="bad">○ ${h?.reason || "不可用"}</span>`;
+    const btn = root.querySelector("#btn-rehealth");
+    btn.disabled = true;
+    btn.textContent = "检测中…";
+    try {
+      const h = await ctx.refreshHealth?.();
+      const el = root.querySelector("#about-health");
+      if (h?.available) {
+        el.innerHTML = `<span class="ok">● 隔离可用 ${h.isolationLevel || ""}</span>`;
+        showToast("隔离检测通过", "ok");
+      } else {
+        el.innerHTML = `<span class="bad">○ ${h?.reason || "不可用"}</span>`;
+        showToast(h?.reason || "隔离不可用", "bad");
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "重新检测隔离";
+    }
   };
 
   refreshAgents();

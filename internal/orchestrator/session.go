@@ -43,6 +43,7 @@ type session struct {
 	cancel         context.CancelFunc
 	failure        *contracts.AppError
 	handle         runtime.Handle
+	retainedClone  string // 停止后保留的副本路径；Destroy 时删除
 	gateStarted    bool
 	wait           <-chan runtime.Exit
 	process        runtime.Process
@@ -144,7 +145,15 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 	sessionCtx, cancel := context.WithCancel(o.app)
 	s := &session{spec: spec, ctx: sessionCtx, cancel: cancel, retry: make(chan struct{}, 1), cleanupDone: make(chan struct{}), finished: make(chan struct{})}
 	s.started = time.Now()
-	s.snapshot = contracts.SessionSnapshot{SessionID: hex.EncodeToString(id[:]), Workspace: workspace, AgentID: spec.AgentID}
+	s.snapshot = contracts.SessionSnapshot{
+		SessionID:       hex.EncodeToString(id[:]),
+		Workspace:       workspace,
+		SourceWorkspace: workspace,
+		MountMode:       spec.MountMode,
+		ModelAccountID:  spec.ModelAccountID,
+		MCPIDs:          append([]string(nil), spec.MCPIDs...),
+		AgentID:         spec.AgentID,
+	}
 	o.sessions[s.snapshot.SessionID] = s
 	o.stateLocked(s, contracts.StateProvisioning)
 	initial := snapshot(s)
@@ -327,7 +336,16 @@ func (o *Service) List(ctx context.Context) ([]contracts.SessionSummary, error) 
 	defer o.mu.Unlock()
 	result := make([]contracts.SessionSummary, 0, len(o.sessions))
 	for _, s := range o.sessions {
-		result = append(result, contracts.SessionSummary{SessionID: s.snapshot.SessionID, State: s.snapshot.State, Workspace: s.snapshot.Workspace, AgentID: s.snapshot.AgentID, CleanupComplete: s.snapshot.CleanupComplete})
+		result = append(result, contracts.SessionSummary{
+			SessionID:       s.snapshot.SessionID,
+			State:           s.snapshot.State,
+			Workspace:       s.snapshot.Workspace,
+			SourceWorkspace: s.snapshot.SourceWorkspace,
+			MountMode:       s.snapshot.MountMode,
+			MCPIDs:          append([]string(nil), s.snapshot.MCPIDs...),
+			AgentID:         s.snapshot.AgentID,
+			CleanupComplete: s.snapshot.CleanupComplete,
+		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].SessionID < result[j].SessionID })
 	return result, nil
@@ -348,8 +366,54 @@ func (o *Service) Destroy(ctx context.Context, id string) (contracts.SessionSnap
 		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
 	}
 	result := snapshot(s)
+	if s.retainedClone != "" {
+		_ = os.RemoveAll(s.retainedClone)
+	}
 	delete(o.sessions, id)
 	return result, nil
+}
+
+// SyncBack 将安全副本合并写回用户原工作区（覆盖同名文件，不删原目录多余文件）。
+func (o *Service) SyncBack(ctx context.Context, id string) (contracts.SessionSnapshot, error) {
+	if ctx.Err() != nil {
+		return contracts.SessionSnapshot{}, publicError("CANCELLED")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[id]
+	if !ok {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("SESSION_NOT_FOUND")
+	}
+	if s.spec.MountMode != "clone" {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	source := s.snapshot.SourceWorkspace
+	if source == "" {
+		source = s.spec.Workspace
+	}
+	clonePath := s.retainedClone
+	if clonePath == "" {
+		clonePath = s.handle.Workspace
+	}
+	if clonePath == "" {
+		clonePath = s.snapshot.Workspace
+	}
+	if source == "" || clonePath == "" || sameWorkspace(source, clonePath) {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	o.mu.Unlock()
+	if err := runtime.SyncWorkspace(ctx, clonePath, source); err != nil {
+		return contracts.SessionSnapshot{}, safeError(err, "WORKSPACE_DENIED")
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	s, ok = o.sessions[id]
+	if !ok {
+		return contracts.SessionSnapshot{}, publicError("SESSION_NOT_FOUND")
+	}
+	return snapshot(s), nil
 }
 
 // WritePty 将后续轮次写入同一会话的交互 stdin，并由 Runtime 输出事件回传。
@@ -756,6 +820,14 @@ func (o *Service) cleanup(s *session) bool {
 		revokeCancel()
 	}
 	if s.handle.ID != "" {
+		if s.spec.MountMode == "clone" && s.handle.Workspace != "" {
+			if retained, err := retainCloneAside(s.snapshot.SessionID, s.handle.Workspace); err == nil {
+				o.mu.Lock()
+				s.retainedClone = retained
+				s.snapshot.Workspace = retained
+				o.mu.Unlock()
+			}
+		}
 		cleanupErr = errors.Join(cleanupErr, o.deps.Runtime.Destroy(ctx, s.handle))
 	}
 	if s.wait != nil {

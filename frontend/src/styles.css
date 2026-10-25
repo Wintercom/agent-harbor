@@ -581,10 +581,20 @@ label.field textarea { min-height: 88px; resize: vertical; }
 .pty-xterm-host .xterm-viewport {
   overflow-y: auto !important;
 }
-.pty-input {
-  border: 0;
+.pty-composer {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-shrink: 0;
   border-top: 1px solid var(--line);
   background: #0a121a;
+  padding: 8px;
+}
+.pty-input {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #070d14;
   color: var(--text);
   font: inherit;
   font-family: ui-monospace, Menlo, monospace;
@@ -593,12 +603,27 @@ label.field textarea { min-height: 88px; resize: vertical; }
   resize: vertical;
   min-height: 52px;
 }
+.pty-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pty-composer .btn {
+  flex-shrink: 0;
+  align-self: flex-end;
+  min-width: 72px;
+}
 .pty-input:focus {
   outline: 1px solid var(--accent, #3d8bfd);
   outline-offset: -1px;
 }
 .pty-input::placeholder {
   color: var(--muted, #8b9bb0);
+}
+.pty-composer-hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 10px 8px;
+  background: #0a121a;
 }
 .session-side {
   font-size: 13px;

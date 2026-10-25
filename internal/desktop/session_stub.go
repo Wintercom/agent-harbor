@@ -32,6 +32,10 @@ func (unavailableSession) Destroy(context.Context, string) (contracts.SessionSna
 	return contracts.SessionSnapshot{}, errOrchestratorDown
 }
 
+func (unavailableSession) SyncBack(context.Context, string) (contracts.SessionSnapshot, error) {
+	return contracts.SessionSnapshot{}, errOrchestratorDown
+}
+
 func (unavailableSession) Shutdown(context.Context) error { return nil }
 
 func (unavailableSession) WithConnection(context.Context, func(context.Context) error) error {

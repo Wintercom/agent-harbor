@@ -175,6 +175,17 @@ func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse 
 	return contracts.SessionResponse{Session: &snap}
 }
 
+// SyncBackWorkspace 将 clone 副本合并写回原工作区。
+func (d *DesktopAPI) SyncBackWorkspace(sessionID string) contracts.SessionResponse {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	snap, err := d.app.sessionRef().SyncBack(ctx, sessionID)
+	if err != nil {
+		return contracts.SessionResponse{Error: mapError(err)}
+	}
+	return contracts.SessionResponse{Session: &snap}
+}
+
 // GetRuntimeHealth 调用 Runtime.Health；未装配 Runtime 时返回编排未就绪。
 func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
 	rt := d.app.runtimeRef()

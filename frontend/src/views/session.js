@@ -9,6 +9,8 @@ import {
   mountPermissionModal,
   hidePermissionModal,
 } from "./permission-modal.js";
+import { showToast } from "../toast.js";
+import { askConfirm } from "../confirm-dialog.js";
 
 export function mountSession(root, ctx) {
   const healthOk = ctx.state.health?.available !== false;
@@ -17,7 +19,7 @@ export function mountSession(root, ctx) {
     <div id="sess-empty" class="empty-state">
       <p>当前没有打开的会话。从 HOME 进入工作台，或创建新会话。</p>
       <div class="actions">
-        <button type="button" class="btn" id="sess-empty-home">回 HOME</button>
+        <button type="button" class="btn" id="sess-empty-home">返回 HOME</button>
         <button type="button" class="btn primary" id="sess-empty-wizard" ${healthOk ? "" : "disabled"}>新会话</button>
       </div>
     </div>
@@ -33,17 +35,22 @@ export function mountSession(root, ctx) {
               <select id="sess-model"></select>
             </label>
             <button type="button" class="btn" id="btn-perm">权限一览</button>
+            <button type="button" class="btn hidden" id="btn-syncback" disabled>导回原文件夹</button>
+            <button type="button" class="btn" id="btn-to-home">返回 HOME</button>
             <button type="button" class="btn danger" id="btn-stop" disabled>停止</button>
-            <button type="button" class="btn" id="btn-to-home">回 HOME</button>
           </div>
         </div>
         <p class="meta" id="sess-hint-line"></p>
       </div>
       <div class="session-grid">
         <div class="pty-panel">
-          <div class="pty-toolbar meta">对话（已过滤协议 JSON）· 下方输入发下一轮</div>
+          <div class="pty-toolbar meta">对话（已过滤协议 JSON）· 请在下方输入框发下一轮（点终端无效）</div>
           <div id="sess-pty" class="pty" tabindex="0"></div>
-          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="点这里输入下一轮，Enter 发送（Shift+Enter 换行）"></textarea>
+          <div class="pty-composer">
+            <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="在此输入下一轮，Enter 发送（Shift+Enter 换行）"></textarea>
+            <button type="button" class="btn primary" id="sess-pty-send">发送</button>
+          </div>
+          <p class="meta pty-composer-hint" id="sess-pty-status"></p>
         </div>
         <aside class="session-side">
           <h3>本趟摘要</h3>
@@ -73,9 +80,12 @@ export function mountSession(root, ctx) {
     meta: root.querySelector("#sess-meta"),
     hintLine: root.querySelector("#sess-hint-line"),
     model: root.querySelector("#sess-model"),
+    syncBack: root.querySelector("#btn-syncback"),
     stop: root.querySelector("#btn-stop"),
     pty: root.querySelector("#sess-pty"),
     ptyInput: root.querySelector("#sess-pty-input"),
+    ptySend: root.querySelector("#sess-pty-send"),
+    ptyStatus: root.querySelector("#sess-pty-status"),
     audit: root.querySelector("#sess-audit"),
     permSummary: root.querySelector("#sess-perm-summary"),
     error: root.querySelector("#sess-error"),
@@ -90,6 +100,7 @@ export function mountSession(root, ctx) {
   let outCount = 0;
   let auditCount = 0;
   let term = null;
+  let sending = false;
   const modalRoot =
     typeof document !== "undefined"
       ? document.getElementById("modal-root")
@@ -109,18 +120,66 @@ export function mountSession(root, ctx) {
     return term;
   }
 
+  function syncComposer(snapshot) {
+    const running = snapshot?.state === "running";
+    const canSend = running && !sending && !!ctx.state.sessionId;
+    if (els.ptyInput) {
+      els.ptyInput.disabled = !canSend;
+      els.ptyInput.placeholder = running
+        ? "在此输入下一轮，Enter 发送（Shift+Enter 换行）"
+        : snapshot?.state
+          ? `会话 ${snapshot.state}，无法发送`
+          : "无会话";
+    }
+    if (els.ptySend) els.ptySend.disabled = !canSend;
+    if (els.ptyStatus) {
+      if (sending) els.ptyStatus.textContent = "发送中…";
+      else if (!snapshot) els.ptyStatus.textContent = "";
+      else if (!running)
+        els.ptyStatus.textContent =
+          "当前不可交互：请确认会话为 running；已结束请停止后新开。";
+      else
+        els.ptyStatus.textContent =
+          "点终端区域无效；在输入框打字后点「发送」或按 Enter。";
+    }
+  }
+
   async function sendRound() {
     const raw = els.ptyInput?.value ?? "";
-    const data = raw.trimEnd();
-    if (!ctx.state.sessionId || !data) return;
-    if (els.ptyInput) els.ptyInput.value = "";
+    const data = raw.trim();
+    const snap = ctx.state.lastSnapshot;
+    if (!ctx.state.sessionId || !data || sending) return;
+    if (snap?.state !== "running") {
+      const msg = "会话未在运行，无法发送";
+      if (els.error) els.error.textContent = msg;
+      showToast(msg, "bad");
+      syncComposer(snap);
+      return;
+    }
+    sending = true;
+    syncComposer(snap);
     appendPty(`\r\n› ${data}\r\n`, { raw: true });
-    const res = await api.writePty({
-      sessionId: ctx.state.sessionId,
-      data: data + "\n",
-    });
-    if (res?.error) {
-      els.error.textContent = `${res.error.code}: ${res.error.message}`;
+    try {
+      const res = await api.writePty({
+        sessionId: ctx.state.sessionId,
+        data: data + "\n",
+      });
+      if (res?.error) {
+        const msg = `${res.error.code}: ${res.error.message}`;
+        if (els.error) els.error.textContent = msg;
+        showToast(
+          res.error.code === "INVALID_ARGUMENT"
+            ? "发送失败：Agent 可能已结束本轮，请停止后新开会话"
+            : `发送失败：${res.error.message}`,
+          "bad",
+        );
+        return;
+      }
+      if (els.ptyInput) els.ptyInput.value = "";
+      if (els.error) els.error.textContent = "";
+    } finally {
+      sending = false;
+      syncComposer(ctx.state.lastSnapshot);
     }
   }
 
@@ -255,12 +314,28 @@ export function mountSession(root, ctx) {
     els.state.textContent = s.state;
     els.state.className = `status-pill ${s.state}`;
     const toolN = (s.mcpIds || []).length;
-    els.meta.textContent = `${s.agentId || ""} · ${s.workspace || ""} · 文件:${s.mountMode === "clone" ? "安全副本" : "直接编辑"} · 工具:${toolN}`;
+    const isClone = s.mountMode === "clone";
+    const source = s.sourceWorkspace || "";
+    els.meta.textContent = `${s.agentId || ""} · ${isClone && source ? `原:${source} · 副本:${s.workspace || ""}` : s.workspace || ""} · 文件:${isClone ? "安全副本" : "直接编辑"} · 工具:${toolN}`;
     els.hintLine.textContent = `● 隔离运行中 · ${s.sessionId || ""}`;
     const active =
       ["provisioning", "running", "stopping"].includes(s.state) ||
       (s.state === "failed" && !s.cleanupComplete);
     els.stop.disabled = !active;
+    // 运行中或已停止未销毁均可试导回；Destroy 后会话记录消失。
+    const canSync = isClone && !!source && s.state !== "stopping";
+    if (els.syncBack) {
+      if (els.syncBack.classList?.toggle) {
+        els.syncBack.classList.toggle("hidden", !isClone);
+      } else if (isClone) {
+        els.syncBack.className = (els.syncBack.className || "")
+          .replace(/\bhidden\b/g, "")
+          .trim();
+      } else {
+        els.syncBack.className = `${els.syncBack.className || ""} hidden`.trim();
+      }
+      els.syncBack.disabled = !canSync;
+    }
     if (s.error) els.error.textContent = `${s.error.code}: ${s.error.message}`;
     else els.error.textContent = "";
     if (s.state === "failed" && !s.cleanupComplete) {
@@ -268,12 +343,18 @@ export function mountSession(root, ctx) {
       els.hint.textContent = "清理未完成，请再点停止。";
     } else if (s.state === "stopped") {
       els.hint.classList.remove("hidden");
-      els.hint.textContent = "已停止。可回 HOME 再开。";
+      els.hint.textContent = isClone
+        ? "已停止。销毁前可点「导回原文件夹」；销毁后副本删除。"
+        : "已停止。可回 HOME 再开。";
+    } else if (isClone && active) {
+      els.hint.classList.remove("hidden");
+      els.hint.textContent = "安全副本模式：改动在副本中；需要时点「导回原文件夹」覆盖写回原目录。";
     } else {
       els.hint.classList.add("hidden");
     }
     if (s.modelAccountId) fillModels(s.modelAccountId);
     refreshPermSummary();
+    syncComposer(s);
   }
 
   function appendPty(text, { raw = false } = {}) {
@@ -313,26 +394,37 @@ export function mountSession(root, ctx) {
     } else if (ev.type === "permission_needed" && ev.permission) {
       const snap = ctx.state.lastSnapshot;
       const sid = ctx.state.sessionId || snap?.sessionId || "";
+      const uiDemo = !!ev.permission.uiDemo;
       setAwaiting(true);
       mountPermissionModal(modalRoot, {
         sessionLabel: `${snap?.agentId || "—"} · ${snap?.workspace || "—"} · ${sid}`,
         target: ev.permission.target,
         action: ev.permission.action,
         async onDecide(decision) {
-          const res = await api.resolvePermission({
-            sessionId: sid,
-            target: ev.permission.target,
-            decision,
-          });
-          if (res?.error) {
-            throw new Error(`${res.error.code}: ${res.error.message}`);
+          // uiDemo：仅前端演练，无 Orch 挂起；live 不得调 ResolvePermission（会 INVALID_ARGUMENT）。
+          // mock 真事件 / live Gate 真事件：必须走 resolvePermission。
+          if (!(uiDemo && !api.isMock())) {
+            const res = await api.resolvePermission({
+              sessionId: sid,
+              target: ev.permission.target,
+              decision,
+            });
+            if (res?.error) {
+              throw new Error(`${res.error.code}: ${res.error.message}`);
+            }
           }
           hidePermissionModal(modalRoot);
           setAwaiting(false);
           const li = document.createElement("li");
-          li.textContent = `扩权 ${decision} · ${ev.permission.target} · ${sid}`;
+          const tag = uiDemo ? "演示扩权" : "扩权";
+          li.textContent = `${tag} ${decision} · ${ev.permission.target} · ${sid}`;
           els.audit?.prepend(li);
-          refreshPermSummary();
+          if (uiDemo && !api.isMock() && decision === "project") {
+            // live UI 演示：权限一览仍以本机记住表为准，不写入假 project
+            els.error.textContent =
+              "这是界面演示，未写入本机记住表；真扩权须由 Gate 跨主机重定向触发。";
+          }
+          await refreshPermSummary();
         },
       });
     }
@@ -354,34 +446,163 @@ export function mountSession(root, ctx) {
     };
   }
 
+  if (els.syncBack) {
+    els.syncBack.onclick = async () => {
+      if (!ctx.state.sessionId) return;
+      const snap = ctx.state.lastSnapshot;
+      const dest = snap?.sourceWorkspace || "";
+      const ok = await askConfirm(
+        {
+          title: "导回原文件夹",
+          body: `将安全副本中的文件合并写回原文件夹。\n\n目标：${dest || "（未知）"}\n\n同名文件会被覆盖；原目录多出来的文件不会删除。`,
+          confirmLabel: "导回",
+          cancelLabel: "取消",
+        },
+        modalRoot,
+      );
+      if (!ok) return;
+      els.syncBack.disabled = true;
+      showToast("正在导回…", "");
+      try {
+        const res = await api.syncBackWorkspace(ctx.state.sessionId);
+        if (res.error) {
+          showToast(`${res.error.code}: ${res.error.message}`, "bad");
+          if (els.error)
+            els.error.textContent = `${res.error.code}: ${res.error.message}`;
+          return;
+        }
+        if (res.session) {
+          ctx.state.lastSnapshot = res.session;
+          renderSnapshot(res.session);
+        }
+        showToast("已导回原文件夹", "ok");
+      } catch (e) {
+        showToast(e?.message || "导回失败", "bad");
+      } finally {
+        const s = ctx.state.lastSnapshot;
+        els.syncBack.disabled = !(
+          s?.mountMode === "clone" && s?.sourceWorkspace
+        );
+      }
+    };
+  }
+
   if (els.stop) {
     els.stop.onclick = async () => {
       if (!ctx.state.sessionId) return;
       const prefs = ctx.state.uiPrefs || {};
-      if (!window.confirm("停止此会话？")) return;
+      const isClone = ctx.state.lastSnapshot?.mountMode === "clone";
+      const stopOk = await askConfirm(
+        {
+          title: "停止会话",
+          body: "停止后 Agent 不再运行。可稍后再开或销毁隔离数据。",
+          confirmLabel: "停止",
+          cancelLabel: "取消",
+          danger: true,
+        },
+        modalRoot,
+      );
+      if (!stopOk) return;
       let destroyAfter = false;
       if (prefs.askClearOnStop !== false) {
-        destroyAfter = window.confirm(
-          "清除隔离环境数据？本机密钥保留。\n确定 = 清除并停止；取消 = 仅停止。",
+        destroyAfter = await askConfirm(
+          {
+            title: "清除隔离数据？",
+            body: isClone
+              ? "确定 = 清除并停止（未导回的安全副本改动会丢失）\n取消 = 仅停止（停止后仍可导回）"
+              : "确定 = 清除隔离环境数据并停止（本机密钥保留）\n取消 = 仅停止",
+            confirmLabel: "清除并停止",
+            cancelLabel: "仅停止",
+            danger: true,
+          },
+          modalRoot,
         );
       } else {
         destroyAfter = prefs.clearOnStopDefault === "clear";
       }
-      els.stop.disabled = true;
-      const res = await api.stopSession(ctx.state.sessionId);
-      if (res.error) {
-        els.error.textContent = `${res.error.code}: ${res.error.message}`;
-        els.stop.disabled = false;
-        return;
+      if (destroyAfter && isClone) {
+        const syncFirst = await askConfirm(
+          {
+            title: "销毁前导回？",
+            body: "确定 = 先导回原文件夹再清除\n取消 = 直接清除（不导回）",
+            confirmLabel: "先导回再清除",
+            cancelLabel: "直接清除",
+          },
+          modalRoot,
+        );
+        if (syncFirst) {
+          showToast("正在导回…", "");
+          const syncRes = await api.syncBackWorkspace(ctx.state.sessionId);
+          if (syncRes.error) {
+            showToast(`${syncRes.error.code}: ${syncRes.error.message}`, "bad");
+            const still = await askConfirm(
+              {
+                title: "导回失败",
+                body: "仍要清除副本吗？未导回的改动会丢失。",
+                confirmLabel: "仍要清除",
+                cancelLabel: "取消停止",
+                danger: true,
+              },
+              modalRoot,
+            );
+            if (!still) return;
+          } else {
+            showToast("已导回原文件夹", "ok");
+          }
+        }
       }
-      if (destroyAfter && ctx.state.sessionId) {
-        await ctx.destroySession?.(ctx.state.sessionId);
+      els.stop.disabled = true;
+      showToast("正在停止…", "");
+      try {
+        const res = await api.stopSession(ctx.state.sessionId);
+        if (res.error) {
+          showToast(`${res.error.code}: ${res.error.message}`, "bad");
+          if (els.error)
+            els.error.textContent = `${res.error.code}: ${res.error.message}`;
+          els.stop.disabled = false;
+          return;
+        }
+        if (res.session) {
+          ctx.state.lastSnapshot = res.session;
+          renderSnapshot(res.session);
+        }
+        showToast(destroyAfter ? "已停止，正在清理…" : "已停止", "ok");
+        if (destroyAfter && ctx.state.sessionId) {
+          const sid = ctx.state.sessionId;
+          const waitClean = () =>
+            new Promise((resolve) => {
+              const off = api.onEvent((ev) => {
+                if (
+                  ev.sessionId === sid &&
+                  ev.type === "state_changed" &&
+                  ev.state?.cleanupComplete
+                ) {
+                  off();
+                  resolve();
+                }
+              });
+              setTimeout(() => {
+                off();
+                resolve();
+              }, 8000);
+            });
+          await waitClean();
+          await ctx.destroySession?.(sid);
+          showToast("已清除隔离数据", "ok");
+        }
+      } catch (e) {
+        showToast(e?.message || "停止失败", "bad");
+        els.stop.disabled = false;
       }
     };
   }
 
   const toHome = root.querySelector("#btn-to-home");
-  if (toHome) toHome.onclick = () => ctx.navigate?.("home") || ctx.showTab?.("setup");
+  if (toHome) {
+    toHome.onclick = () => {
+      ctx.navigate("home");
+    };
+  }
 
   const permBtn = root.querySelector("#btn-perm");
   if (permBtn) permBtn.onclick = async () => {
@@ -451,14 +672,17 @@ export function mountSession(root, ctx) {
       sendRound();
     });
   }
+  if (els.ptySend) els.ptySend.onclick = () => sendRound();
+  syncComposer(ctx.state.lastSnapshot);
 
   const side = root.querySelector(".session-side");
   if (side && typeof side.appendChild === "function" && typeof document !== "undefined") {
     const demo = document.createElement("button");
     demo.type = "button";
     demo.className = "btn";
-    demo.textContent = "演示扩权（mock）";
     demo.style.marginTop = "8px";
+    // live 也可点：仅演练 Modal 收尾，不调后端挂起决策。
+    demo.textContent = api.isMock() ? "演示扩权（mock）" : "演示扩权（仅界面）";
     side.appendChild(demo);
     demo.onclick = () => {
       if (!ctx.state.sessionId) {
@@ -469,7 +693,11 @@ export function mountSession(root, ctx) {
         sessionId: ctx.state.sessionId,
         seq: Date.now(),
         type: "permission_needed",
-        permission: { target: "api.npmjs.org", action: "请求访问新地址" },
+        permission: {
+          target: "api.npmjs.org",
+          action: "请求访问新地址",
+          uiDemo: true,
+        },
       });
     };
   }

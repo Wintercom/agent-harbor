@@ -77,6 +77,7 @@ func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte)
 		Host:      host,
 		BasePath:  strings.TrimRight(strings.TrimSpace(info.BasePath), "/"),
 		Model:     strings.TrimSpace(info.Model),
+		KeyHint:   keyHint(key),
 	}
 	keyCopy := append([]byte(nil), key...)
 	s.mu.Lock()
@@ -94,6 +95,18 @@ func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte)
 		return "", err
 	}
 	return id, nil
+}
+
+// keyHint 只保留末四位供 UI「已保存」提示；短于 4 则统一遮罩，永不回传全文。
+func keyHint(key []byte) string {
+	runes := []rune(strings.TrimSpace(string(key)))
+	if len(runes) == 0 {
+		return ""
+	}
+	if len(runes) < 4 {
+		return "••••"
+	}
+	return "…" + string(runes[len(runes)-4:])
 }
 
 // Resolve 返回真实凭据副本；仅供 Gate 使用。
@@ -120,28 +133,43 @@ func (s *Store) Delete(_ context.Context, id string) error {
 
 // Lookup 返回脱敏元信息，不返回密钥。
 func (s *Store) Lookup(_ context.Context, id string) (contracts.AccountInfo, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	rec, ok := s.byID[id]
 	if !ok {
 		return contracts.AccountInfo{}, ErrNotFound
 	}
+	s.ensureKeyHintLocked(rec)
 	return rec.meta, nil
 }
 
 // List 返回脱敏账号元信息；kind 为空时返回全部账号。
 func (s *Store) List(_ context.Context, kind string) []contracts.AccountInfo {
 	want := strings.TrimSpace(kind)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]contracts.AccountInfo, 0, len(s.byID))
 	for _, rec := range s.byID {
 		if want == "" || rec.meta.Kind == want {
+			s.ensureKeyHintLocked(rec)
 			out = append(out, rec.meta)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// 旧元数据无 KeyHint 时从 vault 回填末四位并落盘；仍不向调用方返回全文。
+func (s *Store) ensureKeyHintLocked(rec *record) {
+	if rec == nil || rec.meta.KeyHint != "" {
+		return
+	}
+	key, err := s.vault.Get(rec.meta.ID)
+	if err != nil || len(key) == 0 {
+		return
+	}
+	rec.meta.KeyHint = keyHint(key)
+	_ = s.saveMetaLocked()
 }
 
 // Clear 在应用退出时清空全部凭据。

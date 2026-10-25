@@ -21,6 +21,7 @@ type SessionService interface {
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
 	List(context.Context) ([]contracts.SessionSummary, error)
 	Destroy(context.Context, string) (contracts.SessionSnapshot, error)
+	SyncBack(context.Context, string) (contracts.SessionSnapshot, error)
 	ResolvePermission(context.Context, contracts.ResolvePermissionInput) error
 	SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
 	WritePty(context.Context, contracts.PtyInput) error

@@ -204,6 +204,10 @@ func (r *recordingSession) Destroy(_ context.Context, id string) (contracts.Sess
 	return contracts.SessionSnapshot{SessionID: id, State: "stopped", CleanupComplete: true}, nil
 }
 
+func (r *recordingSession) SyncBack(_ context.Context, id string) (contracts.SessionSnapshot, error) {
+	return contracts.SessionSnapshot{SessionID: id, MountMode: "clone", CleanupComplete: false}, nil
+}
+
 func (r *recordingSession) Shutdown(context.Context) error { return r.shutdownErr }
 
 func (r *recordingSession) WithConnection(ctx context.Context, action func(context.Context) error) error {

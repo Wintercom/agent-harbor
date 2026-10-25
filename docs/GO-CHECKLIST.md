@@ -43,7 +43,7 @@
 | 能力 | 最小约定 |
 |---|---|
 | **OAuth** | `StartMcpOAuth` 返回 `authUrl`+`pendingId`；**系统浏览器**打开；桌面进程在 **127.0.0.1 回环**收回调（端口由 B 选定并写入 DECISIONS）；成功 → 账号进 `ListAccounts`，pending 清除；UI **轮询** `ListAccounts`（或用户点「我已完成登录」再刷），**暂不**新增 `account_changed` 事件；`CancelMcpOAuth` 清 pending |
-| **clone** | `mountMode=clone`：Runtime 在应用数据目录建会话副本并挂载；`GetSession.workspace` 为**副本路径**；`DestroySession` / 清理删除副本；**V1 不做自动导回合并 API**——设置/摘要可「在 Finder 打开副本」；导回合并若要做另开 CONTRACT |
+| **clone** | `mountMode=clone`：Runtime 建会话副本；`workspace`=副本、`sourceWorkspace`=原目录；停止后保留副本直至 Destroy；**`SyncBackWorkspace`** 一键合并写回原目录 |
 | **PTY** | 绑定焦点会话进程的交互流；`WritePty`/`ResizePty` + 事件 `pty`；Agent 非交互或不支持时返回 `UNIMPLEMENTED` 或 `INVALID_ARGUMENT`（固定文案），**不得缺方法**；mock 可回显 |
 | **SwitchModel** | **A** 改会话后续出站账号；B 只绑 DesktopAPI；C 工作台下拉 |
 | **扩权 state** | 会话保持 `running`；只用 `permission_needed`（**不**引入 `awaiting_permission` 快照态） |

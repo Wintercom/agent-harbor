@@ -3,6 +3,8 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,22 +22,23 @@ const sentinel = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 
 // 替身只存在于测试包，不启动宿主机任务，也不进入生产装配。
 type fixture struct {
-	mu            sync.Mutex
-	calls         []string
-	failAt        string
-	destroyFails  bool
-	revokeFails   bool
-	blockAt       string
-	entered       chan struct{}
-	release       chan struct{}
-	exit          chan runtime.Exit
-	onOutput      func(contracts.OutputData)
-	onFatal       func(error)
-	onAudit       func(contracts.AuditData)
-	beforeExec    func(func(contracts.OutputData))
-	interactive   bool
-	switchedModel string
-	events        []contracts.Event
+	mu             sync.Mutex
+	calls          []string
+	failAt         string
+	destroyFails   bool
+	revokeFails    bool
+	blockAt        string
+	entered        chan struct{}
+	release        chan struct{}
+	exit           chan runtime.Exit
+	onOutput       func(contracts.OutputData)
+	onFatal        func(error)
+	onAudit        func(contracts.AuditData)
+	beforeExec     func(func(contracts.OutputData))
+	interactive    bool
+	switchedModel  string
+	events         []contracts.Event
+	cloneWorkspace string // 非空时 clone 会话挂载此真实目录
 }
 
 func newFixture() *fixture {
@@ -64,7 +67,11 @@ func (f *fixture) Create(_ context.Context, input runtime.RuntimeSpec) (runtime.
 	}
 	workspace := input.Workspace
 	if input.MountMode == "clone" {
-		workspace = "/private/test-copy"
+		if f.cloneWorkspace != "" {
+			workspace = f.cloneWorkspace
+		} else {
+			workspace = "/private/test-copy"
+		}
 	}
 	return runtime.Handle{ID: "runtime", PrivateHome: "/private/test-home", Workspace: workspace}, nil
 }
@@ -457,10 +464,57 @@ func TestCloneSnapshotKeepsOriginalWorkspaceLocked(t *testing.T) {
 	if running.Workspace != "/private/test-copy" {
 		t.Fatalf("未使用副本路径：%+v", running)
 	}
+	if running.SourceWorkspace == "" || running.SourceWorkspace == running.Workspace {
+		t.Fatalf("应保留原工作区：%+v", running)
+	}
 	_, err = o.Create(context.Background(), input)
 	assertCode(t, err, "WORKSPACE_BUSY")
 	_, _ = o.Stop(context.Background(), s.SessionID)
 	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
+func TestSyncBackMergesCloneIntoOriginal(t *testing.T) {
+	orig := t.TempDir()
+	clone := t.TempDir()
+	if err := os.WriteFile(filepath.Join(orig, "keep.txt"), []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "from-clone.txt"), []byte("synced"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "keep.txt"), []byte("overwritten"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture()
+	f.cloneWorkspace = clone
+	o := setup(t, f, Timeouts{}, nil)
+	input := spec()
+	input.Workspace = orig
+	input.MountMode = "clone"
+	s, err := o.Create(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	got, err := o.SyncBack(context.Background(), s.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameWorkspace(got.SourceWorkspace, orig) {
+		t.Fatalf("SourceWorkspace=%q want~%q", got.SourceWorkspace, orig)
+	}
+	if data, err := os.ReadFile(filepath.Join(orig, "from-clone.txt")); err != nil || string(data) != "synced" {
+		t.Fatalf("未导回新文件：%q %v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(orig, "keep.txt")); err != nil || string(data) != "overwritten" {
+		t.Fatalf("未覆盖同名文件：%q %v", data, err)
+	}
+	_, _ = o.Stop(context.Background(), s.SessionID)
+	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+	// 停止后仍可导回（副本已 retain）
+	if _, err := o.SyncBack(context.Background(), s.SessionID); err != nil {
+		t.Fatalf("停止后导回失败：%v", err)
+	}
 }
 
 func TestProvisionFailuresRollback(t *testing.T) {

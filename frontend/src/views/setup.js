@@ -339,19 +339,20 @@ export function mountSetup(root, ctx, opts = {}) {
     els.start.disabled = true;
     els.msg.textContent = "创建会话…";
     try {
-      const res = await api.createSession({
+      const createSpec = {
         workspace: ctx.state.workspace,
         agentId: ctx.state.agentId || "claude",
         modelAccountId: ctx.state.modelAccount.id,
         mcpIds: [ctx.state.mcpAccount.id],
         task: taskText,
-      });
+      };
+      const res = await api.createSession(createSpec);
       if (res.error) {
         els.msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
         return;
       }
       ctx.state.sessionId = res.session.sessionId;
-      ctx.onSessionCreated(res.session);
+      ctx.onSessionCreated(res.session, createSpec);
       els.msg.innerHTML = `<span class="ok">已进入 ${res.session.state}</span>`;
     } finally {
       refreshStart();

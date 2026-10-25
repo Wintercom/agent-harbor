@@ -172,7 +172,14 @@ export function mountModels(root, ctx, opts = {}) {
         <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://api.deepseek.com/anthropic"/></label>
         <p class="meta">须 Anthropic 兼容 Messages API（探测 <code>POST …/v1/messages</code>）。七牛：<code>api.qnaigc.com</code> 与 <code>llmapi.qiniu.io</code> 各用各的 Key，不能混用。</p>
         <label class="field">模型名（可选）<input id="m-model" value="${acc.model || ""}" placeholder="空则按主机推断，如 deepseek-chat"/></label>
-        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴完整 sk-… Key"/></label>
+        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" spellcheck="false" placeholder="${editing === "new" ? "粘贴完整 sk-… Key" : "重贴新 Key（不回显旧值）"}"/></label>
+        <p class="meta" id="m-key-hint">${
+          editing !== "new" && acc.keyHint
+            ? `已保存 · 末四位 ${acc.keyHint}`
+            : editing !== "new"
+              ? "已保存 · Key 在本机（重存一次后可显示末四位）"
+              : ""
+        }</p>
         <p class="meta" id="m-key-len"></p>
         <p class="meta">快捷填入（可选）：
           ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}" data-model="${p.model || ""}">${p.name}</button>`).join(" ")}

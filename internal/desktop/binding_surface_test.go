@@ -11,7 +11,7 @@ func TestDesktopExposesOnlyContractMethods(t *testing.T) {
 		"ListAgents": true, "SelectWorkspace": true, "ConnectModel": true, "ConnectMcp": true,
 		"ListAccounts": true, "RemoveAccount": true,
 		"CreateSession": true, "GetSession": true, "StopSession": true,
-		"ListSessions": true, "DestroySession": true,
+		"ListSessions": true, "DestroySession": true, "SyncBackWorkspace": true,
 		"GetRuntimeHealth": true, "GetPermissionOverview": true,
 		"ListRememberedHosts": true, "RevokeRememberedHost": true, "ResolvePermission": true,
 		"GetUIPrefs": true, "SetUIPrefs": true,

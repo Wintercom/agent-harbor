@@ -12,6 +12,11 @@ import { mountSettings } from "./views/settings.js";
 import { mountSession } from "./views/session.js";
 import { mountOnboarding } from "./views/onboarding.js";
 import { mountBlock } from "./views/block.js";
+import { showToast } from "./toast.js";
+import {
+  mergeHistoryRow,
+  buildRestartCreateSpec,
+} from "./session-history.js";
 
 const badge = document.getElementById("mode-badge");
 const sidebar = document.getElementById("sidebar");
@@ -101,17 +106,79 @@ const ctx = {
   refreshHealth() {
     return refreshHealth();
   },
-  onSessionCreated(snapshot) {
+  onSessionCreated(snapshot, createSpec) {
     api.activateSession?.(snapshot);
     ctx.state.sessionId = snapshot.sessionId;
     ctx.state.lastSnapshot = snapshot;
-    upsertHistory(snapshot);
+    if (createSpec?.task) ctx.state.lastTask = createSpec.task;
+    upsertHistory(snapshot, createSpec);
     try {
       sessionStorage.setItem("harbor-session-id", snapshot.sessionId);
     } catch {}
     sessionView.resetForNewSession(snapshot);
     syncSessionSwitch();
     navigate("session", { autoCollapse: true });
+  },
+  /** 用已停止会话的配置再 Create 一次，直接进工作台（I10）。 */
+  async restartSession(sessionId) {
+    const prev = (ctx.state.sessionHistory || []).find(
+      (s) => s.sessionId === sessionId,
+    );
+    if (!prev) {
+      showToast("找不到会话记录", "bad");
+      return { error: { code: "SESSION_NOT_FOUND", message: "无历史" } };
+    }
+    if (ctx.state.health?.available === false) {
+      showBlock(ctx.state.health.reason);
+      return { error: { code: "ISOLATION_UNAVAILABLE", message: "隔离不可用" } };
+    }
+    const spec = buildRestartCreateSpec(prev, {
+      modelAccountId: ctx.state.modelAccount?.id || "",
+      lastTask: ctx.state.lastTask || "",
+    });
+    if (!spec) {
+      ctx.state.wizardResume = {
+        step: 0,
+        draft: {
+          workspace: prev.projectWorkspace || prev.workspace || "",
+          mountMode: prev.mountMode || "clone",
+          agentId: prev.agentId || "claude",
+          modelAccountId: prev.modelAccountId || ctx.state.modelAccount?.id || "",
+          mcpIds: [...(prev.mcpIds || [])],
+          task: prev.task || ctx.state.lastTask || "",
+        },
+      };
+      showToast("缺少模型或工作区，请在向导中确认后开始", "bad");
+      navigate("wizard");
+      return { error: { code: "INVALID_ARGUMENT", message: "配置不完整" } };
+    }
+    const res = await api.createSession(spec);
+    if (res.error) {
+      showToast(`${res.error.code}: ${res.error.message}`, "bad");
+      if (
+        res.error.code === "WORKSPACE_BUSY" ||
+        res.error.code === "SESSION_LIMIT"
+      ) {
+        navigate("home");
+      } else {
+        ctx.state.wizardResume = {
+          step: 3,
+          draft: {
+            workspace: spec.workspace,
+            mountMode: spec.mountMode,
+            agentId: spec.agentId,
+            modelAccountId: spec.modelAccountId,
+            mcpIds: [...spec.mcpIds],
+            task: spec.task,
+          },
+        };
+        navigate("wizard");
+      }
+      return res;
+    }
+    ctx.onSessionCreated(res.session, spec);
+    showToast("已用上次配置重新开始", "ok");
+    return res;
   },
   async openSession(sessionId) {
     const res = await api.getSession(sessionId);
@@ -132,20 +199,19 @@ const ctx = {
   },
 };
 
-function upsertHistory(snapshot) {
-  if (!snapshot?.sessionId) return;
+function upsertHistory(snapshot, createSpec) {
+  const row = mergeHistoryRow(
+    (ctx.state.sessionHistory || []).find(
+      (s) => s.sessionId === snapshot?.sessionId,
+    ),
+    snapshot,
+    createSpec,
+    ctx.state.lastTask || "",
+  );
+  if (!row) return;
   const list = ctx.state.sessionHistory || [];
-  const i = list.findIndex((s) => s.sessionId === snapshot.sessionId);
-  const row = {
-    sessionId: snapshot.sessionId,
-    state: snapshot.state,
-    workspace: snapshot.workspace,
-    agentId: snapshot.agentId,
-    cleanupComplete: snapshot.cleanupComplete,
-    mountMode: snapshot.mountMode,
-    mcpIds: snapshot.mcpIds,
-  };
-  if (i >= 0) list[i] = { ...list[i], ...row };
+  const i = list.findIndex((s) => s.sessionId === row.sessionId);
+  if (i >= 0) list[i] = row;
   else list.unshift(row);
   ctx.state.sessionHistory = list.slice(0, 20);
 }

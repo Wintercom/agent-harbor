@@ -1,6 +1,8 @@
 /**
  * PAGE-DESIGN §5.2 HOME — 会话中心 running x/2
  */
+import { askConfirm } from "../confirm-dialog.js";
+
 export function mountHome(root, ctx) {
   const list = ctx.state.sessionHistory || [];
   const running = list.filter((s) =>
@@ -73,7 +75,7 @@ export function mountHome(root, ctx) {
         <div>
           <strong>${s.agentId || "—"}</strong>
           <span class="status-pill ${s.state || ""}">${s.state || "unknown"}</span>
-          <p class="meta">${s.workspace || ""} · 挂载:${s.mountMode || "direct"} · ${s.sessionId || ""}</p>
+          <p class="meta">${s.projectWorkspace || s.sourceWorkspace || s.workspace || ""} · 挂载:${s.mountMode === "clone" ? "安全副本" : s.mountMode || "direct"} · ${s.sessionId || ""}</p>
           <p class="meta">工具: ${(s.mcpIds || []).length ? (s.mcpIds || []).join(", ") : "无"}</p>
         </div>
         <div class="row">
@@ -114,13 +116,32 @@ export function mountHome(root, ctx) {
   });
   listEl.querySelectorAll("[data-destroy]").forEach((btn) => {
     btn.onclick = async () => {
-      if (!confirm("销毁隔离环境里的运行数据？本机保存的密钥会保留。")) return;
+      const ok = await askConfirm({
+        title: "销毁会话数据",
+        body: "销毁隔离环境里的运行数据？本机保存的密钥会保留。",
+        confirmLabel: "销毁",
+        cancelLabel: "取消",
+        danger: true,
+      });
+      if (!ok) return;
       btn.disabled = true;
       await ctx.destroySession?.(btn.getAttribute("data-destroy"));
       ctx.refreshHome?.();
     };
   });
   listEl.querySelectorAll("[data-again]").forEach((btn) => {
-    btn.onclick = () => ctx.navigate("wizard", { fresh: true });
+    btn.onclick = async () => {
+      if (ctx.state.health?.available === false) {
+        ctx.showBlock?.(ctx.state.health.reason);
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await ctx.restartSession?.(btn.getAttribute("data-again"));
+      } finally {
+        btn.disabled = false;
+        ctx.refreshHome?.();
+      }
+    };
   });
 }

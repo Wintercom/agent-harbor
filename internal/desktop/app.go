@@ -25,6 +25,7 @@ type SessionService interface {
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
 	List(context.Context) ([]contracts.SessionSummary, error)
 	Destroy(context.Context, string) (contracts.SessionSnapshot, error)
+	SyncBack(context.Context, string) (contracts.SessionSnapshot, error)
 	Shutdown(context.Context) error
 }
 
