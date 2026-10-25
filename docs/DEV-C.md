@@ -30,7 +30,7 @@
 | 场景 | 用途 |
 |---|---|
 | `normal` | provisioning → running → output → MCP allowed 审计 → stopping → stopped |
-| `auth` | ConnectModel / ConnectMcp 返回 `AUTH_FAILED` |
+| `auth` | ConnectModel / ConnectMcp 返回 `UPSTREAM_AUTH_FAILED` |
 | `busy` | CreateSession 返回 `SESSION_BUSY` |
 | `isolation` | CreateSession（及 Agent 不可用）`ISOLATION_UNAVAILABLE` |
 | `cleanup` | 用户 Stop 后 `failed` 且 `cleanupComplete=false`；再次 Stop 模拟清理重试成功 |
@@ -57,7 +57,7 @@ python3 -m http.server 5173
 | 页面已用 | 结论 |
 |---|---|
 | AgentInfo、ConnectInput、AccountInfo、SessionSpec/Snapshot、Responses、Event 四类载荷 | 已对齐，无额外字段需求 |
-| 错误码 AUTH_FAILED / SESSION_BUSY / ISOLATION_UNAVAILABLE / SESSION_NOT_FOUND / INVALID_ARGUMENT / CLEANUP_FAILED / INTERNAL_ERROR | mock 与 UI 已展示；正式码表以契约为准 |
+| 错误码 UPSTREAM_AUTH_FAILED / SESSION_BUSY / ISOLATION_UNAVAILABLE / SESSION_NOT_FOUND / INVALID_ARGUMENT / CLEANUP_FAILED / INTERNAL_ERROR | mock 与 UI 已展示；正式码表以契约为准 |
 | 当前无缺口提案 | 不改 CONTRACT；live 联调若缺字段再提 A |
 
 ### 本轮交互打磨

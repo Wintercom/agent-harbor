@@ -9,7 +9,7 @@
 | runtime | harbor_platform 系统测试通过 | 仍限既定 Darwin 25/arm64，禁止子进程 |
 | kits | 检测、启动规格测试通过 | 真实模型/MCP 任务 |
 | gate/policy/secrets | 无框架依赖，race 测试通过 | 真实认证上游验收 |
-| desktop/main | v3 Service、事件注册及构建通过，生成 8 个方法 | 系统目录面板人工选择、真实会话退出 |
+| desktop/main | v3 Service、事件注册及构建通过，仅生成契约内 7 个方法（修复后移除 AppInfo） | 系统目录面板人工选择、真实会话退出 |
 | frontend | 修复 live 绑定打包，JS/TS 两种生成模式均可构建 | 真实任务 UI 联调 |
 | build/CI | 增加固定版本 CLI、绑定与桌面构建检查 | 签名、公证不在本轮范围 |
 

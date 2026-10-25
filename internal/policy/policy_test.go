@@ -122,3 +122,10 @@ func TestNormalizeSymlink(t *testing.T) {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }
+
+func TestFixedEndpointDoesNotAuthorizeSimilarPaths(t *testing.T) {
+	rule := EndpointRule{Paths: []string{"/mcp"}}
+	if !PathAllowed(rule, "/mcp") || PathAllowed(rule, "/mcp-admin") || PathAllowed(rule, "/mcp/private") {
+		t.Fatal("精确端点被当作宽路径前缀")
+	}
+}

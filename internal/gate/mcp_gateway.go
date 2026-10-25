@@ -35,17 +35,13 @@ func newMCPGateway(h *Harbor, sessionID string, ln net.Listener) *mcpGateway {
 }
 
 func (g *mcpGateway) close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = g.server.Shutdown(ctx)
+	// 取消时强制关闭活动连接；Revoke 另行等待全部 handler 与 Serve 退出。
+	_ = g.server.Close()
 	_ = g.ln.Close()
 }
 
 func (g *mcpGateway) serve(ctx context.Context) {
-	go func() {
-		<-ctx.Done()
-		g.close()
-	}()
+
 	err := g.server.Serve(g.ln)
 	if err != nil && err != http.ErrServerClosed {
 		rt, _ := g.h.getSession(g.sid)
@@ -54,11 +50,12 @@ func (g *mcpGateway) serve(ctx context.Context) {
 }
 
 func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
-	rt, ok := g.h.getSession(g.sid)
+	rt, ok := g.h.acquireSession(g.sid)
 	if !ok {
 		http.Error(w, "session gone", http.StatusServiceUnavailable)
 		return
 	}
+	defer rt.active.Done()
 	host := hostOfOrigin(rt.spec.Policy.MCP.Origin)
 	switch r.Method {
 	case http.MethodGet, http.MethodPost, http.MethodDelete:

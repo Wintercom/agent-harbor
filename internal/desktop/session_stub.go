@@ -25,3 +25,7 @@ func (unavailableSession) Stop(context.Context, string) (contracts.SessionSnapsh
 }
 
 func (unavailableSession) Shutdown(context.Context) error { return nil }
+
+func (unavailableSession) WithConnection(context.Context, func(context.Context) error) error {
+	return errOrchestratorDown
+}

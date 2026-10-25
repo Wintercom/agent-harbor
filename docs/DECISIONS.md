@@ -9,8 +9,8 @@
 | 目标 macOS 版本、CPU、隔离后端可用性 | A | 待验证，记录真实 profile 正/负例；非 root 不等于已隔离 |
 | Go / Wails / Node / 前端工具及 MCP SDK 的确切版本 | B | **已统一**：Go toolchain 1.26（`go.mod`）、Wails **v3.0.0-beta.34**、Vite **7.3.7**、Node 20.19+ 或 22.12+（CI 使用 Node 22）；MCP 仍用标准 `net/http` 转发，完整 SDK 待真实上游验证后补记。绑定生成和生产构建已通过，本机 WebView 证据见评估记录 |
 | Claude Code 版本、安装方式及必要只读运行路径 | A | 待检测；不得复制完整用户 HOME/登录配置 |
-| demo-model 的真实提供方、协议、HTTPS origin 与允许路径 | B | profileId 固定 `demo-model`；默认 origin `https://api.deepseek.com`，可用 `HARBOR_DEMO_MODEL_ORIGIN` 覆盖；真实账号与路径待联调验证 |
-| demo-mcp 的真实服务、认证方式、origin、路径、只读工具名 | B/C | profileId 固定 `demo-mcp`；默认占位 origin，可用 `HARBOR_DEMO_MCP_ORIGIN` 覆盖；待选真实服务与账号 |
+| demo-model 的真实提供方、协议、HTTPS origin 与允许路径 | B | profileId 固定 `demo-model`；无默认供应商；必须登记 `HARBOR_DEMO_MODEL_ORIGIN`（HTTPS origin）和 `HARBOR_CLAUDE_MODEL`，使用 Anthropic `/v1/messages` 验证；真实账号待联调 |
+| demo-mcp 的真实服务、认证方式、origin、路径、只读工具名 | B/C | profileId 固定 `demo-mcp`；移除占位 origin；必须登记 `HARBOR_DEMO_MCP_ORIGIN` 及 `HARBOR_DEMO_MCP_TOOLS`；仅 Bearer、2025-03-26、`/mcp`，真实服务与账号待选 |
 | 专用非敏感工作区与一条稳定演示任务 | C/A | **已准备**：目录 `demos/workspace/`（见 [demos/README.md](../demos/README.md)、`./demos/verify-workspace.sh`）；任务文案见 demos 固定脚本。明确会直接改原文件，MCP 操作只读。mock 仍用 `/demo/project`，live/I2 选本目录绝对路径 |
 | 依赖安装、绑定生成、Go/前端独立测试和 Wails 开发命令 | B | **已可执行**（见根 README）：`go test ./internal/...`、`wails3 generate bindings ./...`、`frontend` 下 `npm run build`、`wails3 dev` / `wails3 build`；另有 GitHub Actions CI |
 

@@ -129,3 +129,5 @@ git diff --check
 ```
 
 以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
+
+2026-10-25 最新接线与修复状态见 [ABC 架构及联调审查](ABC-INTEGRATION-REVIEW.md#修复进展)。上文按日期保留的“待 Wails/真实组件装配”是历史记录；当前已完成装配，但真实上游任务与完整业务验收仍待执行。

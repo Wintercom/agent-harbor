@@ -4,11 +4,11 @@ import (
 	"context"
 	"embed"
 	"log"
-	"time"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/liyufei916/agent-harbor/internal/desktop"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -26,8 +26,9 @@ func main() {
 	if err := host.AttachOrchestrator(appCtx); err != nil {
 		log.Fatal(err)
 	}
-	app := application.New(desktopOptions(host, cancelApp))
-	newDesktopWindow(app)
+	options := desktopOptions(host, cancelApp)
+	app := application.New(options)
+	newDesktopWindow(app, options.ShouldQuit)
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -35,6 +36,9 @@ func main() {
 
 // desktopOptions 由正式入口和原生桌面冒烟测试共用。
 func desktopOptions(host *desktop.App, cancelApp context.CancelFunc) application.Options {
+	gate := newExitGate(host.Shutdown, func() { application.Get().Quit() }, func() {
+		application.Get().Dialog.Error().SetTitle("清理未完成").SetMessage("应用已保留窗口。请重试停止或退出，确认隔离资源清理完成后再关闭。").Show()
+	})
 	return application.Options{
 		Name:        "Agent Harbor",
 		Description: "密钥留在本机 · Agent 隔离运行",
@@ -47,19 +51,13 @@ func desktopOptions(host *desktop.App, cancelApp context.CancelFunc) application
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		OnShutdown: func() {
-			cancelApp()
-			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			defer cancel()
-			if err := host.Shutdown(ctx); err != nil {
-				log.Printf("应用退出清理失败：%v", err)
-			}
-		},
+		ShouldQuit: gate.request,
+		OnShutdown: cancelApp,
 	}
 }
 
-func newDesktopWindow(app *application.App) *application.WebviewWindow {
-	return app.Window.NewWithOptions(application.WebviewWindowOptions{
+func newDesktopWindow(app *application.App, mayClose func() bool) *application.WebviewWindow {
+	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Agent Harbor",
 		Width:  1100,
 		Height: 720,
@@ -70,4 +68,10 @@ func newDesktopWindow(app *application.App) *application.WebviewWindow {
 		BackgroundColour: application.NewRGB(24, 26, 32),
 		URL:              "/",
 	})
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		if !mayClose() {
+			event.Cancel()
+		}
+	})
+	return win
 }

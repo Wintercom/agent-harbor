@@ -22,14 +22,16 @@ import (
 )
 
 type Service struct {
-	mu       sync.Mutex
-	app      context.Context
-	deps     Dependencies
-	timeouts Timeouts
-	sessions map[string]*session
-	active   *session
-	closing  bool
-	events   *eventQueue
+	mu               sync.Mutex
+	app              context.Context
+	deps             Dependencies
+	timeouts         Timeouts
+	sessions         map[string]*session
+	active           *session
+	closing          bool
+	connectionDone   chan struct{}
+	connectionCancel context.CancelFunc
+	events           *eventQueue
 }
 
 type session struct {
@@ -98,7 +100,7 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 	if o.closing || o.app.Err() != nil {
 		return contracts.SessionSnapshot{}, publicError("CANCELLED")
 	}
-	if o.active != nil {
+	if o.active != nil || o.connectionDone != nil {
 		return contracts.SessionSnapshot{}, publicError("SESSION_BUSY")
 	}
 	spec.MCPIDs = append([]string(nil), spec.MCPIDs...)
@@ -150,11 +152,54 @@ func (o *Service) Stop(ctx context.Context, id string) (contracts.SessionSnapsho
 	return snapshot(s), nil
 }
 
+// WithConnection 与 Create 共用同一原子准入；回调仅由桌面连接服务提供。
+func (o *Service) WithConnection(ctx context.Context, action func(context.Context) error) error {
+	if ctx.Err() != nil {
+		return publicError("CANCELLED")
+	}
+	o.mu.Lock()
+	if o.closing || o.app.Err() != nil {
+		o.mu.Unlock()
+		return publicError("CANCELLED")
+	}
+	if o.active != nil || o.connectionDone != nil {
+		o.mu.Unlock()
+		return publicError("SESSION_BUSY")
+	}
+	call, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	o.connectionDone = done
+	o.connectionCancel = cancel
+	o.mu.Unlock()
+	stop := context.AfterFunc(o.app, cancel)
+	defer func() {
+		stop()
+		cancel()
+		o.mu.Lock()
+		o.connectionDone = nil
+		o.connectionCancel = nil
+		close(done)
+		o.mu.Unlock()
+	}()
+	return action(call)
+}
+
 func (o *Service) Shutdown(ctx context.Context) error {
 	o.mu.Lock()
 	o.closing = true
 	s := o.active
+	connectionDone := o.connectionDone
+	if o.connectionCancel != nil {
+		o.connectionCancel()
+	}
 	o.mu.Unlock()
+	if connectionDone != nil {
+		select {
+		case <-connectionDone:
+		case <-ctx.Done():
+			return publicError("CLEANUP_FAILED")
+		}
+	}
 	if s != nil {
 		if _, err := o.Stop(ctx, s.snapshot.SessionID); err != nil {
 			return err

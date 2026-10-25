@@ -152,7 +152,7 @@ func denySensitiveWorkspace(ws string) error {
 	return nil
 }
 
-// PathAllowed 判断请求路径是否落在规则内（前缀匹配，忽略查询串）。
+// PathAllowed 判断请求路径是否落在规则内（末尾 / 表示前缀，否则精确匹配；忽略查询串）。
 func PathAllowed(rule EndpointRule, path string) bool {
 	if path == "" {
 		path = "/"
@@ -171,7 +171,7 @@ func PathAllowed(rule EndpointRule, path string) bool {
 			}
 			continue
 		}
-		if strings.HasPrefix(path, p) {
+		if path == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(path, p)) {
 			return true
 		}
 	}

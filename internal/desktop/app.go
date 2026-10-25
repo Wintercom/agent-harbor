@@ -15,6 +15,7 @@ import (
 
 // SessionService 与研发 A 的 orchestrator.SessionService 方法一致。
 type SessionService interface {
+	WithConnection(context.Context, func(context.Context) error) error
 	Create(context.Context, contracts.SessionSpec) (contracts.SessionSnapshot, error)
 	Get(context.Context, string) (contracts.SessionSnapshot, error)
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
@@ -33,11 +34,10 @@ type App struct {
 	gate    *gate.Harbor
 	conn    *gate.Connections
 
-	mu        sync.Mutex
-	sessions  SessionService
-	agents    AgentDetector
-	ready     bool
-	busyState bool
+	mu       sync.Mutex
+	sessions SessionService
+	agents   AgentDetector
+	ready    bool
 }
 
 // NewApp 创建 Gate、Policy 与内存凭据。编排在 AttachOrchestrator 中注入。
@@ -92,31 +92,8 @@ func (a *App) orchestratorReady() bool {
 	return a.ready
 }
 
-// noteSessionState 记录编排层是否仍占用唯一会话。
-// 准备、运行、清理，以及清理未完成的失败，都拒绝重新连接账号。
-func (a *App) noteSessionState(state string, cleanupComplete bool) {
-	busy := state == contracts.StateProvisioning || state == contracts.StateRunning || state == contracts.StateStopping
-	if state == contracts.StateFailed && !cleanupComplete {
-		busy = true
-	}
-	a.mu.Lock()
-	a.busyState = busy
-	a.mu.Unlock()
-}
-
-func (a *App) sessionBusy() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.busyState
-}
-
-// forwardEvent 先记下会话占用，再发到前端。
-func (a *App) forwardEvent(ev contracts.Event) {
-	if ev.Type == contracts.EventTypeStateChanged && ev.State != nil {
-		a.noteSessionState(ev.State.State, ev.State.CleanupComplete)
-	}
-	a.EmitHarborEvent(ev)
-}
+// forwardEvent 不缓存或推导状态；准入由编排统一管理。
+func (a *App) forwardEvent(ev contracts.Event) { a.EmitHarborEvent(ev) }
 
 // EmitHarborEvent 把契约事件发到前端固定通道。
 func (a *App) EmitHarborEvent(ev contracts.Event) {
@@ -128,6 +105,8 @@ func (a *App) EmitHarborEvent(ev contracts.Event) {
 // Shutdown 先停止编排，再清空内存凭据。
 func (a *App) Shutdown(ctx context.Context) error {
 	err := a.sessionRef().Shutdown(ctx)
-	a.secrets.Clear()
+	if err == nil {
+		a.secrets.Clear()
+	}
 	return err
 }

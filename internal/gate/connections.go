@@ -1,7 +1,10 @@
 package gate
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,7 +39,7 @@ func NewConnections(store *secrets.Store, pol *policy.Builder) *Connections {
 	return &Connections{
 		secrets: store,
 		policy:  pol,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}
 }
 
@@ -65,9 +68,16 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
 
+	if !prof.ValidConnection() {
+		return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "后端接入配置尚未完整登记或不受支持。", false)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	defer c.client.CloseIdleConnections()
 	if err := c.probe(ctx, prof, key); err != nil {
+		if ctx.Err() != nil {
+			return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
+		}
 		return contracts.AccountInfo{}, err
 	}
 
@@ -85,36 +95,198 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 	return meta, nil
 }
 
+const mcpProtocolVersion = "2025-03-26"
+
 func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKey string) error {
-	path := prof.TestPath
-	if path == "" {
-		path = "/"
+	if prof.Kind == "mcp" {
+		return c.probeMCP(ctx, prof, apiKey)
 	}
-	u := strings.TrimRight(prof.Origin, "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	body, _ := json.Marshal(map[string]any{"model": prof.Model, "max_tokens": 1, "messages": []any{map[string]string{"role": "user", "content": "Reply OK"}}})
+	resp, err := c.probeRequest(ctx, prof, apiKey, "", http.MethodPost, body)
 	if err != nil {
-		return ErrUpstreamDown
+		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	resp, err := c.client.Do(req)
+	defer resp.Body.Close()
+	var result struct {
+		Type    string `json:"type"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	raw, err := readProbeBody(resp)
 	if err != nil {
 		return mapProbeErr(ctx, err)
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return ErrUpstreamAuth
-	case resp.StatusCode == http.StatusNotFound:
-		// 部分上游对探测路径返回 404，仍视为认证可达。
-		return nil
-	case resp.StatusCode >= 500:
+	if json.Unmarshal(raw, &result) != nil || result.Type != "message" || len(result.Content) == 0 || result.Content[0].Type != "text" || result.Content[0].Text == "" {
 		return ErrUpstreamDown
-	case resp.StatusCode >= 400:
-		return ErrUpstreamDown
-	default:
-		return nil
 	}
+	return ctx.Err()
+}
+
+func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile, key, session, method string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+prof.TestPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, ErrUpstreamDown
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if prof.Kind == "model" {
+		req.Header.Set("X-Api-Key", key)
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+	} else {
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
+		if session != "" {
+			req.Header.Set("Mcp-Session-Id", session)
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, mapProbeErr(ctx, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			return nil, ErrUpstreamAuth
+		}
+		return nil, ErrUpstreamDown
+	}
+	return resp, nil
+}
+
+func readProbeBody(resp *http.Response) ([]byte, error) {
+	const limit = 2 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > limit {
+		return nil, ErrUpstreamDown
+	}
+	return raw, nil
+}
+
+func decodeRPC(resp *http.Response, id int, result any) error {
+	var msg struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      int             `json:"id"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	decode := func(raw []byte) bool {
+		return json.Unmarshal(raw, &msg) == nil && msg.JSONRPC == "2.0" && msg.ID == id && len(msg.Result) > 0 && string(msg.Result) != "null" && (len(msg.Error) == 0 || string(msg.Error) == "null")
+	}
+	// SSE 在匹配到该请求的完整事件后即可返回，不等待持久流关闭。
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		scanner := bufio.NewScanner(io.LimitReader(resp.Body, (2<<20)+1))
+		scanner.Buffer(make([]byte, 4096), 2<<20)
+		var data []byte
+		matched := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				if len(data) > 0 && decode(bytes.TrimSpace(data)) {
+					matched = true
+					break
+				}
+				data = nil
+				continue
+			}
+			if strings.HasPrefix(line, "data:") {
+				data = append(data, strings.TrimPrefix(line, "data:")...)
+				data = append(data, '\n')
+			}
+		}
+		if !matched {
+			return ErrUpstreamDown
+		}
+	} else {
+		raw, err := readProbeBody(resp)
+		if err != nil || !decode(raw) {
+			return ErrUpstreamDown
+		}
+	}
+	if json.Unmarshal(msg.Result, result) != nil {
+		return ErrUpstreamDown
+	}
+	return nil
+}
+
+func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, key string) error {
+	initBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent-harbor","version":"0.1.0"}}}`)
+	resp, err := c.probeRequest(ctx, prof, key, "", http.MethodPost, initBody)
+	if err != nil {
+		return err
+	}
+	session := resp.Header.Get("Mcp-Session-Id")
+	if session != "" {
+		defer func() {
+			// 测试创建的上游会话也必须关闭，失败不触发任何工具调用。
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			if r, e := c.probeRequest(cleanup, prof, key, session, http.MethodDelete, nil); e == nil {
+				r.Body.Close()
+			}
+		}()
+	}
+	var initialized struct {
+		Protocol     string `json:"protocolVersion"`
+		Capabilities struct {
+			Tools json.RawMessage `json:"tools"`
+		} `json:"capabilities"`
+	}
+	err = decodeRPC(resp, 1, &initialized)
+	resp.Body.Close()
+	if err != nil || initialized.Protocol != mcpProtocolVersion || len(initialized.Capabilities.Tools) == 0 || string(initialized.Capabilities.Tools) == "null" {
+		return ErrUpstreamDown
+	}
+	resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		return ErrUpstreamDown
+	}
+	found := map[string]bool{}
+	cursor := ""
+	seen := map[string]bool{}
+	for page := 0; page < 20; page++ {
+		payload, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]string{"cursor": cursor}})
+		resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, payload)
+		if err != nil {
+			return err
+		}
+		var list struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+			NextCursor string `json:"nextCursor"`
+		}
+		err = decodeRPC(resp, 2, &list)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		for _, tool := range list.Tools {
+			found[tool.Name] = true
+		}
+		if list.NextCursor == "" {
+			for _, tool := range prof.Tools {
+				if !found[tool] {
+					return ErrUpstreamDown
+				}
+			}
+			return ctx.Err()
+		}
+		if seen[list.NextCursor] {
+			return ErrUpstreamDown
+		}
+		seen[list.NextCursor] = true
+		cursor = list.NextCursor
+	}
+	return ErrUpstreamDown
 }
 
 func mapProbeErr(ctx context.Context, err error) error {
