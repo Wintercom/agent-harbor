@@ -9,7 +9,7 @@ export function mountWizard(root, ctx) {
   let step = 0;
   const draft = {
     workspace: ctx.state.workspace || "",
-    mountMode: "direct",
+    mountMode: "clone",
     agentId: ctx.state.agentId || "claude",
     modelAccountId: ctx.state.modelAccount?.id || "",
     mcpIds: ctx.state.mcpAccount ? [ctx.state.mcpAccount.id] : [],
@@ -50,10 +50,11 @@ export function mountWizard(root, ctx) {
         <h2>选择工作区</h2>
         <p class="sub">选择要隔离运行的项目文件夹。</p>
         <div class="card drop-zone">
-          <button type="button" class="btn primary" id="wz-pick">选择文件夹</button>
+          <button type="button" class="btn primary" id="wz-pick">选择文件夹（mock）</button>
+          <button type="button" class="btn" id="wz-pick-b" title="第二条演示路径，用于双会话">演示路径 B</button>
           <p class="meta" id="wz-path">${draft.workspace || "未选择"}</p>
         </div>
-        <p class="meta">SSH 密钥等敏感目录不会进入隔离环境。</p>
+        <p class="meta">浏览器 mock 无系统选目录；桌面 live 才弹面板。SSH 密钥等敏感目录不会进入隔离环境。</p>
         <h3>文件怎么进隔离环境？</h3>
         <label class="radio"><input type="radio" name="mount" value="clone" ${draft.mountMode === "clone" ? "checked" : ""}/> 安全副本（推荐）— 在副本里改，需要时再导回</label>
         <label class="radio"><input type="radio" name="mount" value="direct" ${draft.mountMode === "direct" ? "checked" : ""}/> 直接编辑 — 改动立刻写回该文件夹</label>
@@ -138,14 +139,16 @@ export function mountWizard(root, ctx) {
     };
 
     if (step === 0) {
+      const applyPath = (path) => {
+        draft.workspace = path;
+        ctx.state.workspace = path;
+        paint();
+      };
       wrap.querySelector("#wz-pick").onclick = async () => {
         const res = await api.selectWorkspace();
-        if (!res.cancelled && !res.error) {
-          draft.workspace = res.path;
-          ctx.state.workspace = res.path;
-          paint();
-        }
+        if (!res.cancelled && !res.error) applyPath(res.path);
       };
+      wrap.querySelector("#wz-pick-b").onclick = () => applyPath("/demo/project-b");
       wrap.querySelectorAll('input[name="mount"]').forEach((el) => {
         el.onchange = () => {
           draft.mountMode = el.value;
@@ -217,7 +220,13 @@ export function mountWizard(root, ctx) {
           mountMode: draft.mountMode,
         });
         if (res.error) {
-          msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+          const hint =
+            res.error.code === "SESSION_LIMIT"
+              ? "请先在 HOME 停止一个会话。"
+              : res.error.code === "WORKSPACE_BUSY"
+                ? "请换「演示路径 B」或打开已有会话。"
+                : "";
+          msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<p class="meta">${hint}</p>` : ""}`;
           return;
         }
         ctx.state.lastTask = draft.task;

@@ -7,12 +7,13 @@ export function mountHome(root, ctx) {
     ["provisioning", "running", "stopping"].includes(s.state),
   ).length;
   const healthOk = ctx.state.health?.available !== false;
+  const atLimit = running >= 2;
 
   root.innerHTML = `
     <div class="page-head row" style="justify-content:space-between">
       <div>
         <h2>我的会话</h2>
-        <p class="sub">运行中 ${running}/2</p>
+        <p class="sub">运行中 ${running}/2${atLimit ? " · 已达上限" : ""}</p>
       </div>
       <button type="button" class="btn primary" id="btn-new-session" ${healthOk ? "" : "disabled"}>
         + 新会话
@@ -21,6 +22,11 @@ export function mountHome(root, ctx) {
     ${
       !healthOk
         ? `<p class="meta bad">隔离不可用，已禁用新会话。</p>`
+        : ""
+    }
+    ${
+      atLimit
+        ? `<p class="meta warn">已有 2 个会话在运行。可进向导，开始时会提示先停止其中一个；同工作区不能双开。</p>`
         : ""
     }
     <div id="home-list" class="session-list"></div>

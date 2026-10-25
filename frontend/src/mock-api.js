@@ -1,8 +1,8 @@
 /**
- * 浏览器独立 mock transport（CONTRACT.md / MODULE-DESIGN §5）
+ * 浏览器独立 mock transport（CONTRACT.md v1.2）
  * 固定数据：claude / mock-model+demo-model / mock-mcp+demo-mcp / /demo/project
  * 场景：normal | auth | busy | isolation | cleanup
- * 不导入 wailsjs；不含真实 Key。
+ * 多会话：running+preparing ≤2；同工作区禁双开；PTY/OAuth 可演示
  */
 
 const FIXED = {
@@ -22,11 +22,15 @@ const FIXED = {
 let scenario = "normal";
 let seq = 0;
 let sessionNumber = 0;
-let session = null;
+/** @type {Map<string, object>} */
+const sessions = new Map();
+/** @type {Map<string, number[]>} sessionId → timer ids */
+const sessionTimers = new Map();
 let modelAccount = null;
 let mcpAccount = null;
-let busy = false;
-let timers = [];
+/** @type {Map<string, object>} pending OAuth */
+const oauthPending = new Map();
+let uiPrefs = { sidebarCollapsed: false, autoCollapseWorkbench: true };
 const listeners = new Set();
 
 function err(code, message, retryable = false) {
@@ -38,14 +42,42 @@ function nextSeq() {
   return seq;
 }
 
-function clearTimers() {
-  timers.forEach((t) => clearTimeout(t));
-  timers = [];
+function clearSessionTimers(sessionId) {
+  const list = sessionTimers.get(sessionId) || [];
+  list.forEach((t) => clearTimeout(t));
+  sessionTimers.delete(sessionId);
+}
+
+function clearAllTimers() {
+  for (const id of [...sessionTimers.keys()]) clearSessionTimers(id);
+}
+
+function scheduleFor(sessionId, ms, fn) {
+  const tid = setTimeout(fn, ms);
+  const list = sessionTimers.get(sessionId) || [];
+  list.push(tid);
+  sessionTimers.set(sessionId, list);
+  return tid;
+}
+
+function isActive(s) {
+  if (!s) return false;
+  if (["provisioning", "running", "stopping"].includes(s.state)) return true;
+  return s.state === "failed" && !s.cleanupComplete;
+}
+
+function activeSessions() {
+  return [...sessions.values()].filter(isActive);
+}
+
+function normPath(p) {
+  return String(p || "").replace(/\/+$/, "") || "/";
 }
 
 function emit(partial) {
+  const sid = partial.sessionId || "";
   const event = {
-    sessionId: partial.sessionId || (session && session.sessionId) || "",
+    sessionId: sid,
     seq: nextSeq(),
     type: partial.type,
     state: partial.state || null,
@@ -55,7 +87,11 @@ function emit(partial) {
     permission: partial.permission || null,
     pty: partial.pty || null,
   };
-  if (session && event.sessionId === session.sessionId) session.seq = event.seq;
+  const s = sessions.get(sid);
+  if (s) {
+    s.seq = event.seq;
+    sessions.set(sid, s);
+  }
   if (event.state) event.state = { ...event.state, seq: event.seq };
   listeners.forEach((cb) => {
     try {
@@ -67,16 +103,12 @@ function emit(partial) {
   return event;
 }
 
-function snapshot(extra = {}) {
-  if (!session) return null;
-  session = { ...session, ...extra, seq };
-  return { ...session, error: session.error ? { ...session.error } : null };
-}
-
-function schedule(ms, fn) {
-  const id = setTimeout(fn, ms);
-  timers.push(id);
-  return id;
+function snapshotOf(sessionId, extra = {}) {
+  const cur = sessions.get(sessionId);
+  if (!cur) return null;
+  const next = { ...cur, ...extra, seq };
+  sessions.set(sessionId, next);
+  return { ...next, error: next.error ? { ...next.error } : null };
 }
 
 export function setScenario(name) {
@@ -94,18 +126,28 @@ export function isMockTransport() {
 export async function listAgents() {
   const agents = [
     { ...FIXED.agent },
-    { id: "dsh", name: "DeepSeek dsh", version: "0.2.1-rc.2", available: true, reason: "", modelProfileId: "dsh-model" },
+    {
+      id: "dsh",
+      name: "DeepSeek dsh",
+      version: "0.2.1-rc.2",
+      available: true,
+      reason: "",
+      modelProfileId: "dsh-model",
+    },
   ];
   if (scenario === "isolation") {
     return {
-      agents: agents.map((agent) => ({...agent, available: false, reason: "隔离能力不可用（模拟）"})),
+      agents: agents.map((agent) => ({
+        ...agent,
+        available: false,
+        reason: "隔离能力不可用（模拟）",
+      })),
       error: null,
     };
   }
   return { agents, error: null };
 }
 
-/** CONTRACT v1.2 GetRuntimeHealth */
 export async function getRuntimeHealth() {
   if (scenario === "isolation") {
     return {
@@ -123,25 +165,22 @@ export async function getRuntimeHealth() {
   };
 }
 
-/** CONTRACT v1.2 ListSessions（mock 单会话表） */
 export async function listSessions() {
-  if (!session) return { sessions: [], error: null };
-  return {
-    sessions: [
-      {
-        sessionId: session.sessionId,
-        state: session.state,
-        workspace: session.workspace,
-        agentId: session.agentId,
-        cleanupComplete: session.cleanupComplete,
-      },
-    ],
-    error: null,
-  };
+  const list = [...sessions.values()].map((s) => ({
+    sessionId: s.sessionId,
+    state: s.state,
+    workspace: s.workspace,
+    agentId: s.agentId,
+    cleanupComplete: s.cleanupComplete,
+    mountMode: s.mountMode,
+    mcpIds: [...(s.mcpIds || [])],
+  }));
+  return { sessions: list, error: null };
 }
 
 export async function destroySession(sessionId) {
-  if (!session || session.sessionId !== sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
     return {
       session: null,
       error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
@@ -149,13 +188,13 @@ export async function destroySession(sessionId) {
   }
   if (!["stopped", "failed"].includes(session.state) || !session.cleanupComplete) {
     return {
-      session: snapshot(),
+      session: snapshotOf(sessionId),
       error: err("INVALID_ARGUMENT", "仅终态且清理完成的会话可销毁（模拟）"),
     };
   }
-  const last = snapshot();
-  session = null;
-  busy = false;
+  const last = snapshotOf(sessionId);
+  clearSessionTimers(sessionId);
+  sessions.delete(sessionId);
   return { session: last, error: null };
 }
 
@@ -168,14 +207,14 @@ export async function listAccounts(kind) {
 
 export async function removeAccount(accountId) {
   if (modelAccount?.id === accountId) {
-    if (session && !["stopped", "failed"].includes(session.state)) {
+    if (activeSessions().length) {
       return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
     }
     modelAccount = null;
     return { error: null };
   }
   if (mcpAccount?.id === accountId) {
-    if (session && !["stopped", "failed"].includes(session.state)) {
+    if (activeSessions().length) {
       return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
     }
     mcpAccount = null;
@@ -185,10 +224,11 @@ export async function removeAccount(accountId) {
 }
 
 export async function getPermissionOverview(sessionId) {
+  const s = sessionId ? sessions.get(sessionId) : null;
   return {
     overview: {
-      sessionId: sessionId || session?.sessionId || "",
-      workspace: session?.workspace || FIXED.workspace,
+      sessionId: sessionId || s?.sessionId || "",
+      workspace: s?.workspace || FIXED.workspace,
       allowedHosts: ["api.example.com"],
       mcpSummary: mcpAccount ? [mcpAccount.name] : [],
       deniedPathCategories: ["系统目录"],
@@ -198,7 +238,16 @@ export async function getPermissionOverview(sessionId) {
 }
 
 export async function listRememberedHosts() {
-  return { hosts: [], error: null };
+  return {
+    hosts: [
+      {
+        host: "api.example.com",
+        workspace: FIXED.workspace,
+        scope: "project",
+      },
+    ],
+    error: null,
+  };
 }
 
 export async function revokeRememberedHost() {
@@ -212,28 +261,47 @@ export async function resolvePermission(input) {
   if (!["deny", "once", "project"].includes(input.decision)) {
     return { error: err("INVALID_ARGUMENT", "非法决策（模拟）") };
   }
+  if (!sessions.has(input.sessionId)) {
+    return { error: err("SESSION_NOT_FOUND", "会话不存在（模拟）") };
+  }
   return { error: null };
 }
 
+function loadPrefsFromStorage() {
+  try {
+    const raw = localStorage.getItem("harbor-ui-prefs");
+    if (raw) uiPrefs = { ...uiPrefs, ...JSON.parse(raw) };
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 export async function getUIPrefs() {
-  return {
-    prefs: { sidebarCollapsed: false, autoCollapseWorkbench: true },
-    error: null,
-  };
+  loadPrefsFromStorage();
+  return { prefs: { ...uiPrefs }, error: null };
 }
 
 export async function setUIPrefs(prefs) {
-  return {
-    prefs: {
-      sidebarCollapsed: !!prefs?.sidebarCollapsed,
-      autoCollapseWorkbench: prefs?.autoCollapseWorkbench !== false,
-    },
-    error: null,
+  uiPrefs = {
+    sidebarCollapsed: !!prefs?.sidebarCollapsed,
+    autoCollapseWorkbench: prefs?.autoCollapseWorkbench !== false,
   };
+  try {
+    localStorage.setItem("harbor-ui-prefs", JSON.stringify(uiPrefs));
+  } catch (_) {
+    /* ignore */
+  }
+  return { prefs: { ...uiPrefs }, error: null };
 }
 
 export async function selectWorkspace() {
+  // 浏览器无系统面板：给可区分的第二条路径，便于测同目录冲突时用 query
   return { path: FIXED.workspace, cancelled: false, error: null };
+}
+
+/** 测试/演示：指定工作区路径（浏览器 mock） */
+export async function selectWorkspacePath(path) {
+  return { path: path || FIXED.workspace, cancelled: false, error: null };
 }
 
 export async function connectModel(input) {
@@ -263,12 +331,6 @@ export async function connectModel(input) {
       error: err("INVALID_ARGUMENT", "自定义模型须提供 origin"),
     };
   }
-  if (busy || (session && !["stopped", "failed"].includes(session.state))) {
-    return {
-      account: null,
-      error: err("SESSION_BUSY", "会话进行中，拒绝重新连接"),
-    };
-  }
   let host = "demo-model.local";
   if (input.origin) {
     try {
@@ -293,16 +355,28 @@ export async function connectModel(input) {
 
 export async function startMcpOAuth(input) {
   const pendingId = `oauth-${Date.now()}`;
-  schedule(400, () => {
-    mcpAccount = {
-      id: "mock-mcp",
-      kind: "mcp",
-      name: input?.name || "OAuth MCP",
-      profileId: input?.profileId || FIXED.mcpProfileId,
-      host: "oauth.mcp.local",
-      authMode: "oauth",
-    };
+  oauthPending.set(pendingId, {
+    name: input?.name || "OAuth MCP",
+    profileId: input?.profileId || FIXED.mcpProfileId,
+    origin: input?.origin || "",
   });
+  scheduleFor(
+    pendingId,
+    800,
+    () => {
+      const p = oauthPending.get(pendingId);
+      if (!p) return;
+      mcpAccount = {
+        id: "mock-mcp",
+        kind: "mcp",
+        name: p.name,
+        profileId: p.profileId,
+        host: "oauth.mcp.local",
+        authMode: "oauth",
+      };
+      oauthPending.delete(pendingId);
+    },
+  );
   return {
     authUrl: "https://example.com/oauth/mock",
     pendingId,
@@ -310,12 +384,22 @@ export async function startMcpOAuth(input) {
   };
 }
 
-export async function cancelMcpOAuth() {
+export async function cancelMcpOAuth(pendingId) {
+  if (pendingId) {
+    clearSessionTimers(pendingId);
+    oauthPending.delete(pendingId);
+  } else {
+    for (const id of [...oauthPending.keys()]) {
+      clearSessionTimers(id);
+      oauthPending.delete(id);
+    }
+  }
   return { error: null };
 }
 
 export async function switchModel(input) {
-  if (!session || session.sessionId !== input?.sessionId) {
+  const session = sessions.get(input?.sessionId);
+  if (!session) {
     return {
       session: null,
       error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
@@ -327,11 +411,12 @@ export async function switchModel(input) {
       error: err("ACCOUNT_NOT_FOUND", "模型账号不存在（模拟）"),
     };
   }
-  return { session: snapshot(), error: null };
+  return { session: snapshotOf(input.sessionId), error: null };
 }
 
 export async function writePty(input) {
-  if (!session || session.sessionId !== input?.sessionId) {
+  const session = sessions.get(input?.sessionId);
+  if (!session || !isActive(session) || session.state === "stopping") {
     return { error: err("INVALID_ARGUMENT", "无可用 PTY（模拟）") };
   }
   emit({
@@ -342,7 +427,10 @@ export async function writePty(input) {
   return { error: null };
 }
 
-export async function resizePty() {
+export async function resizePty(input) {
+  if (!sessions.has(input?.sessionId)) {
+    return { error: err("INVALID_ARGUMENT", "无可用 PTY（模拟）") };
+  }
   return { error: null };
 }
 
@@ -365,18 +453,13 @@ export async function connectMcp(input) {
       error: err("INVALID_ARGUMENT", "仅支持固定 profileId=demo-mcp"),
     };
   }
-  if (busy || (session && !["stopped", "failed"].includes(session.state))) {
-    return {
-      account: null,
-      error: err("SESSION_BUSY", "会话进行中，拒绝重新连接"),
-    };
-  }
   mcpAccount = {
     id: "mock-mcp",
     kind: "mcp",
     name: input.name,
     profileId: input.profileId,
     host: "demo-mcp.local",
+    authMode: "token",
   };
   return { account: { ...mcpAccount }, error: null };
 }
@@ -388,7 +471,7 @@ export async function createSession(spec) {
       error: err("ISOLATION_UNAVAILABLE", "当前无法建立隔离环境（模拟）"),
     };
   }
-  if (scenario === "busy" || busy) {
+  if (scenario === "busy") {
     return {
       session: null,
       error: err("SESSION_BUSY", "已有会话占用（模拟）"),
@@ -420,8 +503,7 @@ export async function createSession(spec) {
       error: err("INVALID_ARGUMENT", "请先连接模型账号"),
     };
   }
-  const expected =
-    spec.agentId === "dsh" ? "dsh-model" : "demo-model";
+  const expected = spec.agentId === "dsh" ? "dsh-model" : "demo-model";
   if (
     modelAccount.profileId !== "custom" &&
     modelAccount.profileId !== expected
@@ -446,14 +528,32 @@ export async function createSession(spec) {
     };
   }
 
-  clearTimers();
-  busy = true;
+  const active = activeSessions();
+  if (active.length >= 2) {
+    return {
+      session: null,
+      error: err(
+        "SESSION_LIMIT",
+        "已有 2 个会话在运行，请先停止其中一个（模拟）",
+      ),
+    };
+  }
+  const ws = normPath(spec.workspace);
+  if (active.some((s) => normPath(s.workspace) === ws)) {
+    return {
+      session: null,
+      error: err(
+        "WORKSPACE_BUSY",
+        "该工作区已有会话在运行，请打开已有会话或换目录（模拟）",
+      ),
+    };
+  }
+
   const sessionId = `sess-mock-${++sessionNumber}`;
-  seq = 0;
-  session = {
+  const session = {
     sessionId,
     state: "provisioning",
-    mountMode: spec.mountMode === "clone" ? "clone" : "direct",
+    mountMode: spec.mountMode === "direct" ? "direct" : "clone",
     mcpIds: [...(spec.mcpIds || [])],
     seq: 0,
     workspace: spec.workspace,
@@ -461,52 +561,56 @@ export async function createSession(spec) {
     cleanupComplete: false,
     error: null,
   };
-  emit({ type: "state_changed", state: snapshot() });
-  const first = snapshot();
-  schedule(200, () => {
-    if (!session || session.sessionId !== sessionId) return;
-    if (session.state === "stopping") return;
-    snapshot({ state: "running" });
-    emit({ type: "state_changed", state: snapshot() });
+  sessions.set(sessionId, session);
+  emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
+  const first = snapshotOf(sessionId);
+
+  scheduleFor(sessionId, 200, () => {
+    const s = sessions.get(sessionId);
+    if (!s || s.state === "stopping") return;
+    snapshotOf(sessionId, { state: "running" });
+    emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
     emit({
       type: "output",
+      sessionId,
       output: { stream: "stdout", text: "（模拟）开始执行任务…\n" },
     });
   });
-  schedule(700, () => {
-    if (!session || session.state !== "running") return;
+  scheduleFor(sessionId, 700, () => {
+    const s = sessions.get(sessionId);
+    if (!s || s.state !== "running") return;
     emit({
       type: "output",
-      output: {
-        stream: "stdout",
-        text: "（模拟）调用模型完成摘要。\n",
-      },
+      sessionId,
+      output: { stream: "stdout", text: "（模拟）调用模型完成摘要。\n" },
     });
-    emit({
-      type: "audit",
-      audit: {
-        target: "demo-mcp.local",
-        tool: "search",
-        result: "allowed",
-      },
-    });
+    if ((s.mcpIds || []).length) {
+      emit({
+        type: "audit",
+        sessionId,
+        audit: { target: "demo-mcp.local", tool: "search", result: "allowed" },
+      });
+    }
   });
-  schedule(1400, () => {
-    if (!session || session.state !== "running") return;
+  // 不自动终态，便于演示双会话；用户点停止结束
+  scheduleFor(sessionId, 1400, () => {
+    const s = sessions.get(sessionId);
+    if (!s || s.state !== "running") return;
     emit({
       type: "output",
+      sessionId,
       output: {
         stream: "stdout",
-        text: "（模拟）已写入工作区示例文件。\n任务完成。\n",
+        text: "（模拟）已写入工作区示例文件。\n任务可继续；点停止结束本趟。\n",
       },
     });
-    beginStop(false);
   });
 
   return { session: first, error: null };
 }
 
-function beginStop(fromUser) {
+function beginStop(sessionId, fromUser) {
+  const session = sessions.get(sessionId);
   if (!session) return;
   if (
     session.state === "stopped" ||
@@ -514,75 +618,78 @@ function beginStop(fromUser) {
   ) {
     return;
   }
-  clearTimers();
-  snapshot({ state: "stopping", cleanupComplete: false });
-  emit({ type: "state_changed", state: snapshot() });
-  schedule(400, () => {
-    if (!session) return;
+  clearSessionTimers(sessionId);
+  snapshotOf(sessionId, { state: "stopping", cleanupComplete: false });
+  emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
+  scheduleFor(sessionId, 400, () => {
+    if (!sessions.has(sessionId)) return;
     if (scenario === "cleanup" && fromUser) {
-      snapshot({
+      snapshotOf(sessionId, {
         state: "failed",
         cleanupComplete: false,
         error: err("CLEANUP_FAILED", "清理未确认（模拟）", false),
       });
-      emit({ type: "state_changed", state: snapshot() });
+      emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
       emit({
         type: "error",
+        sessionId,
         error: err("CLEANUP_FAILED", "清理未确认，锁仍占用（模拟）", false),
       });
-      // 保留 busy，允许 Stop 重试
       return;
     }
-    snapshot({
+    snapshotOf(sessionId, {
       state: "stopped",
       cleanupComplete: true,
       error: null,
     });
-    emit({ type: "state_changed", state: snapshot() });
-    busy = false;
+    emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
   });
 }
 
 export async function getSession(sessionId) {
-  if (!session || session.sessionId !== sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
     return {
       session: null,
       error: err("SESSION_NOT_FOUND", "未知会话"),
     };
   }
-  return { session: snapshot(), error: null };
+  return { session: snapshotOf(sessionId), error: null };
 }
 
 export async function stopSession(sessionId) {
-  if (!session || session.sessionId !== sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
     return {
       session: null,
       error: err("SESSION_NOT_FOUND", "未知会话"),
     };
   }
   if (["stopped", "stopping"].includes(session.state)) {
-    return { session: snapshot(), error: null };
+    return { session: snapshotOf(sessionId), error: null };
   }
   if (session.state === "failed" && session.cleanupComplete) {
-    return { session: snapshot(), error: null };
+    return { session: snapshotOf(sessionId), error: null };
   }
-  // cleanup 失败场景：再次 Stop 视为重试清理成功
   if (
     session.state === "failed" &&
     !session.cleanupComplete &&
     scenario === "cleanup"
   ) {
-    snapshot({ state: "stopping", error: null, cleanupComplete: false });
-    emit({ type: "state_changed", state: snapshot() });
-    schedule(300, () => {
-      snapshot({ state: "stopped", cleanupComplete: true, error: null });
-      emit({ type: "state_changed", state: snapshot() });
-      busy = false;
+    snapshotOf(sessionId, { state: "stopping", error: null, cleanupComplete: false });
+    emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
+    scheduleFor(sessionId, 300, () => {
+      snapshotOf(sessionId, {
+        state: "stopped",
+        cleanupComplete: true,
+        error: null,
+      });
+      emit({ type: "state_changed", sessionId, state: snapshotOf(sessionId) });
     });
-    return { session: snapshot(), error: null };
+    return { session: snapshotOf(sessionId), error: null };
   }
-  beginStop(true);
-  return { session: snapshot(), error: null };
+  beginStop(sessionId, true);
+  return { session: snapshotOf(sessionId), error: null };
 }
 
 export function onEvent(callback) {
@@ -591,11 +698,14 @@ export function onEvent(callback) {
 }
 
 export function resetMock() {
-  clearTimers();
+  clearAllTimers();
   listeners.clear();
   seq = 0;
-  session = null;
+  sessionNumber = 0;
+  sessions.clear();
+  oauthPending.clear();
   modelAccount = null;
   mcpAccount = null;
-  busy = false;
+  scenario = "normal";
+  uiPrefs = { sidebarCollapsed: false, autoCollapseWorkbench: true };
 }

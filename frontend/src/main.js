@@ -73,7 +73,15 @@ const ctx = {
     return res;
   },
   onAccountsChanged() {},
-  refreshHome() {
+  async refreshHome() {
+    try {
+      const res = await api.listSessions();
+      if (!res.error && Array.isArray(res.sessions)) {
+        for (const s of res.sessions) upsertHistory(s);
+      }
+    } catch (_) {
+      /* mock/live 暂缺时用本地历史 */
+    }
     if (currentRoute === "home") mountHome(views.home, ctx);
     syncSessionSwitch();
   },
@@ -198,7 +206,9 @@ function navigate(name, opts = {}) {
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.classList.toggle("on", btn.getAttribute("data-route") === name);
   });
-  if (name === "home") mountHome(views.home, ctx);
+  if (name === "home") {
+    ctx.refreshHome();
+  }
   if (name === "wizard") wizardView = mountWizard(views.wizard, ctx);
   if (name === "models") mountModels(views.models, ctx);
   if (name === "tools") mountTools(views.tools, ctx);

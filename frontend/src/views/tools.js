@@ -1,11 +1,21 @@
 /**
  * PAGE-DESIGN：工具双轨 — OAuth/SSO 或 API Key/Token
+ * OAuth：pending 轮询 ListAccounts + 可取消 / 「我已完成登录」
  */
 import * as api from "../api.js";
 
 export function mountTools(root, ctx) {
   let mode = "token"; // oauth | token
   let showForm = false;
+  let pendingId = "";
+  let pendingTimer = null;
+
+  function clearPendingWatch() {
+    if (pendingTimer) {
+      clearInterval(pendingTimer);
+      pendingTimer = null;
+    }
+  }
 
   async function load() {
     const res = await api.listAccounts("mcp");
@@ -59,6 +69,25 @@ export function mountTools(root, ctx) {
     if (showForm) paintForm();
   }
 
+  function startPendingWatch() {
+    clearPendingWatch();
+    pendingTimer = setInterval(async () => {
+      if (!pendingId) {
+        clearPendingWatch();
+        return;
+      }
+      const res = await api.listAccounts("mcp");
+      const found = (res.accounts || []).some((a) => a.authMode === "oauth" || a.id === "mock-mcp");
+      if (found && (res.accounts || []).length) {
+        clearPendingWatch();
+        pendingId = "";
+        showForm = false;
+        ctx.onAccountsChanged?.();
+        await load();
+      }
+    }, 500);
+  }
+
   function paintForm() {
     const form = root.querySelector("#mcp-form");
     form.classList.remove("hidden");
@@ -75,8 +104,16 @@ export function mountTools(root, ctx) {
           <label class="field">profileId<input id="t-profile" value="demo-mcp"/></label>
         </div>
         <div id="t-oauth-box" class="${mode === "oauth" ? "" : "hidden"}">
-          <p class="meta">将打开系统浏览器完成登录；成功后回到本列表。</p>
-          <button type="button" class="btn primary" id="t-oauth">打开浏览器登录</button>
+          <p class="meta">将打开系统浏览器完成登录；成功后账号出现在列表（mock 约 1 秒）。</p>
+          ${
+            pendingId
+              ? `<p class="meta ok">等待授权完成… pending <code>${pendingId}</code></p>
+                 <div class="actions">
+                   <button type="button" class="btn primary" id="t-oauth-done">我已完成登录</button>
+                   <button type="button" class="btn" id="t-oauth-cancel">取消</button>
+                 </div>`
+              : `<button type="button" class="btn primary" id="t-oauth">打开浏览器登录</button>`
+          }
           <span class="meta" id="t-oauth-status"></span>
         </div>
         <div class="actions">
@@ -91,7 +128,12 @@ export function mountTools(root, ctx) {
         paintForm();
       };
     });
-    form.querySelector("#t-cancel").onclick = () => {
+    form.querySelector("#t-cancel").onclick = async () => {
+      if (pendingId) {
+        await api.cancelMcpOAuth(pendingId);
+        clearPendingWatch();
+        pendingId = "";
+      }
       showForm = false;
       paint();
     };
@@ -129,16 +171,43 @@ export function mountTools(root, ctx) {
           st.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
           return;
         }
-        st.innerHTML = `<span class="ok">已打开授权（模拟）：${res.authUrl || ""} · pending ${res.pendingId}</span>`;
-        // mock：短暂后出现账号
-        setTimeout(async () => {
-          await load();
+        pendingId = res.pendingId || "";
+        st.innerHTML = `<span class="ok">已请求授权：${res.authUrl || ""}</span>`;
+        startPendingWatch();
+        paintForm();
+      };
+    }
+    const done = form.querySelector("#t-oauth-done");
+    if (done) {
+      done.onclick = async () => {
+        await load();
+        const has = (ctx.state.mcpAccounts || []).length > 0;
+        if (has) {
+          clearPendingWatch();
+          pendingId = "";
           showForm = false;
           paint();
-        }, 600);
+        } else {
+          const st = form.querySelector("#t-oauth-status");
+          if (st) st.innerHTML = `<span class="meta">尚未出现账号，请稍候再点或继续等待轮询</span>`;
+        }
+      };
+    }
+    const cancelO = form.querySelector("#t-oauth-cancel");
+    if (cancelO) {
+      cancelO.onclick = async () => {
+        await api.cancelMcpOAuth(pendingId);
+        clearPendingWatch();
+        pendingId = "";
+        paintForm();
       };
     }
   }
 
   load();
+  return {
+    destroy() {
+      clearPendingWatch();
+    },
+  };
 }

@@ -138,11 +138,21 @@ python3 -m http.server 5173
 - 工作台：边界条、模型切换、权限一览、扩权 Modal、PTY 区
 - 设置：检测、默认挂载、记住主机、关于
 
+### 2026-10-25 C 开工推进
+
+| 项 | 状态 |
+|---|---|
+| mock 多会话 ≤2 / WORKSPACE_BUSY / SESSION_LIMIT | **已做**（`mock-api.js`） |
+| 向导默认 clone；演示路径 B | **已做** |
+| OAuth pending 轮询 + 取消 /「我已完成」 | **已做**（`tools.js`） |
+| PTY mock 回显 | 已有；随多会话按 sessionId |
+| HOME 同步 `listSessions` | **已做** |
+
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| 本分支 | 打磨交互/空态与原型视觉；mock 多会话并发 | — |
+| 本分支 | 视觉对齐 prototype；空态/文案；扩权 mock 联调打磨 | — |
 | 联调 | A/B 去 UNIMPLEMENTED；OAuth/PTY/clone 真实现 | generate bindings |
 | P0 | 仍可跟 I 证据，但不挡本分支 UI | ENV |
 
