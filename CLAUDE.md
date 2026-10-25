@@ -9,3 +9,5 @@
 并行开发先读 [模块设计](docs/MODULE-DESIGN.md)，接口统一按 [CONTRACT.md](docs/CONTRACT.md) 实现，实际验证按 [ACCEPTANCE.md](docs/ACCEPTANCE.md) 记录。A 的测试替身、B 的桌面桥测试和 C 的浏览器 mock 已落地，不能当作真实验收。当前实现与后续步骤见 [研发 A 开发记录](docs/DEV-A.md)。
 
 ## Claude Code 专用规范
+
+Wails v3 的逐模块验证范围与剩余验收见 [兼容性评估](docs/WAILS-V3-ASSESSMENT.md)；构建通过不代表真实桌面闭环通过。
