@@ -147,12 +147,15 @@ python3 -m http.server 5173
 | OAuth pending 轮询 + 取消 /「我已完成」 | **已做**（`tools.js`） |
 | PTY mock 回显 | 已有；随多会话按 sessionId |
 | HOME 同步 `listSessions` | **已做** |
+| 视觉对齐 prototype（Sora/Fraunces、全幅壳） | **已做** |
+| 空态 CTA（HOME/模型/工具）；扩权 Modal toast | **已做** |
+| 设置默认挂载 clone；向导读该偏好 | **已做** |
 
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| 本分支 | 视觉对齐 prototype；空态/文案；扩权 mock 联调打磨 | — |
+| 本分支 | 工作台空会话态、Prefs 接 Get/SetUIPrefs live | B Prefs |
 | 联调 | A/B 去 UNIMPLEMENTED；OAuth/PTY/clone 真实现 | generate bindings |
 | P0 | 仍可跟 I 证据，但不挡本分支 UI | ENV |
 

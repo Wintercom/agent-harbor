@@ -30,10 +30,24 @@ export function mountHome(root, ctx) {
         : ""
     }
     <div id="home-list" class="session-list"></div>
-    ${list.length === 0 ? `<p class="meta">暂无会话。先在「模型」「工具」添加账号，再点「新会话」。</p>` : ""}
+    ${
+      list.length === 0
+        ? `<div class="empty-state">
+            <p>还没有会话。先在「模型」「工具」添加账号，再创建隔离会话。</p>
+            <div class="actions">
+              <button type="button" class="btn" id="empty-models">去模型</button>
+              <button type="button" class="btn" id="empty-tools">去工具</button>
+              <button type="button" class="btn primary" id="empty-wizard" ${healthOk ? "" : "disabled"}>新会话</button>
+            </div>
+          </div>`
+        : ""
+    }
   `;
 
   const listEl = root.querySelector("#home-list");
+  root.querySelector("#empty-models")?.addEventListener("click", () => ctx.navigate("models"));
+  root.querySelector("#empty-tools")?.addEventListener("click", () => ctx.navigate("tools"));
+  root.querySelector("#empty-wizard")?.addEventListener("click", () => ctx.navigate("wizard"));
   list.forEach((s) => {
     const terminal = ["stopped", "failed"].includes(s.state) && s.cleanupComplete;
     const card = document.createElement("article");

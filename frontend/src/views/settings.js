@@ -18,11 +18,11 @@ export function mountSettings(root, ctx) {
       <h3>会话默认</h3>
       <label class="field">默认挂载
         <select id="set-mount">
+          <option value="clone">安全副本（推荐）</option>
           <option value="direct">直接编辑</option>
-          <option value="clone">安全副本</option>
         </select>
       </label>
-      <p class="meta">用于下次新会话向导预填。</p>
+      <p class="meta">用于下次新会话向导预填。本分支默认安全副本。</p>
     </section>
 
     <section class="card" style="margin-top:12px">
@@ -106,7 +106,7 @@ export function mountSettings(root, ctx) {
   root.querySelector("#btn-refresh-agents").onclick = refreshAgents;
   root.querySelector("#btn-reload-hosts").onclick = refreshHosts;
   root.querySelector("#set-mount").value =
-    localStorage.getItem("harbor-default-mount") || "direct";
+    localStorage.getItem("harbor-default-mount") || "clone";
   root.querySelector("#set-mount").onchange = (e) => {
     localStorage.setItem("harbor-default-mount", e.target.value);
   };

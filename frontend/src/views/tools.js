@@ -35,7 +35,12 @@ export function mountTools(root, ctx) {
         <button type="button" class="btn primary" id="btn-add-mcp">+ 添加</button>
       </div>
       <div id="mcp-list" class="session-list"></div>
-      ${list.length === 0 && !showForm ? `<p class="meta">列表为空。添加后只展示已配置的 MCP。</p>` : ""}
+      ${
+        list.length === 0 && !showForm
+          ? `<div class="empty-state"><p>还没有工具。用浏览器登录 / SSO，或 API Key 添加 MCP。</p>
+             <div class="actions"><button type="button" class="btn primary" id="empty-add-mcp">+ 添加第一个</button></div></div>`
+          : ""
+      }
       <div id="mcp-form" class="${showForm ? "" : "hidden"}"></div>
     `;
     const listEl = root.querySelector("#mcp-list");
@@ -54,11 +59,13 @@ export function mountTools(root, ctx) {
         </div>`;
       listEl.appendChild(row);
     });
-    root.querySelector("#btn-add-mcp").onclick = () => {
+    const startAdd = () => {
       showForm = true;
       paint();
       paintForm();
     };
+    root.querySelector("#btn-add-mcp").onclick = startAdd;
+    root.querySelector("#empty-add-mcp")?.addEventListener("click", startAdd);
     listEl.querySelectorAll("[data-del]").forEach((btn) => {
       btn.onclick = async () => {
         if (!confirm("删除该 MCP 及其本机凭据？")) return;

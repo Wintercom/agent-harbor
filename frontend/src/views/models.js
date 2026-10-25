@@ -30,7 +30,12 @@ export function mountModels(root, ctx) {
         <button type="button" class="btn primary" id="btn-add-model">+ 添加</button>
       </div>
       <div id="model-list" class="session-list"></div>
-      ${list.length === 0 && editing !== "new" ? `<p class="meta">还没有模型。点「添加」配置第一个。</p>` : ""}
+      ${
+        list.length === 0 && editing !== "new"
+          ? `<div class="empty-state"><p>还没有模型。自行添加名称、API 地址与 Key；无浏览器登录。</p>
+             <div class="actions"><button type="button" class="btn primary" id="empty-add-model">+ 添加第一个</button></div></div>`
+          : ""
+      }
       <div id="model-form" class="${editing ? "" : "hidden"}"></div>
     `;
 
@@ -53,11 +58,13 @@ export function mountModels(root, ctx) {
       listEl.appendChild(row);
     });
 
-    root.querySelector("#btn-add-model").onclick = () => {
+    const startAdd = () => {
       editing = "new";
       paint();
       paintForm();
     };
+    root.querySelector("#btn-add-model").onclick = startAdd;
+    root.querySelector("#empty-add-model")?.addEventListener("click", startAdd);
     listEl.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.onclick = () => {
         editing = btn.getAttribute("data-edit");

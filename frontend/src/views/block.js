@@ -5,10 +5,10 @@ export function mountBlock(root, { reason, onSettings }) {
   root.innerHTML = `
     <div class="block-card">
       <h1>无法安全启动</h1>
-      <p class="sub">隔离能力不可用时不能创建新会话。</p>
+      <p class="sub">隔离能力不可用时不能创建新会话，也没有「仍要继续」。</p>
       <p class="meta bad">${reason || "ISOLATION_UNAVAILABLE"}</p>
       <div class="actions">
-        <button type="button" class="btn primary" id="btn-block-settings">前往设置</button>
+        <button type="button" class="btn primary" id="btn-block-settings">前往设置 · 重新检测</button>
       </div>
     </div>
   `;

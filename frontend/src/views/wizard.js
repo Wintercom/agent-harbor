@@ -7,9 +7,17 @@ const STEPS = ["workspace", "agent", "model", "tools"];
 
 export function mountWizard(root, ctx) {
   let step = 0;
+  let defaultMount = "clone";
+  try {
+    defaultMount = localStorage.getItem("harbor-default-mount") || "clone";
+  } catch (_) {
+    /* ignore */
+  }
+  if (defaultMount !== "direct" && defaultMount !== "clone") defaultMount = "clone";
+
   const draft = {
     workspace: ctx.state.workspace || "",
-    mountMode: "clone",
+    mountMode: defaultMount,
     agentId: ctx.state.agentId || "claude",
     modelAccountId: ctx.state.modelAccount?.id || "",
     mcpIds: ctx.state.mcpAccount ? [ctx.state.mcpAccount.id] : [],
