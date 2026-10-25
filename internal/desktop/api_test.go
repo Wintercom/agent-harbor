@@ -67,7 +67,7 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 	}
 	api := NewDesktopAPI(app)
 	agents := api.ListAgents()
-	if agents.Error != nil || len(agents.Agents) != 1 || agents.Agents[0].ID != "claude" {
+	if agents.Error != nil || len(agents.Agents) != 2 || agents.Agents[0].ID != "claude" || agents.Agents[1].ID != "dsh" || agents.Agents[1].ModelProfileID != "dsh-model" {
 		t.Fatalf("%+v", agents)
 	}
 }

@@ -32,6 +32,10 @@
 
 准确接口以 [CONTRACT.md](docs/CONTRACT.md) 为准，模块边界、资源所有权、替身与文件归属以 [MODULE-DESIGN.md](docs/MODULE-DESIGN.md) 为准。A 首次落地共享 Go DTO 和消费边界，B 复核并生成 Wails 绑定，C 核对页面需求。Wails 绑定只校验并转交业务请求，会话状态机统一由 A 的 Orchestrator 实现，不在桌面绑定层重复维护。
 
+### 当前范围增量（2026-10-25）
+
+用户已授权实现 DeepSeek 官方 dsh 适配，覆盖下文历史两天范围中的 dsh 排除项。当前注册 Claude/dsh Kit，dsh 固定 npm `0.2.1-rc.2` 与 Node `v26.12.1`；受限文件工具、模型、认证 MCP、桌面选择和清理实现见 [dsh 适配](docs/DSH-INTEGRATION.md)。不扩大 OS 权限，禁止 fork/子进程、Bash、动态插件。真实 CLI 加受控服务通过不等于真实远程验收。
+
 ### 两天交付范围与检查点
 
 - 核心闭环：宿主机界面连接模型与工具 → 选择工作区并提交任务 → 隔离启动真实 Agent → 经 Gate 调模型和认证 MCP → 展示结果 → 停止清理并可再次运行。

@@ -7,7 +7,7 @@
 [![Security checks](https://img.shields.io/badge/security%20checks-Python-3776AB?logo=python&logoColor=white)](security/README.md)
 [![Unit coverage](https://img.shields.io/badge/unit%20coverage-59.2%25-blue)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地契约/编排/严格单进程 Runtime 与 Claude Kit（[DEV-A.md](docs/DEV-A.md)）；研发 B 已落地 Gate/Policy/Secrets 与 Wails v3 桌面桥；产品 C 已提供浏览器 mock 配置/工作台并通过 D4（[DEV-C.md](docs/DEV-C.md)）。真实模型/MCP 端到端联调仍待完成。
+桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地契约/编排/严格单进程 Runtime 与 Claude/dsh Kit（[DEV-A.md](docs/DEV-A.md)）；研发 B 已落地 Gate/Policy/Secrets 与 Wails v3 桌面桥；产品 C 已提供浏览器 mock 配置/工作台并通过 D4（[DEV-C.md](docs/DEV-C.md)）。真实模型/MCP 端到端联调仍待完成。
 
 徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。桌面统一使用 Wails v3.0.0-beta.34，Go 依赖、CLI 与前端 runtime 固定同一版本。
 
@@ -41,7 +41,15 @@ wails3 task darwin:package  # macOS .app 包与本机 ad-hoc 签名
 go test -tags production,harbor_desktop -run TestNativeDesktopBindingsAndShutdown -v .
 ```
 
-启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude Kit 与 Orchestrator。固定上游必须通过 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN` 显式登记 HTTPS origin（仅 scheme + host/port，不含路径），同时设置 `HARBOR_CLAUDE_MODEL` 和逗号分隔的 `HARBOR_DEMO_MCP_TOOLS` 人工工具白名单；可执行文件可用 `HARBOR_CLAUDE_BIN`。未配置时拒绝连接，不默认访问供应商或占位服务。当前仅支持 Anthropic `/v1/messages` 和 Bearer 认证的 Streamable HTTP `/mcp`（2025-03-26）；连接模型会发送最多 1 token 的探测消息。真实服务组合仍需团队登记验收。
+启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude/dsh Kit 与 Orchestrator。固定上游必须通过 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN` 显式登记 HTTPS origin（仅 scheme + host/port，不含路径），同时设置 `HARBOR_CLAUDE_MODEL` 和逗号分隔的 `HARBOR_DEMO_MCP_TOOLS` 人工工具白名单；可执行文件可用 `HARBOR_CLAUDE_BIN`。未配置时拒绝连接，不默认访问供应商或占位服务。当前仅支持 Anthropic `/v1/messages` 和 Bearer 认证的 Streamable HTTP `/mcp`（2025-03-26）；连接模型会发送最多 1 token 的探测消息。真实服务组合仍需团队登记验收。
+
+## DeepSeek dsh
+
+已接入官方 `@deepseek-ai/dsh@0.2.1-rc.2`，使用专用 Node `v26.12.1`。支持桌面选择 Agent、单任务、文件 Read/Write/Edit、Gate 模型流式调用、认证 MCP、停止清理和失败恢复。目标平台仍为非 root 的 Darwin 25 / arm64，不开放 Bash、子进程或插件安装。
+
+首次执行 `bash scripts/install-dsh.sh`，按 [dsh 安装、配置和验收](docs/DSH-INTEGRATION.md) 设置独立安装路径、`HARBOR_DSH_MODEL_ORIGIN`、`HARBOR_DSH_MODEL_BASE_PATH`、`HARBOR_DSH_MODEL` 与 MCP 白名单，再构建启动。配置页选择 `DeepSeek dsh` 后连接 `dsh-model`；Key 仅在桌面输入。
+
+真实 dsh + 受控上游已完成文件/MCP、多轮运行、停止和认证故障恢复验证；真实 DeepSeek 账号与远程 MCP 验收仍待测试凭据。
 
 ## 目录
 
@@ -61,7 +69,7 @@ agent-harbor/
 
 模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
 
-当前两天版：单一 macOS 环境、一个真实 Agent、一个模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
+当前实现：单一 macOS 环境、Claude Code / DeepSeek dsh 两种 Agent 可选、各自固定模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。dsh 为 2026-10-25 授权的范围扩展。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
 
 ## GitHub 推送 / 拉取
 

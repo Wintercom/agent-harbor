@@ -63,7 +63,13 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstreamURL, err := joinOrigin(rt.spec.Policy.Model.Origin, r.URL)
+	if !policy.ValidBasePath(rt.spec.Policy.Model.BasePath) {
+		http.Error(w, "invalid model route", http.StatusForbidden)
+		return
+	}
+	modelURL := *r.URL
+	modelURL.Path = rt.spec.Policy.Model.BasePath + r.URL.Path
+	upstreamURL, err := joinOrigin(rt.spec.Policy.Model.Origin, &modelURL)
 	if err != nil {
 		http.Error(w, "bad upstream", http.StatusBadGateway)
 		return

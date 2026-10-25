@@ -11,6 +11,7 @@ import (
 const (
 	ProfileDemoModel = "demo-model"
 	ProfileDemoMCP   = "demo-mcp"
+	ProfileDSHModel  = "dsh-model"
 )
 
 // FixedProfile 描述受信后端配置中的固定上游。
@@ -18,6 +19,7 @@ type FixedProfile struct {
 	ID                    string
 	Kind                  string // model | mcp
 	Origin                string // 例如 https://api.example.com
+	BasePath              string // 受信模型路径前缀，不由执行面选择
 	Paths                 []string
 	Tools                 []string // MCP 工具白名单；模型侧可为空
 	Host                  string   // origin 主机名
@@ -39,6 +41,7 @@ func DefaultProfiles() map[string]FixedProfile {
 		}
 	}
 	return map[string]FixedProfile{
+		ProfileDSHModel:  {ID: ProfileDSHModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL")), Origin: envOr("HARBOR_DSH_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_DSH_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
 		ProfileDemoModel: {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
 		ProfileDemoMCP:   {ID: ProfileDemoMCP, Kind: "mcp", Protocol: "streamable-http", Origin: mcpOrigin, Host: hostOfOrigin(mcpOrigin), Paths: []string{"/mcp"}, TestPath: "/mcp", Tools: tools},
 	}
@@ -46,6 +49,9 @@ func DefaultProfiles() map[string]FixedProfile {
 
 // ValidConnection 拒绝未登记、含用户信息或不安全的生产接入配置。
 func (p FixedProfile) ValidConnection() bool {
+	if !ValidBasePath(p.BasePath) {
+		return false
+	}
 	u, err := url.Parse(p.Origin)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return false
@@ -63,6 +69,22 @@ func (p FixedProfile) ValidConnection() bool {
 		return p.Protocol == "anthropic" && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
 	}
 	return p.Kind == "mcp" && p.Protocol == "streamable-http" && len(p.Tools) > 0
+}
+
+// 路径前缀只能来自宿主配置，拒绝编码、路径穿越或 URL 组成部分。
+func ValidBasePath(path string) bool {
+	if path == "" {
+		return true
+	}
+	if !strings.HasPrefix(path, "/") || strings.HasSuffix(path, "/") || strings.Contains(path, "//") || strings.ContainsAny(path, "%?#\\\x00\r\n") {
+		return false
+	}
+	for _, part := range strings.Split(path, "/")[1:] {
+		if part == "." || part == ".." || strings.TrimSpace(part) != part {
+			return false
+		}
+	}
+	return true
 }
 
 func envOr(key, fallback string) string {

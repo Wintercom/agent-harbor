@@ -23,6 +23,7 @@ type AgentInfo struct {
     Version string `json:"version"`
     Available bool `json:"available"`
     Reason string `json:"reason"`
+    ModelProfileID string `json:"modelProfileId,omitempty"` // Agent 对应的受信模型配置
 }
 type ConnectInput struct {
     ProfileID string `json:"profileId"`
@@ -159,7 +160,7 @@ type Connections interface {
 }
 type KitInfo struct {
     Agent AgentInfo
-    ReadOnlyPaths []string // 固定 CLI 与必要运行文件的真实路径
+    ReadOnlyPaths []string // 固定 CLI 文件及受信专用安装目录的真实路径；目录只读，不递归授权执行
 }
 type ConfigFile struct {
     RelativePath string // 只能位于 Runtime 私有 HOME 下
@@ -209,6 +210,14 @@ type Runtime interface {
     Destroy(context.Context, Handle) error
 }
 ```
+
+### dsh 契约增量（2026-10-25）
+
+`ListAgents` 返回已注册 Claude 与 dsh，未安装或隔离/版本检测失败时 `available=false`。`modelProfileId` 为可选兼容字段：Claude 使用 `demo-model`，dsh 使用 `dsh-model`。页面切换 Agent 后清空当前模型账号引用和未提交 Key，保留工作区/MCP；Policy 仍在后端拒绝跨 Agent 模型账号，不能依赖页面校验。dsh 配置及验证见 [DSH-INTEGRATION.md](DSH-INTEGRATION.md)。
+
+`FixedProfile` / `EndpointRule` 新增宿主受信 `BasePath` 字段，仅用于模型路由前缀（如 `/anthropic`），不来自 DTO、任务或沙箱。Gate 先对执行面 `/v1/messages` 做原白名单和 Sentinel 检查，再拼接前缀访问固定 origin；Connections 探测使用同一前缀。前缀拒绝穿越、编码、查询串和片段，origin 继续仅允许主机级 URL。
+
+`ReadOnlyPaths` 可以包含受信专用安装目录；Runtime 规范化并拒绝系统/敏感根、HOME、与工作区相交的目录。目录仅递归读取/映射，明确可执行文件仍需单独授权；不开放 fork。dsh 以私有 `DSH_HOME` 和 `DEEPSEEK_API_KEY=Sentinel` 启动，遥测禁用，任务只走 stdin，配置由 Runtime 在私有 HOME 落盘。
 
 ### 页面 API 行为
 

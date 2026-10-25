@@ -125,7 +125,7 @@ func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKe
 }
 
 func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile, key, session, method string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+prof.TestPath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(prof.Origin, "/")+prof.BasePath+prof.TestPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, ErrUpstreamDown
 	}

@@ -121,6 +121,10 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 		if err != nil || within(workspace, resolved) {
 			return Handle{}, runtimeError("INVALID_ARGUMENT")
 		}
+		info, statErr := os.Stat(resolved)
+		if statErr != nil || (info.IsDir() && (!safeInstallationRoot(resolved) || within(resolved, workspace))) {
+			return Handle{}, runtimeError("INVALID_ARGUMENT")
+		}
 		readOnly = append(readOnly, resolved)
 	}
 	root, err := os.MkdirTemp("/private/tmp", "agent-harbor-session-")
@@ -195,6 +199,34 @@ func forbiddenWorkspace(path string) bool {
 		}
 	}
 	return path == "/" || path == "/Users" || path == "/private" || path == "/private/tmp"
+}
+
+// 安装目录只读授权不能覆盖宿主配置、系统根或用户 HOME。
+func safeInstallationRoot(path string) bool {
+	for _, root := range []string{"/", "/Users", "/private", "/private/tmp", "/tmp", "/usr", "/usr/local", "/opt", "/opt/homebrew", "/Library", "/System", "/etc", "/private/etc", "/var", "/private/var"} {
+		if path == root {
+			return false
+		}
+	}
+	for _, root := range []string{"/System", "/Library", "/private/etc", "/private/var"} {
+		if within(root, path) {
+			return false
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	home, err = canonicalPath(home)
+	if err != nil || within(path, home) {
+		return false
+	}
+	for _, name := range []string{".ssh", ".aws", ".config", ".kube", ".claude", ".codex", ".gnupg", ".azure", ".docker", "Library"} {
+		if within(filepath.Join(home, name), path) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *MacOS) lookup(handle Handle) (*entry, error) {

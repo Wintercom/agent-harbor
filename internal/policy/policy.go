@@ -23,8 +23,9 @@ var (
 
 // EndpointRule 绑定固定 origin 与允许路径。
 type EndpointRule struct {
-	Origin string
-	Paths  []string
+	Origin   string
+	BasePath string
+	Paths    []string
 }
 
 // PolicyRequest 是编排层确认后的非敏感输入。
@@ -83,6 +84,12 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if req.Model.Kind != "model" {
 		return PolicySnapshot{}, ErrKindMismatch
 	}
+	if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel {
+		return PolicySnapshot{}, ErrKindMismatch
+	}
+	if !ValidBasePath(modelProf.BasePath) {
+		return PolicySnapshot{}, ErrUnknownProfile
+	}
 	mcpProf, ok := b.profiles[req.MCP.ProfileID]
 	if !ok || mcpProf.Kind != "mcp" {
 		return PolicySnapshot{}, ErrUnknownProfile
@@ -97,8 +104,9 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 		Workspace: ws,
 		MountMode: "direct",
 		Model: EndpointRule{
-			Origin: modelProf.Origin,
-			Paths:  append([]string{}, modelProf.Paths...),
+			Origin:   modelProf.Origin,
+			BasePath: modelProf.BasePath,
+			Paths:    append([]string{}, modelProf.Paths...),
 		},
 		MCP: EndpointRule{
 			Origin: mcpProf.Origin,

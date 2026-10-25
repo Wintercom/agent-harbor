@@ -103,7 +103,7 @@ func runDesktopSmoke() {
   const { createLiveTransport } = await import(%q);
   const api = createLiveTransport();
   const agents = await api.listAgents();
-  check(!agents.error && agents.agents.length === 1 && agents.agents[0].id === 'claude', 'ListAgents');
+  check(!agents.error && agents.agents.length === 2 && agents.agents[0].id === 'claude' && agents.agents[1].id === 'dsh' && agents.agents[1].modelProfileId === 'dsh-model', 'ListAgents');
   const missing = await api.getSession('desktop-smoke-unknown');
   check(missing.session === null && missing.error?.code === 'SESSION_NOT_FOUND', 'GetSession 错误 DTO');
   const stop = await api.stopSession('desktop-smoke-unknown');
