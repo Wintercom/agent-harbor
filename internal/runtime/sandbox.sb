@@ -1,9 +1,10 @@
-;; 严格单进程模式：不导入 system.sb，不开放宿主管控 IPC 或后代创建。
+;; Agent 会话可按 Create 参数允许白名单内后代；Health 探测仍使用 deny process-fork。
+;; 不导入 system.sb，不开放宿主管控 IPC。
 (version 1)
 (deny default)
 (allow syscall* mach-bootstrap)
 (import "dyld-support.sb")
-{{if .AllowChildren}}(allow process-fork){{else}}(deny process-fork){{end}}
+{{.ProcessFork}}
 (deny system-privilege)
 (allow sysctl-read)
 (allow file-read* file-map-executable

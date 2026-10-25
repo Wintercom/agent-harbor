@@ -147,10 +147,13 @@ func (k *Kit) resolveLaunch() (launchSpec, error) {
 	if err != nil {
 		return launchSpec{}, err
 	}
+	// macOS 上 Claude 启动会 execFile(/usr/bin/plutil) 读 MDM plist；须进白名单否则 spawn EPERM。
+	extras := macOSAgentHelpers()
 	if !isNodeScript(script) {
+		readOnly := append([]string{script}, extras...)
 		return launchSpec{
 			Command:  script,
-			ReadOnly: []string{script},
+			ReadOnly: readOnly,
 			Label:    script,
 		}, nil
 	}
@@ -162,12 +165,25 @@ func (k *Kit) resolveLaunch() (launchSpec, error) {
 	// Homebrew Node：二进制在 Cellar/.../bin/node，并依赖 /opt/homebrew/opt/*/lib 下的 dylib。
 	readOnly := []string{node, root}
 	readOnly = append(readOnly, brewRuntimeRoots(node)...)
+	readOnly = append(readOnly, extras...)
 	return launchSpec{
 		Command:  node,
 		Args:     []string{script},
 		ReadOnly: readOnly,
 		Label:    script,
 	}, nil
+}
+
+func macOSAgentHelpers() []string {
+	var out []string
+	for _, path := range []string{"/usr/bin/plutil"} {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+			continue
+		}
+		out = append(out, path)
+	}
+	return out
 }
 
 // brewRuntimeRoots 返回运行 brew 版 Node 所需的只读前缀。
@@ -252,7 +268,8 @@ func parseClaudeVersion(raw string) (string, bool) {
 	return ver, true
 }
 
-// requiredHelpFlags 是启动规格依赖、且须出现在 --help 中的参数。
+// requiredHelpFlags 是 Gate 出站启动规格依赖、且须出现在 --help 中的参数。
+// 交互 Ink TUI 会硬编码探测 api.anthropic.com，不能用于自定义 ANTHROPIC_BASE_URL/Gate。
 var requiredHelpFlags = []string{
 	"--print", "--input-format", "stream-json",
 	"--strict-mcp-config", "--mcp-config", "--setting-sources",
@@ -363,7 +380,8 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if err != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
-	// 2.1.x 已无 --bare；用 --print + settings/MCP 白名单实现受限非交互启动。
+	// --print + stream-json：经 ANTHROPIC_BASE_URL（Gate）出站；工作台 xterm 用 WritePty 多轮。
+	// 不用 Ink TUI：其预检固定请求 api.anthropic.com，沙箱内 ENOTFOUND 且绕过 Gate。
 	args := append(append([]string{}, launch.Args...),
 		"--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
 		"--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath,

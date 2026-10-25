@@ -52,6 +52,8 @@ type SessionSpec struct {
 	MCPIDs         []string `json:"mcpIds"`
 	Task           string   `json:"task"`
 	MountMode      string   `json:"mountMode,omitempty"` // direct 或 clone；缺省=direct
+	// RememberedHosts 由桌面在 Create 前注入本项目记住主机；不入前端 JSON。
+	RememberedHosts []RememberedHost `json:"-"`
 }
 
 // SessionSnapshot 是会话对外快照。

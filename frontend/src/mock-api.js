@@ -509,7 +509,7 @@ export async function writePty(input) {
   emit({
     type: "pty",
     sessionId: session.sessionId,
-    pty: { stream: "stdout", text: `[pty echo] ${input.data || ""}` },
+    pty: { stream: "stdout", text: input.data || "" },
   });
   return { error: null };
 }

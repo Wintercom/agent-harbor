@@ -562,7 +562,19 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
+	extraHosts := map[string]string{}
+	for _, host := range s.spec.RememberedHosts {
+		name := strings.ToLower(strings.TrimSpace(host.Host))
+		if name == "" {
+			continue
+		}
+		scope := host.Scope
+		if scope != "once" && scope != "project" {
+			scope = "project"
+		}
+		extraHosts[name] = scope
+	}
+	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, ExtraHosts: extraHosts, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
 		return o.RequestPermission(call, s.snapshot.SessionID, request)
 	}},
 		func(data contracts.AuditData) { o.audit(s, data) }, func(err error) { o.fail(s, err, "INTERNAL_ERROR") })
@@ -579,7 +591,7 @@ func (o *Service) provision(s *session) error {
 	o.mu.Lock()
 	s.filters = map[string]*streamFilter{"stdout": {token: binding.Sentinel}, "stderr": {token: binding.Sentinel}}
 	o.mu.Unlock()
-	handle, err := o.deps.Runtime.Create(ctx, runtime.RuntimeSpec{SessionID: s.snapshot.SessionID, Workspace: p.Workspace, MountMode: p.MountMode, AllowedTCP: append([]string(nil), binding.AllowedTCP...), ReadOnlyPaths: append([]string(nil), info.ReadOnlyPaths...), AllowChildProcesses: info.NeedsChildProcesses})
+	handle, err := o.deps.Runtime.Create(ctx, runtime.RuntimeSpec{SessionID: s.snapshot.SessionID, Workspace: p.Workspace, MountMode: p.MountMode, AllowedTCP: append([]string(nil), binding.AllowedTCP...), ReadOnlyPaths: append([]string(nil), info.ReadOnlyPaths...), AllowChildProcesses: info.NeedsChildProcesses, AllowDescendants: true})
 	// 接管成功返回的句柄，即使 Stop 已经取消，仍由统一清理器销毁。
 	if handle.ID != "" {
 		s.handle = handle

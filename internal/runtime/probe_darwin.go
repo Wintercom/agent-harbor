@@ -26,7 +26,7 @@ func ProbeInstallation(ctx context.Context, command string, args, readOnly []str
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	r := NewMacOS()
-	handle, err := r.create(ctx, RuntimeSpec{SessionID: "inspect", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: append([]string{command}, readOnly...)}, true)
+	handle, err := r.create(ctx, RuntimeSpec{SessionID: "inspect", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: append([]string{command}, readOnly...), AllowDescendants: true}, true)
 	if err != nil {
 		return "", err
 	}

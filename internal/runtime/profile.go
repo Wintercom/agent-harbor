@@ -48,7 +48,8 @@ var codexManagedConfigPaths = []string{
 	"/etc/codex/managed_config.toml",
 }
 
-func makeProfile(workspace, home string, readOnly, addresses []string, allowChildren bool) (string, error) {
+func makeProfile(workspace, home string, readOnly, addresses []string, allowChildren, allowDescendants bool) (string, error) {
+	allowFork := allowChildren || allowDescendants
 	var rules strings.Builder
 	for _, path := range []string{workspace, home} {
 		quoted, err := sbQuote(path)
@@ -81,6 +82,10 @@ func makeProfile(workspace, home string, readOnly, addresses []string, allowChil
 		if info.IsDir() {
 			fmt.Fprintf(&rules, "(allow file-read* file-map-executable (subpath %s))\n", quoted)
 			fmt.Fprintf(&rules, "(allow file-read-metadata (path-ancestors %s))\n", quoted)
+			// 后代可在安装目录内 exec（如 brew Cellar 下的 helper）；仍不开放任意系统 shell。
+			if allowDescendants {
+				fmt.Fprintf(&rules, "(allow process-exec (subpath %s))\n", quoted)
+			}
 			continue
 		}
 		fmt.Fprintf(&rules, "(allow file-read* file-map-executable (literal %s))\n", quoted)
@@ -109,15 +114,27 @@ func makeProfile(workspace, home string, readOnly, addresses []string, allowChil
 		}
 		fmt.Fprintf(&rules, "(allow network-outbound (remote tcp4 \"localhost:%d\"))\n", port)
 	}
+	processFork := "(deny process-fork)"
+	if allowFork {
+		processFork = "(allow process-fork)"
+	}
+	if allowDescendants {
+		// Claude TUI / xterm：setRawMode 与 winsize 需要对从 PTY 继承的 /dev/ttys* 做 ioctl。
+		// 不开放整棵 /dev（磁盘等）；仅 tty/pty 节点与 /dev/tty。
+		fmt.Fprintf(&rules, "(allow file-ioctl)\n")
+		fmt.Fprintf(&rules, "(allow file-read* file-write-data file-ioctl (literal \"/dev/tty\"))\n")
+		fmt.Fprintf(&rules, "(allow file-read* file-write-data file-ioctl (regex #\"^/dev/ttys[0-9]+$\"))\n")
+		fmt.Fprintf(&rules, "(allow file-read* file-write-data file-ioctl (regex #\"^/dev/pty[a-z][0-9a-f]+$\"))\n")
+	}
 	tmpl, err := template.New("seatbelt").Parse(profileTemplate)
 	if err != nil {
 		return "", err
 	}
 	var result bytes.Buffer
 	err = tmpl.Execute(&result, struct {
-		Rules         string
-		AllowChildren bool
-	}{Rules: rules.String(), AllowChildren: allowChildren})
+		Rules       string
+		ProcessFork string
+	}{Rules: rules.String(), ProcessFork: processFork})
 	return result.String(), err
 }
 

@@ -169,8 +169,10 @@ body { padding: 0; }
 .main-col {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 .page-head { margin-bottom: 8px; }
 .session-list { display: flex; flex-direction: column; gap: 10px; }
@@ -544,11 +546,13 @@ label.field textarea { min-height: 88px; resize: vertical; }
 }
 .session-grid {
   display: grid;
-  grid-template-columns: 1fr 240px;
+  /* minmax(0,1fr)：避免 xterm 画布 min-content 把右侧栏挤出可视区 */
+  grid-template-columns: minmax(0, 1fr) 260px;
   gap: 12px;
   min-height: 360px;
+  align-items: start;
 }
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .session-grid { grid-template-columns: 1fr; }
 }
 .pty-panel {
@@ -558,16 +562,24 @@ label.field textarea { min-height: 88px; resize: vertical; }
   display: flex;
   flex-direction: column;
   min-height: 320px;
+  min-width: 0;
+  overflow: hidden;
 }
 .pty-toolbar { padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.pty {
+.pty,
+.pty-xterm-host {
   flex: 1;
-  padding: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow: auto;
-  min-height: 200px;
+  padding: 0;
+  min-height: 240px;
+  min-width: 0;
+  overflow: hidden;
+}
+.pty-xterm-host .xterm {
+  height: 100%;
+  padding: 8px;
+}
+.pty-xterm-host .xterm-viewport {
+  overflow-y: auto !important;
 }
 .pty-input {
   border: 0;
@@ -576,12 +588,33 @@ label.field textarea { min-height: 88px; resize: vertical; }
   color: var(--text);
   font: inherit;
   font-family: ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  padding: 8px 10px;
+  font-size: 13px;
+  padding: 10px 12px;
   resize: vertical;
+  min-height: 52px;
 }
-.session-side { font-size: 13px; }
-.session-side h3 { margin: 0 0 8px; font-size: 13px; }
+.pty-input:focus {
+  outline: 1px solid var(--accent, #3d8bfd);
+  outline-offset: -1px;
+}
+.pty-input::placeholder {
+  color: var(--muted, #8b9bb0);
+}
+.session-side {
+  font-size: 13px;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+.session-side h3 { margin: 12px 0 8px; font-size: 13px; }
+.session-side h3:first-child { margin-top: 0; }
+.session-side .perm-summary .meta { margin: 0 0 6px; }
 .field.inline { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .field.inline select {
   padding: 6px 8px;

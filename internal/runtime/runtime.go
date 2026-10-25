@@ -13,7 +13,8 @@ type RuntimeSpec struct {
 	MountMode           string
 	AllowedTCP          []string
 	ReadOnlyPaths       []string
-	AllowChildProcesses bool // 仅显式声明的 Kit 可启用受控子进程；默认 false
+	AllowChildProcesses bool // Kit 显式声明：受控子进程白名单（如 Codex）
+	AllowDescendants    bool // Agent 会话：白名单 process-exec 内允许 fork + PTY ioctl；Health 仍强制 deny
 }
 
 type Handle struct {

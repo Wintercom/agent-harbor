@@ -93,10 +93,13 @@ func (d *DesktopAPI) ConnectMcp(in contracts.ConnectInput) contracts.AccountResp
 	return contracts.AccountResponse{Account: &meta}
 }
 
-// CreateSession 转发给编排层。
+// CreateSession 转发给编排层；注入本项目记住的出站主机供 Gate 启动种子。
 func (d *DesktopAPI) CreateSession(spec contracts.SessionSpec) contracts.SessionResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if spec.Workspace != "" {
+		spec.RememberedHosts = d.app.listRemembered(spec.Workspace)
+	}
 	snap, err := d.app.sessionRef().Create(ctx, spec)
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}

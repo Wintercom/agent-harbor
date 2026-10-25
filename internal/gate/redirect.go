@@ -11,6 +11,32 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
+// authorizeOutboundHost 判定未授权主机：已记住 → 放行；否则 RequestPermission；deny/缺回调 → 拒绝。
+func (h *Harbor) authorizeOutboundHost(ctx context.Context, sid string, rt *sessionRuntime, host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	if h.HasExtraHost(sid, host) {
+		return true
+	}
+	if rt == nil || rt.spec.RequestPermission == nil {
+		return false
+	}
+	decision, err := rt.spec.RequestPermission(ctx, contracts.PermissionNeeded{
+		Target: host,
+		Action: "connect",
+	})
+	if err != nil || (decision != "once" && decision != "project") {
+		return false
+	}
+	_ = h.AllowExtraHost(sid, host, decision)
+	if decision == "once" {
+		_ = h.HasExtraHost(sid, host)
+	}
+	return true
+}
+
 // followCrossHostRedirect 在用户扩权且 DNS/IP 通过后跟随一跳；不注入原账号凭据。
 func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *sessionRuntime, resp *http.Response, originAuth string) (*http.Response, string, error) {
 	locURL, err := redirectAbsoluteURL(resp)
@@ -24,21 +50,7 @@ func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *se
 		return nil, locHost, fmt.Errorf("gate: same-origin redirect not blocked")
 	}
 
-	allowed := h.HasExtraHost(sid, locHost)
-	if !allowed && rt.spec.RequestPermission != nil {
-		decision, perr := rt.spec.RequestPermission(ctx, contracts.PermissionNeeded{
-			Target: locHost,
-			Action: "connect",
-		})
-		if perr == nil && (decision == "once" || decision == "project") {
-			_ = h.AllowExtraHost(sid, locHost, decision)
-			allowed = true
-			if decision == "once" {
-				_ = h.HasExtraHost(sid, locHost)
-			}
-		}
-	}
-	if !allowed {
+	if !h.authorizeOutboundHost(ctx, sid, rt, locHost) {
 		return nil, locHost, fmt.Errorf("gate: redirect not permitted")
 	}
 	ips, err := resolvePublicHostname(locHost)

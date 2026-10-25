@@ -1,6 +1,7 @@
 /**
  * PAGE-DESIGN 全量壳：顶栏会话切换 + 侧栏 HOME/模型/工具/设置
  */
+import "./xterm-boot.js";
 import * as api from "./api.js";
 import { initializeTransport } from "./startup.js";
 import { mountHome } from "./views/home.js";

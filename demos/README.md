@@ -48,22 +48,22 @@
 
 ## 十分钟 live 话术（I1/I2 评审向 · P0-C-DOC-2）
 
-**前置（B/A 已备好）**：本机 Claude **2.1.292** 或已装 dsh；已 export 上游 env；`wails3 generate bindings` 后 `./scripts/dev-desktop.sh`；顶栏 **真实绑定**；**侧栏须为「隔离就绪」**（若仍「健康检查尚未接线」→ 中止本话术，改 mock 或记阻断）。
+**前置（B/A 已备好）**：本机 Claude（Detect 绿灯；文档基线 2.1.x）或已装 dsh；模型已连（如 DeepSeek）；`./scripts/dev-desktop.sh`；顶栏 **真实绑定**；侧栏 **隔离就绪**。
 
 | 时间 | 说什么 / 做什么 | 观众应看到 |
 |---|---|---|
-| 0:00 | 一句架构：Key 在宿主机 Gate，Agent 在隔离里只有 Sentinel | 不展开实现细节 |
-| 0:30 | 指「真实绑定」；说明浏览器 mock 不能代替本项 | 徽章正确 |
-| 1:00 | Agent 下拉选 Claude（或 dsh）；重新检测 Available | ● 版本号或明确不可用原因 |
-| 1:30 | 连模型 / MCP（真 Key，提交清空） | 仅账号引用；错 Key 有错误码、不成账号 |
-| 3:00 | 选 `demos/workspace` 绝对路径；**替换**默认任务为真实工具名 | 路径非 `/demo/project` |
-| 4:00 | 开始 → 工作台 | provisioning→running；有输出 |
-| 5:30 | 指审计 `allowed` + 磁盘 `hello.txt`（或任务约定文件） | 三者一致才算任务成功 |
-| 7:00 | （可选）A 口头/旁证：区外路径或非 Gate 网络被拒 | 安全亮点，勿用 UI 假场景冒充 |
-| 8:00 | 停止 → 再开一轮缩略任务 | 第二轮能跑（I10 方向） |
-| 9:30 | 收尾：两天版范围；mock≠I；完整页（HOME/扩权）在 P1 | 诚实边界 |
+| 0:00 | Key 在宿主机 Gate；Agent 在 Seatbelt 内（白名单可后代） | 不展开实现细节 |
+| 0:30 | 指「真实绑定」；mock 不能记 I | 徽章正确 |
+| 1:00 | Agent=Claude；重新检测 Available | ● 版本；含 plutil 等运行只读路径 |
+| 1:30 | 模型已连则跳过；否则添加 Origin+Key | 仅账号引用；Key 清空 |
+| 3:00 | 工作区 `demos/workspace` 绝对路径；开始 | provisioning→running |
+| 4:00 | 工作台 **xterm** | Claude 走 Gate/--print（非 Ink TUI）；有 stream 输出；可键盘多轮 |
+| 5:30 | 诱导跨主机重定向或未授权出站 | `permission_needed` Modal；三选一 |
+| 7:00 | 选 once/project；指审计与权限一览 | 无「全网」；project 可撤销 |
+| 8:00 | 停止 → 再开一轮 | 第二轮能进工作台（I10 方向） |
+| 9:30 | 收尾：mock≠I；子进程仅白名单 exec | 诚实边界 |
 
-阻断时：记「阻断 + 缺 env/版本」，**不要**改口称 mock 通过。
+阻断时：记「阻断 + 原因」，**不要**改口称 mock 通过。若仍见 `spawn EPERM`：确认已拉含 AllowDescendants 的构建并**新建会话**。
 
 ---
 

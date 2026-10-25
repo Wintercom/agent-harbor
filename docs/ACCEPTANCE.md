@@ -87,8 +87,10 @@ D1 的绑定生成已执行；原生 WebView 冒烟通过生成绑定校验 DTO�
 
 | 编号 | 状态 | 说明 |
 |---|---|---|
-| I1 | **待重测** | B 已接 `GetRuntimeHealth` / Accounts / ListSessions 等（见 [DEV-B](DEV-B.md)）。需在桌面 live 重跑：绿灯后连模型/MCP。旧「尚未接线」阻断作废。填空见 [evidence-template](../demos/evidence-template.md) |
-| I2 / I8 / I10 / I11 | 待执行 | 依赖 I1 真通路；mock 见 [demos/README](../demos/README.md) |
+| I1 | **待重测** | 桌面 live：隔离就绪 + 连模型（DeepSeek 等）+ 可选 MCP。填空见 [evidence-template](../demos/evidence-template.md) |
+| I2 | **待重测** | Claude 已切 OS PTY + AllowDescendants；工作台 xterm。须脱敏证据：running、xterm 输出、无 spawn EPERM。话术见 [demos/README](../demos/README.md) |
+| 扩权 live | **待重测** | 跨主机重定向 / 未授权出站 → Modal；project 记住并注入下轮会话 |
+| I8 / I10 / I11 | 待执行 | 依赖 I2 通路 |
 | D4 | 通过（mock） | 见 §4.1；不计 I |
 
-**口径**：mock ≠ I 通过。A 编排（多会话/clone/扩权挂起）+ B DesktopAPI（Health/账号/Prefs 落盘/Keychain/OAuth 换票/扩权跟随+DNS）已合。缺的是 **live I1+** 证据与真 PTY，不是方法占位。
+**口径**：mock ≠ I 通过。工程已具备：AllowDescendants 杀树、Claude Terminal、xterm、Gate `authorizeOutboundHost` + 记住主机种子。缺的是 **本机 live 脱敏证据**，不是方法占位。

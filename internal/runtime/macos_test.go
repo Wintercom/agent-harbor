@@ -71,6 +71,18 @@ func helper(args []string) int {
 				fmt.Println("received:" + scanner.Text())
 			}
 		}
+	case "tty-raw":
+		termios, err := unix.IoctlGetTermios(0, unix.TIOCGETA)
+		if err != nil {
+			return denied(err)
+		}
+		raw := *termios
+		raw.Lflag &^= unix.ECHO | unix.ICANON | unix.ISIG
+		raw.Iflag &^= unix.IXON | unix.ICRNL
+		if err := unix.IoctlSetTermios(0, unix.TIOCSETA, &raw); err != nil {
+			return denied(err)
+		}
+		fmt.Println("raw-ok")
 	case "input-lines":
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -138,6 +150,22 @@ func helper(args []string) int {
 	case "sleep":
 		for {
 			time.Sleep(time.Hour)
+		}
+	case "spawn-sleep":
+		child := exec.Command(os.Args[0], "--harbor-runtime-probe", "sleep")
+		if err := child.Start(); err != nil {
+			return denied(err)
+		}
+		for {
+			time.Sleep(time.Hour)
+		}
+	case "spawn-path":
+		if len(args) < 2 {
+			return 2
+		}
+		child := exec.Command(args[1])
+		if err := child.Run(); err != nil {
+			return denied(err)
 		}
 	default:
 		return 2
@@ -603,8 +631,94 @@ func TestHealthRejectsProfileThatFailsOpen(t *testing.T) {
 func TestHealthRejectsProfileThatAllowsDescendants(t *testing.T) {
 	original := profileTemplate
 	t.Cleanup(func() { profileTemplate = original })
-	profileTemplate = strings.Replace(original, "(deny process-fork)", "(allow process-fork)", 1)
+	profileTemplate = strings.Replace(original, "{{.ProcessFork}}", "(allow process-fork)", 1)
 	if err := NewMacOS().Health(context.Background()); err == nil {
 		t.Fatal("profile 允许创建后代，Health 却报告可用")
+	}
+}
+
+func TestMacOSAllowDescendantsTTYRawMode(t *testing.T) {
+	r := NewMacOS()
+	spec := probeSpec(t)
+	spec.AllowDescendants = true
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handle, err := r.Create(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stop()
+		_ = r.Destroy(cleanup, handle)
+	})
+	var mu sync.Mutex
+	var text strings.Builder
+	process, err := r.Exec(ctx, handle, LaunchSpec{Command: probePath, Args: []string{"--harbor-runtime-probe", "tty-raw"}, Terminal: true}, func(data contracts.OutputData) {
+		mu.Lock()
+		defer mu.Unlock()
+		text.WriteString(data.Text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exit := process.Wait()
+	mu.Lock()
+	out := text.String()
+	mu.Unlock()
+	if exit.Code != 0 || !strings.Contains(out, "raw-ok") {
+		t.Fatalf("setRawMode/ioctl 应成功：exit=%+v out=%q", exit, out)
+	}
+}
+
+func TestMacOSAllowDescendantsForkAndCleanup(t *testing.T) {
+	r := NewMacOS()
+	spec := probeSpec(t)
+	spec.AllowDescendants = true
+	install := workspace(t)
+	helper := filepath.Join(install, "helper-bin")
+	trueBin, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helper, trueBin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	spec.ReadOnlyPaths = append(spec.ReadOnlyPaths, install)
+	exit, _ := runProbe(t, r, spec, "fork")
+	if exit.Code != 0 {
+		t.Fatalf("允许后代时 fork 应成功：%+v", exit)
+	}
+	exit, _ = runProbe(t, r, spec, "posix-spawn")
+	if exit.Code != 0 {
+		t.Fatalf("允许后代时 posix_spawn 应成功：%+v", exit)
+	}
+	exit, _ = runProbe(t, r, spec, "spawn-path", helper)
+	if exit.Code != 0 {
+		t.Fatalf("允许后代时目录内 process-exec 应成功：%+v", exit)
+	}
+	// 非白名单 exec（/bin/cat 未列入 ReadOnlyPaths）仍应失败。
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	handle, err := r.Create(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stop()
+		_ = r.Destroy(cleanup, handle)
+	})
+	process, err := r.Exec(ctx, handle, LaunchSpec{Command: probePath, Args: []string{"--harbor-runtime-probe", "spawn-sleep"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPid := process.(*macProcess).cmd.Process.Pid
+	time.Sleep(100 * time.Millisecond)
+	if err := r.Destroy(context.Background(), handle); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Kill(rootPid, 0); err == nil {
+		t.Fatal("Destroy 后根进程仍存活")
 	}
 }

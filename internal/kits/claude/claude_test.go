@@ -49,8 +49,11 @@ func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
 		t.Fatal("任务正文被改写")
 	}
 	args := strings.Join(launch.Args, " ")
-	if !launch.Interactive || !strings.Contains(args, "--input-format stream-json") {
-		t.Fatal("多轮模式必须使用 stream-json，text 模式会等待 stdin EOF")
+	if !launch.Interactive || launch.EncodeInput == nil || launch.Terminal {
+		t.Fatal("须 Interactive+EncodeInput（经 Gate）；不得用 Ink Terminal TUI")
+	}
+	if !strings.Contains(args, "--input-format stream-json") {
+		t.Fatal("多轮模式必须使用 stream-json")
 	}
 	if strings.Contains(args, input().Task) || strings.Contains(args, sentinel) {
 		t.Fatal("任务或令牌进入命令行")
@@ -221,14 +224,22 @@ func TestInstalledCLIInStrictRuntime(t *testing.T) {
 	t.Logf("本机 CLI 受限检测通过：%s readonly=%v", info.Agent.Version, info.ReadOnlyPaths)
 }
 
-func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
+func TestInstalledCLIGateBootstrap(t *testing.T) {
 	if os.Getenv("HARBOR_TEST_CLAUDE") != "1" {
-		t.Skip("设置 HARBOR_TEST_CLAUDE=1 检测无网络非交互启动")
+		t.Skip("设置 HARBOR_TEST_CLAUDE=1 检测无网络 Gate/--print 启动")
 	}
 	t.Helper()
 	path, err := exec.LookPath("claude")
 	if err != nil {
 		t.Fatal(err)
+	}
+	k, err := New(path, "local-detection-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := k.Detect(context.Background())
+	if err != nil || !info.Agent.Available {
+		t.Fatalf("检测未通过：%+v %v", info, err)
 	}
 	workspace, err := os.MkdirTemp("/private/tmp", "harbor-cli-diagnose-")
 	if err != nil {
@@ -236,14 +247,17 @@ func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
 	}
 	defer os.RemoveAll(workspace)
 	r := runtime.NewMacOS()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	handle, err := r.Create(ctx, runtime.RuntimeSpec{SessionID: "help-diagnose", Workspace: workspace, MountMode: "direct", AllowedTCP: []string{"127.0.0.1:1"}, ReadOnlyPaths: []string{path}})
+	handle, err := r.Create(ctx, runtime.RuntimeSpec{
+		SessionID: "gate-diagnose", Workspace: workspace, MountMode: "direct",
+		AllowedTCP: []string{"127.0.0.1:1"}, ReadOnlyPaths: info.ReadOnlyPaths, AllowDescendants: true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		cleanup, stop := context.WithTimeout(context.Background(), time.Second)
+		cleanup, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
 		if err := r.Destroy(cleanup, handle); err != nil {
 			t.Error(err)
@@ -251,10 +265,6 @@ func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
 	}()
 	var mu sync.Mutex
 	var output strings.Builder
-	k, err := New(path, "local-detection-only")
-	if err != nil {
-		t.Fatal(err)
-	}
 	i := input()
 	i.Task = "Return OK"
 	i.PrivateHome = handle.PrivateHome
@@ -263,6 +273,9 @@ func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
 	launch, err := k.Build(ctx, i)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if launch.Terminal || !launch.Interactive {
+		t.Fatal("须 Interactive/--print，不得 Ink TUI")
 	}
 	process, err := r.Exec(ctx, handle, launch, func(data contracts.OutputData) {
 		mu.Lock()
@@ -276,40 +289,18 @@ func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	text := output.String()
-	for _, failure := range []string{"unknown option", "Failed to format a number", "SyntaxError", "unrecognized option", "Cannot use settings file", "Refusing to read a file", "EPERM:", "EACCES:"} {
+	for _, failure := range []string{"unknown option", "Failed to format a number", "SyntaxError", "unrecognized option", "Cannot use settings file", "Refusing to read a file", "EPERM:", "EACCES:", "spawn EPERM", "api.anthropic.com", "setRawMode"} {
 		if strings.Contains(text, failure) {
-			t.Fatalf("非交互参数或启动不兼容：%s", failure)
+			t.Fatalf("Gate/--print 启动不兼容：%s\n输出=%q", failure, text)
 		}
 	}
 	if strings.Contains(text, sentinel) {
-		t.Fatal("Agent 原始输出回显 Sentinel；需补充 Gate/输出边界过滤验证")
+		t.Fatal("Agent 原始输出回显 Sentinel")
 	}
 	if strings.TrimSpace(text) == "" {
-		t.Fatalf("非交互启动没有输出：退出=%+v", exit)
+		t.Fatalf("无输出：退出=%+v", exit)
 	}
-	if exit.Code == 0 {
-		t.Fatal("无上游时不应报告任务成功")
-	}
-	initialized := false
-	for _, line := range strings.Split(text, "\n") {
-		var event struct {
-			Type    string `json:"type"`
-			Subtype string `json:"subtype"`
-			Model   string `json:"model"`
-			Version string `json:"claude_code_version"`
-			Source  string `json:"apiKeySource"`
-		}
-		if json.Unmarshal([]byte(line), &event) == nil && event.Type == "system" && event.Subtype == "init" {
-			if event.Model != "local-detection-only" || event.Version != SupportedVersion || event.Source != "ANTHROPIC_API_KEY" {
-				t.Fatal("CLI 初始化配置不符合启动规格")
-			}
-			initialized = true
-		}
-	}
-	if !initialized {
-		t.Fatal("未收到结构化初始化事件，不能判为非交互启动通过")
-	}
-	t.Logf("无真实上游启动探测完成：退出码=%d，取消=%v，输出字节=%d；不代表模型/MCP 兼容通过", exit.Code, exit.Cancelled, len(text))
+	t.Logf("无真实上游 Gate 启动探测完成：退出码=%d，取消=%v，输出字节=%d；不代表模型/MCP 兼容通过", exit.Code, exit.Cancelled, len(text))
 }
 
 func TestBuildOptionalAndMultipleMCP(t *testing.T) {

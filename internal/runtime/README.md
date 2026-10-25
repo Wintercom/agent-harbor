@@ -2,21 +2,22 @@
 
 `clone` 在应用数据目录 `AgentHarbor/sessions` 下创建独立副本，Runtime 仅授权副本读写，原目录不加入沙箱规则。拒绝符号链接和特殊文件，复制上限为单文件 64 MiB、总内容 1 GiB、10 万个节点；超限或取消会回滚。副本随 Runtime 清理删除，V1 不自动导回原目录。
 
-负责人：A。两天版只实现已验证目标 macOS 上的 Seatbelt / sandbox-exec 后端；已实现严格单进程 Runtime、默认拒绝的 Seatbelt profile 和真实系统探针测试。Health 会验证授权与拒绝边界；准备/会话计时器均失败关闭。当前禁止创建后代，不支持 Bash/外部 git；仍需真实 Agent/上游联调。详细证据及限制见 [研发 A 开发记录](../../docs/DEV-A.md)。
+负责人：A。macOS Seatbelt / sandbox-exec：Health 仍强制 `deny process-fork`；Agent 会话经 `RuntimeSpec.AllowDescendants` 在只读白名单内允许后代，Stop/Destroy 对 PPID 闭包 SIGKILL。非白名单 Bash/git 默认不可用。证据见 [研发 A 开发记录](../../docs/DEV-A.md)。
 
 ## 当前文件
 
 | 文件 | 职责 |
 |---|---|
 | `runtime.go` | Health、Create、Exec、Destroy、Process.Wait 与受限句柄 |
-| `macos.go` | macOS 能力检查、私有 HOME、严格单进程执行与清理 |
-| `sandbox.sb` | 默认拒绝的系统强制规则；仅按确定的授权参数开放必要资源 |
+| `macos.go` | macOS 能力检查、私有 HOME、执行与清理 |
+| `proctree_darwin.go` | AllowDescendants 杀树 |
+| `sandbox.sb` | 默认拒绝；`ProcessFork` 由 Create 参数选择 |
 
 两天版将工作区授权及私有 HOME 配置合并进 Create，不再单独暴露 MountWorkspace；这是可见/可写范围配置，不意味着真实文件系统挂载。未来后端需保持同等语义。
 
 ## 输入与输出
 
-交互 stdin 由 Kit 的 `EncodeInput` 编码首轮和后续消息，Runtime 串行写入并响应 context 取消。Claude 使用 JSONL 协议，dsh headless 使用单任务 EOF；此通道没有终端设备，Resize 仍返回 UNIMPLEMENTED。
+`LaunchSpec.Terminal` 分配 OS PTY（与 Interactive/EncodeInput 互斥），Resize 走 `pty.Setsize`。Interactive + EncodeInput 仍用于结构化 JSONL（如 dsh）；无 Terminal 时 Resize 为 UNIMPLEMENTED。
 
 接收规范化工作区、已确定的网络端口及 Kit LaunchSpec，返回输出流、退出通知与可销毁句柄。不解释账号、MCP 或授权弹窗，也不接收真实模型/MCP 凭据。
 

@@ -13,7 +13,7 @@ func TestReadOnlyInstallationHasNoRecursiveExecution(t *testing.T) {
 	if err := os.Mkdir(install, 0700); err != nil {
 		t.Fatal(err)
 	}
-	profile, err := makeProfile(root, root, []string{install}, nil, false)
+	profile, err := makeProfile(root, root, []string{install}, nil, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,10 +24,27 @@ func TestReadOnlyInstallationHasNoRecursiveExecution(t *testing.T) {
 	if strings.Contains(profile, "(allow process-exec (subpath") || strings.Contains(profile, "(allow process-exec (literal "+quoted) {
 		t.Fatal("目录不应授予执行权")
 	}
+	withDesc, err := makeProfile(root, root, []string{install}, nil, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(withDesc, "(allow process-fork)") || !strings.Contains(withDesc, "(allow process-exec (subpath "+quoted+")") {
+		t.Fatal("允许后代时应授权安装目录 process-exec")
+	}
+	if !strings.Contains(withDesc, "(allow file-ioctl)") || !strings.Contains(withDesc, "/dev/ttys") {
+		t.Fatal("允许后代时应授权 PTY tty ioctl（setRawMode）")
+	}
+	strict, err := makeProfile(root, root, []string{install}, nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strict, "(allow file-ioctl)") {
+		t.Fatal("严格单进程不应开放 file-ioctl")
+	}
 }
 
 func TestCodexProfileAllowsOnlyManagedRequirementFiles(t *testing.T) {
-	profile, err := makeProfile(t.TempDir(), t.TempDir(), nil, nil, true)
+	profile, err := makeProfile(t.TempDir(), t.TempDir(), nil, nil, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +61,12 @@ func TestCodexProfileAllowsOnlyManagedRequirementFiles(t *testing.T) {
 	}
 	if strings.Contains(profile, "(allow file-read* (subpath \"/etc\"))") {
 		t.Fatal("Codex profile 不应开放整个 /etc")
+	}
+	if !strings.Contains(profile, "(allow process-fork)") {
+		t.Fatal("Codex 受控子进程应允许 process-fork")
+	}
+	if strings.Contains(profile, "(allow file-ioctl)") {
+		t.Fatal("仅 AllowChildProcesses 不应开放 PTY ioctl")
 	}
 }
 

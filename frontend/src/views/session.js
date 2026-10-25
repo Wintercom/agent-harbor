@@ -3,6 +3,8 @@
  */
 import * as api from "../api.js";
 import { OutputTail } from "../session-events.js";
+import { createPtyTerm } from "../pty-term.js";
+import { createStreamDisplay } from "../stream-display.js";
 import {
   mountPermissionModal,
   hidePermissionModal,
@@ -39,9 +41,9 @@ export function mountSession(root, ctx) {
       </div>
       <div class="session-grid">
         <div class="pty-panel">
-          <div class="pty-toolbar meta">终端 / Agent 输出（PTY）</div>
+          <div class="pty-toolbar meta">对话（已过滤协议 JSON）· 下方输入发下一轮</div>
           <div id="sess-pty" class="pty" tabindex="0"></div>
-          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="同会话后续轮次：输入后 Enter 发送（mock 回显；live 走 WritePty）"></textarea>
+          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="点这里输入下一轮，Enter 发送（Shift+Enter 换行）"></textarea>
         </div>
         <aside class="session-side">
           <h3>本趟摘要</h3>
@@ -49,6 +51,10 @@ export function mountSession(root, ctx) {
             <li>输出块：<span id="stat-out">0</span></li>
             <li>审计：<span id="stat-audit">0</span></li>
           </ul>
+          <h3>扩权 / 边界</h3>
+          <div id="sess-perm-summary" class="perm-summary">
+            <p class="meta">加载中…</p>
+          </div>
           <h3>最近活动</h3>
           <ul id="sess-audit" class="audit-list"></ul>
           <p class="meta warn hidden" id="sess-hint"></p>
@@ -71,6 +77,7 @@ export function mountSession(root, ctx) {
     pty: root.querySelector("#sess-pty"),
     ptyInput: root.querySelector("#sess-pty-input"),
     audit: root.querySelector("#sess-audit"),
+    permSummary: root.querySelector("#sess-perm-summary"),
     error: root.querySelector("#sess-error"),
     hint: root.querySelector("#sess-hint"),
     statOut: root.querySelector("#stat-out"),
@@ -79,12 +86,43 @@ export function mountSession(root, ctx) {
   };
 
   let tail = new OutputTail();
+  let streamDisplay = createStreamDisplay();
   let outCount = 0;
   let auditCount = 0;
+  let term = null;
   const modalRoot =
     typeof document !== "undefined"
       ? document.getElementById("modal-root")
       : null;
+
+  function ensureTerm() {
+    if (term || !els.pty) return term;
+    // 输出用 xterm；用户输入走下方输入框，避免按键逐字 WritePty。
+    term = createPtyTerm(els.pty, {
+      onResize(cols, rows) {
+        if (!ctx.state.sessionId) return;
+        api
+          .resizePty({ sessionId: ctx.state.sessionId, cols, rows })
+          .catch(() => {});
+      },
+    });
+    return term;
+  }
+
+  async function sendRound() {
+    const raw = els.ptyInput?.value ?? "";
+    const data = raw.trimEnd();
+    if (!ctx.state.sessionId || !data) return;
+    if (els.ptyInput) els.ptyInput.value = "";
+    appendPty(`\r\n› ${data}\r\n`, { raw: true });
+    const res = await api.writePty({
+      sessionId: ctx.state.sessionId,
+      data: data + "\n",
+    });
+    if (res?.error) {
+      els.error.textContent = `${res.error.code}: ${res.error.message}`;
+    }
+  }
 
   function showEmpty() {
     els.empty?.classList.remove("hidden");
@@ -119,10 +157,60 @@ export function mountSession(root, ctx) {
   }
 
   function notifyResize() {
-    if (!ctx.state.sessionId || !els.pty) return;
-    const cols = Math.max(40, Math.floor((els.pty.clientWidth || 640) / 8));
-    const rows = Math.max(10, Math.floor((els.pty.clientHeight || 240) / 16));
-    api.resizePty({ sessionId: ctx.state.sessionId, cols, rows }).catch(() => {});
+    if (!ctx.state.sessionId) return;
+    const t = ensureTerm();
+    if (!t?.fit) return;
+    const size = t.fit();
+    if (size?.cols && size?.rows) {
+      api
+        .resizePty({
+          sessionId: ctx.state.sessionId,
+          cols: size.cols,
+          rows: size.rows,
+        })
+        .catch(() => {});
+    }
+  }
+
+  async function refreshPermSummary() {
+    if (!els.permSummary) return;
+    const sid = ctx.state.sessionId || "";
+    if (!sid) {
+      els.permSummary.innerHTML = `<p class="meta">无会话</p>`;
+      return;
+    }
+    try {
+      const [res, hostsRes] = await Promise.all([
+        api.getPermissionOverview(sid),
+        api.listRememberedHosts(sid),
+      ]);
+      if (res?.error) {
+        els.permSummary.innerHTML = `<p class="bad">${res.error.code}: ${res.error.message}</p>`;
+        return;
+      }
+      const o = res.overview || {};
+      const remembered = hostsRes.hosts || [];
+      const hosts = (o.allowedHosts || []).slice(0, 6);
+      const hostLis =
+        hosts.map((h) => `<li>${h}</li>`).join("") ||
+        `<li class="meta">无固定白名单</li>`;
+      const remLis =
+        remembered
+          .map(
+            (h) =>
+              `<li>${h.host} · ${h.scope === "project" ? "本项目" : "本会话"}</li>`,
+          )
+          .join("") || `<li class="meta">尚无扩权记住项</li>`;
+      els.permSummary.innerHTML = `
+        <p class="meta">工作区 ${o.workspace || "—"}</p>
+        <p class="meta">网络白名单</p>
+        <ul class="audit-list">${hostLis}</ul>
+        <p class="meta">已记住（扩权）</p>
+        <ul class="audit-list">${remLis}</ul>
+        <p class="meta">完整边界点顶栏「权限一览」</p>`;
+    } catch (e) {
+      els.permSummary.innerHTML = `<p class="meta">边界摘要暂不可用</p>`;
+    }
   }
 
   async function fillModels(selectedId) {
@@ -163,6 +251,7 @@ export function mountSession(root, ctx) {
       return;
     }
     showWorkbench();
+    ensureTerm();
     els.state.textContent = s.state;
     els.state.className = `status-pill ${s.state}`;
     const toolN = (s.mcpIds || []).length;
@@ -184,12 +273,19 @@ export function mountSession(root, ctx) {
       els.hint.classList.add("hidden");
     }
     if (s.modelAccountId) fillModels(s.modelAccountId);
+    refreshPermSummary();
   }
 
-  function appendPty(text) {
-    if (!els.pty) return;
-    els.pty.textContent += text || "";
-    els.pty.scrollTop = els.pty.scrollHeight;
+  function appendPty(text, { raw = false } = {}) {
+    const t = ensureTerm();
+    if (!t) return;
+    if (!text) return;
+    if (raw) {
+      t.write(text);
+      return;
+    }
+    const pretty = streamDisplay.push(text);
+    if (pretty) t.write(pretty);
   }
 
   function onEvent(ev) {
@@ -236,6 +332,7 @@ export function mountSession(root, ctx) {
           const li = document.createElement("li");
           li.textContent = `扩权 ${decision} · ${ev.permission.target} · ${sid}`;
           els.audit?.prepend(li);
+          refreshPermSummary();
         },
       });
     }
@@ -341,20 +438,17 @@ export function mountSession(root, ctx) {
           host: btn.getAttribute("data-rev"),
           workspace: btn.getAttribute("data-ws"),
         });
+        refreshPermSummary();
         permBtn.click();
       };
     });
   };
 
   if (els.ptyInput?.addEventListener) {
-    els.ptyInput.addEventListener("keydown", async (e) => {
+    els.ptyInput.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
-      const data = els.ptyInput.value;
-      els.ptyInput.value = "";
-      if (!ctx.state.sessionId || !data) return;
-      appendPty(`\n$ ${data}\n`);
-      await api.writePty({ sessionId: ctx.state.sessionId, data: data + "\n" });
+      sendRound();
     });
   }
 
@@ -390,13 +484,15 @@ export function mountSession(root, ctx) {
   return {
     resetForNewSession(snapshot) {
       tail = new OutputTail();
+      streamDisplay = createStreamDisplay();
       outCount = 0;
       auditCount = 0;
       if (els.statOut) els.statOut.textContent = "0";
       if (els.statAudit) els.statAudit.textContent = "0";
-      if (els.pty) els.pty.textContent = "";
+      ensureTerm()?.clear();
       if (els.audit) els.audit.innerHTML = "";
       if (els.error) els.error.textContent = "";
+      if (els.permSummary) els.permSummary.innerHTML = `<p class="meta">加载中…</p>`;
       els.hint?.classList.add("hidden");
       hidePermissionModal(modalRoot);
       setAwaiting(false);
@@ -415,6 +511,8 @@ export function mountSession(root, ctx) {
       unsub();
       hidePermissionModal(modalRoot);
       setAwaiting(false);
+      term?.dispose?.();
+      term = null;
       if (typeof window !== "undefined") {
         window.removeEventListener("resize", notifyResize);
       }

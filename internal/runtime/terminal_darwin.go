@@ -14,7 +14,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// 终端由可信宿主创建，子进程进入相同 Seatbelt 规则；不开放 /dev 或 fork。
+// 终端由可信宿主创建 PTY；子进程进入相同 Seatbelt。
+// AllowDescendants 会话须在 profile 中开放 /dev/ttys* ioctl，否则 Claude setRawMode 会 EPERM。
 func (r *MacOS) execTerminal(ctx context.Context, e *entry, cmd *exec.Cmd, launch LaunchSpec, output func(contracts.OutputData)) (Process, error) {
 	master, slave, err := pty.Open()
 	if err != nil {

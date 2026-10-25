@@ -21,8 +21,8 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
-// MacOS 当前只开放严格单进程模式，内核拒绝 fork/posix_spawn。
-// 没有未经验证的“允许子进程”开关；此限制可能使部分 Agent 工具不可用。
+// MacOS：Health 保持严格 deny process-fork；Agent 会话可通过 RuntimeSpec.AllowDescendants
+// 在白名单 process-exec 内允许后代，并由杀树在 Stop/Destroy 时尽力清理。
 type MacOS struct {
 	mu      sync.Mutex
 	entries map[string]*entry
@@ -42,6 +42,11 @@ var _ Runtime = (*MacOS)(nil)
 func NewMacOS() *MacOS { return &MacOS{entries: make(map[string]*entry)} }
 
 func (r *MacOS) Health(ctx context.Context) error {
+	return r.HealthFor(ctx, false)
+}
+
+// HealthFor 验证指定的 Runtime 能力。允许子进程时仍只开放固定工具路径；不启用 AllowDescendants。
+func (r *MacOS) HealthFor(ctx context.Context, allowChildren bool) error {
 	if ctx.Err() != nil {
 		return runtimeError("CANCELLED")
 	}
@@ -67,16 +72,20 @@ func (r *MacOS) Health(ctx context.Context) error {
 	if err := os.WriteFile(inside, []byte("harbor-health-fixture"), 0600); err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil, false)
+	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil, allowChildren, false)
 	if err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	if strings.Contains(profile, "(allow default)") || !strings.Contains(profile, "(deny default)") || !strings.Contains(profile, "(deny process-fork)") || strings.Contains(profile, "(allow process-fork)") {
+	if strings.Contains(profile, "(allow default)") || !strings.Contains(profile, "(deny default)") || strings.Contains(profile, "(allow process-fork)") != allowChildren || strings.Contains(profile, "(deny process-fork)") == allowChildren {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-p", profile, "/usr/bin/true")
+	probeCommand, probeArgs := "/usr/bin/true", []string{}
+	if allowChildren {
+		probeCommand, probeArgs = "/bin/sh", []string{"-c", "/usr/bin/true"}
+	}
+	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", append([]string{"-p", profile, probeCommand}, probeArgs...)...)
 	cmd.Dir, cmd.Env = allowed, []string{"HOME=" + allowed, "PATH=/usr/bin:/bin"}
 	if cmd.Run() != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
@@ -103,7 +112,7 @@ func (r *MacOS) Create(ctx context.Context, spec RuntimeSpec) (Handle, error) {
 }
 
 func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Handle, error) {
-	if err := r.Health(ctx); err != nil {
+	if err := r.HealthFor(ctx, spec.AllowChildProcesses); err != nil {
 		return Handle{}, err
 	}
 	if spec.SessionID == "" || (spec.MountMode != "direct" && spec.MountMode != "clone") || (!offline && len(spec.AllowedTCP) == 0) || len(spec.ReadOnlyPaths) == 0 {
@@ -153,9 +162,17 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 		}
 		workspace = clonePath
 	}
-	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP, spec.AllowChildProcesses)
+	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP, spec.AllowChildProcesses, spec.AllowDescendants)
 	if err != nil {
 		return Handle{}, err
+	}
+	allowFork := spec.AllowChildProcesses || spec.AllowDescendants
+	if allowFork {
+		if !strings.Contains(profile, "(allow process-fork)") || strings.Contains(profile, "(deny process-fork)") {
+			return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
+		}
+	} else if !strings.Contains(profile, "(deny process-fork)") || strings.Contains(profile, "(allow process-fork)") {
+		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
 	}
 	profilePath := filepath.Join(root, "sandbox.sb")
 	if err := os.WriteFile(profilePath, []byte(profile), 0600); err != nil {
@@ -469,8 +486,9 @@ func (p *macProcess) kill(cancelled bool) {
 		return
 	default:
 	}
-	if err := p.cmd.Process.Kill(); err == nil {
-		p.cancelled = cancelled
+	p.cancelled = cancelled
+	if p.cmd != nil && p.cmd.Process != nil {
+		killProcessTree(p.cmd.Process.Pid)
 	}
 	if p.input != nil {
 		_ = p.input.pipe.Close()

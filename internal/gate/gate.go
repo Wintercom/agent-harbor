@@ -35,6 +35,8 @@ type GateSpec struct {
 	Policy         policy.PolicySnapshot
 	ModelAccountID string
 	MCPAccountID   string
+	// ExtraHosts 会话启动时注入的记住主机（通常为 project）；key 小写主机名 → once|project。
+	ExtraHosts map[string]string
 	// 可选的宿主机扩权决策回调；nil 时必须拒绝，不能自动放行。
 	// 返回决策后 Gate/Policy 仍须重新求值授权，不得直接绕过固定规则。
 	RequestPermission func(context.Context, contracts.PermissionNeeded) (string, error)
@@ -144,16 +146,28 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 		gw = newMCPGateway(h, spec.SessionID, mcpLn)
 	}
 
+	extra := make(map[string]string)
+	for host, scope := range spec.ExtraHosts {
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			continue
+		}
+		if scope != "once" && scope != "project" {
+			scope = "project"
+		}
+		extra[host] = scope
+	}
 	rt := &sessionRuntime{
-		spec:      spec,
-		sentinel:  sentinel,
-		model:     mp,
-		mcp:       gw,
-		modelAddr: modelLn.Addr().String(),
-		cancel:    cancel,
-		ctx:       runCtx, done: make(chan struct{}),
-		audit: audit,
-		fatal: fatal,
+		spec:       spec,
+		sentinel:   sentinel,
+		model:      mp,
+		mcp:        gw,
+		modelAddr:  modelLn.Addr().String(),
+		cancel:     cancel,
+		ctx:        runCtx, done: make(chan struct{}),
+		audit:      audit,
+		fatal:      fatal,
+		extraHosts: extra,
 	}
 
 	mp.server.BaseContext = func(net.Listener) context.Context { return runCtx }

@@ -82,7 +82,7 @@ Seatbelt 诊断使用临时非敏感目录与两个本机受控监听器：工�
 - 子进程环境从零构造，禁止覆盖 HOME、PATH、TMPDIR、CLAUDE_CODE_TMPDIR 和注入 DYLD/NODE 等变量；两个临时目录变量都指向私有 HOME。Kit 只可增加受限模型/运行开关。
 - Runtime 流式读 stdout/stderr，跨 Read 保留不完整 UTF-8，每块最多 16 KiB。取消杀死受限进程，Wait 可重复读取，返回前排空输出回调；Destroy 确认结束及删除私有目录后才成功。输出未排空导致清理超时会保留目录，并允许重试。
 
-**本批仍是严格单进程模式，不能宣称完整 Agent 执行能力完成。** macOS SDK 明确 NOTE_TRACK 自 10.5 起不支持；进程组清理不能可靠覆盖主动脱离的后代，因此本批由内核拒绝 process-fork。测试同时验证 fork、原生 posix_spawn、POSIX_SPAWN_SETPGROUP 均拒绝，避免依赖仅扫描后代或发进程组信号。此模式下 Bash、外部 git、依赖独立子进程的工具不可用；没有放宽 fork 的隐藏开关。后续如核心任务需要子进程，必须先实现可靠追踪/确认方案，并完整重测，不能简单开放 process-fork。
+**2026-10-25 起 Agent 会话可 `AllowDescendants`。** Health 探测仍强制 `deny process-fork`。会话 profile 在只读白名单 `process-exec` 内允许 fork；Stop/Destroy 对 PPID 闭包反复 SIGKILL。极端 `SETPGROUP` 脱离仍可能漏杀，超时则 `cleanupComplete=false`。非白名单 Bash/外部 git 默认仍不可用。
 
 ### Claude Code
 
