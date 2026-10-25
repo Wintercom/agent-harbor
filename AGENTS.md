@@ -17,7 +17,7 @@
 ### 开发语言与技术栈
 
 - **Go 为主语言**：实现 Runtime、Agent Kit、Orchestrator、Harbor Gate、Policy、Secrets 与桌面后端。业务模块在同一个 Go 应用中通过接口协作，不拆微服务。
-- **桌面采用 Wails**：前端使用简单 HTML/CSS/JavaScript 和团队熟悉的工具，不为两个页面额外引入复杂框架。Go 方法绑定与事件通道由研发实现，前端只调用受限的业务能力。
+- **桌面采用 Wails v3.0.0-beta.34**：前端使用简单 HTML/CSS/JavaScript 和团队熟悉的工具，不为两个页面额外引入复杂框架。Go 方法绑定与事件通道由研发实现，前端只调用受限的业务能力。
 - **Python 用于安全验收与演示辅助**，不再并行建设一套 Python 业务后端，避免增加跨语言进程通信与打包成本。
 - Go 后端统一使用 context 传播取消与超时；启动外部程序采用明确的可执行文件、参数与净化环境，不拼接 shell 命令。流式输出、进程树清理及失败关闭属于核心实现要求。
 - 技术栈已替代此前 Electron + TypeScript 方案。目录骨架现为 `internal/{contracts,orchestrator,runtime,kits,gate,policy,secrets,desktop}/`、`frontend/`、`build/`，保留 `security/` 与 `demos/`；旧 src 骨架已移除。根 `main.go` 是薄入口，桌面绑定在 `internal/desktop`，Wails v3 配置在 `build/`。不再建立重复 cmd/harbor 入口。详细目标文件及历史映射见 [Go/Wails 目录设计](docs/DIRECTORY-STRUCTURE.md)。

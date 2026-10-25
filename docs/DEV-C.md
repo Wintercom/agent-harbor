@@ -71,14 +71,14 @@ python3 -m http.server 5173
 ### B 接入说明
 
 - 远程 `main` 已含 B 的 Wails v3 壳、`frontend/package.json`（Vite）、`dist/` 占位与 Gate/Policy/Secrets。
-- 绑定目录为 `frontend/bindings/`（不是旧文案中的 wailsjs）。生成后在 `api.js` 的 `createLiveTransport()` 接入，再 `useLive()` 或 `?live=1`。
+- 绑定目录为 `frontend/bindings/`（不是旧文案中的 wailsjs）。`src/live-api.js` 通过 Vite 编译生成绑定，`api.js` 延迟加载它，再用 `useLive()` 或 `?live=1` 切换真实通道。
 - **视图方法名与字段不要改**；transport 可替换。
 - 真实模式须显示「真实绑定」，禁止把 mock 计入 I1–I11。
 - 预览：`cd frontend && npm run dev`，或 `python3 -m http.server`。
 
 ### 明确未做
 
-- Wails 工程、生成绑定、真实凭据与上游
+- 真实凭据与上游
 - 完整 PAGE-DESIGN（HOME / 设置 / 扩权 / 双会话 / PTY）
 - 自动 E2E 测试脚本、`demos/run.sh`
 - 修改 `internal/`、Gate、Runtime、契约字段（页面需求已按现有 CONTRACT 对齐，无新增字段提案）
@@ -87,7 +87,7 @@ python3 -m http.server 5173
 
 1. ~~D4 证据~~ 已记入 ACCEPTANCE §4.1。
 2. 将本分支前端与文档推到 `origin`（当前 GitHub CLI token 若失效需先 `gh auth refresh`）。
-3. 与 B 对齐绑定生成后切换 live transport；联调 I1（关 mock 真连）。
+3. 使用 Wails v3 绑定生成和 live transport；准备真实凭据后联调 I1（关闭 mock 真连）。
 4. ~~准备非敏感演示目录与任务文案~~ → `demos/workspace/` + `verify-workspace.sh` + 固定任务；配合 A/B 冲 I2 / I8 / I10 / I11。
 5. 需要新 UI 字段时先提 CONTRACT，再改 api/mock/视图。
 
@@ -107,4 +107,4 @@ python3 -m http.server 5173
 | 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js` |
 | 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项 |
 
-不修改桌面 Go 入口与会话状态机；不手改 `frontend/wailsjs/`。
+不修改桌面 Go 入口与会话状态机；不手改 `frontend/bindings/`。

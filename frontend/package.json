@@ -4,18 +4,19 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test": "node --test src/*.test.js",
     "dev": "vite",
     "build": "vite build --mode production",
     "build:dev": "vite build --minify false --mode development",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@wailsio/runtime": "latest"
+    "@wailsio/runtime": "3.0.0-beta.34"
   },
   "devDependencies": {
-    "vite": "^4.5.5"
+    "vite": "7.3.7"
   },
   "engines": {
-    "node": ">=16"
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

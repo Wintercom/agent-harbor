@@ -1,7 +1,7 @@
 # Agent Harbor
 
 [![CI](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Wails](https://img.shields.io/badge/Wails-v3-DF0000?logo=wails&logoColor=white)](https://v3.wails.io/)
 [![Frontend](https://img.shields.io/badge/frontend-HTML%2FCSS%2FJavaScript-E34F26?logo=html5&logoColor=white)](frontend/README.md)
 [![Security checks](https://img.shields.io/badge/security%20checks-Python-3776AB?logo=python&logoColor=white)](security/README.md)
@@ -9,7 +9,7 @@
 
 桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。研发 A 已落地契约/编排/严格单进程 Runtime 与 Claude Kit（[DEV-A.md](docs/DEV-A.md)）；研发 B 已落地 Gate/Policy/Secrets 与 Wails v3 桌面桥；产品 C 已提供浏览器 mock 配置/工作台并通过 D4（[DEV-C.md](docs/DEV-C.md)）。真实模型/MCP 端到端联调仍待完成。
 
-徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。`main` 文档曾确认 Wails v2 基线；本分支桌面工程按 Wails v3 初始化，合入前需与团队确认版本决策。
+徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。桌面统一使用 Wails v3.0.0-beta.34，Go 依赖、CLI 与前端 runtime 固定同一版本。
 
 仓库：https://github.com/liyufei916/agent-harbor
 
@@ -17,7 +17,7 @@
 
 ## 研发 B：开发与构建命令
 
-前置：Go 1.26+（`go.mod` 会自动拉 toolchain）、[Wails v3 CLI](https://v3.wails.io/zh-cn/quick-start/why-wails/)（`go install github.com/wailsapp/wails/v3/cmd/wails3@latest`）、Node ≥16。
+前置：Go 1.26+（`go.mod` 会自动拉 toolchain）、[Wails v3 CLI](https://v3.wails.io/zh-cn/quick-start/why-wails/)（`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34`）、Node 20.19+（或 22.12+，CI 使用 Node 22）。
 
 ```bash
 # 单元测试（gate / policy / secrets / 桌面桥）
@@ -28,11 +28,17 @@ go test ./internal/...
 wails3 generate bindings ./...
 
 # 前端构建（产物 frontend/dist，供 Go embed）
-cd frontend && npm install && npm run build && cd ..
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
 
 # 开发模式 / 打包
 wails3 dev
 wails3 build
+wails3 task darwin:package  # macOS .app 包与本机 ad-hoc 签名
+
+# macOS 原生 WebView 冒烟（需要桌面登录环境，先执行 wails3 build）
+go test -tags production,harbor_desktop -run TestNativeDesktopBindingsAndShutdown -v .
 ```
 
 启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude Kit 与 Orchestrator。固定上游可用 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MCP_ORIGIN`；Claude 模型名可用 `HARBOR_CLAUDE_MODEL`，可执行文件可用 `HARBOR_CLAUDE_BIN`。

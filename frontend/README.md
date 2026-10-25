@@ -15,7 +15,7 @@
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 # 或：python3 -m http.server 5173
 # 打开提示的本地地址；可选 ?scenario=auth
@@ -28,10 +28,12 @@ npm run dev
 ```bash
 # 仓库根目录
 wails3 generate bindings ./...
-cd frontend && npm install && npm run build
+npm ci --prefix frontend
+npm test --prefix frontend
+npm run build --prefix frontend
 wails3 dev
 ```
 
-页面只经 `src/api.js` 调用业务方法。浏览器独立开发使用 `mock-api.js`，勿手改 bindings。`createLiveTransport()` 动态加载 `bindings/github.com/liyufei916/agent-harbor/internal/desktop/desktopapi.js`，并用 `@wailsio/runtime` 的 `Events.On('harbor:event')` 转发契约事件。桌面壳或 `?live=1` 走真实绑定；绑定尚未生成时回退 mock。`?scenario=` 与 `?live=0` 保持模拟。
+页面只经 `src/api.js` 调用业务方法。浏览器独立开发使用 `mock-api.js`，勿手改 bindings。`createLiveTransport()` 延迟加载 `src/live-api.js`，由 Vite 打包生成绑定，并用 `@wailsio/runtime` 的 `Events.On('harbor:event')` 转发契约事件。桌面壳始终使用真实绑定，失败时显示固定错误并停止初始化；浏览器 `?live=1` 显式测试真实绑定，其余使用 mock。桌面不接受 URL 参数切回 mock。使用 Vite 构建/开发前先生成绑定；直接用静态 HTTP 服务预览 mock 不依赖生成文件。
 
 准确方法见 [CONTRACT.md](../docs/CONTRACT.md)。两天范围见 [MVP-2D3P.md](../docs/MVP-2D3P.md)。

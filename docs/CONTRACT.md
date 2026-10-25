@@ -224,7 +224,7 @@ type Runtime interface {
 
 SessionSnapshot.state 只允许 provisioning、running、stopping、stopped、failed；未创建会话的页面空态不产生 idle 会话。cleanupComplete 在准备/运行/清理中为 false，终态按资源确认结果设置。响应中 AccountInfo.kind 只允许 model/mcp，Host 为无凭据的主机名。ListAgents 的空列表用 [] 而非 null。
 
-Go 绑定返回统一业务 error 结构：成功为 error=null，失败为数据字段 null/空及 AppError。不依赖 Wails 将 Go error 序列化为结构化错误；app.go 负责映射内部 error。连接绑定最多等待连接超时；创建与停止只排入状态机。框架/传输失败由 api.js 转为 INTERNAL_ERROR，不向页面暴露原始异常对象。应用启动和页面恢复时调用 ListAgents，用户选择目录后仍将该路径作为待校验输入。
+Go 绑定返回统一业务 error 结构：成功为 error=null，失败为数据字段 null/空及 AppError。不依赖 Wails 将 Go error 序列化为结构化错误；internal/desktop 负责映射内部 error。连接绑定最多等待连接超时；创建与停止只排入状态机。框架/传输失败由 api.js 转为 INTERNAL_ERROR，不向页面暴露原始异常对象。应用启动和页面恢复时调用 ListAgents，用户选择目录后仍将该路径作为待校验输入。
 
 ## 2. 事件、快照与错误
 
@@ -261,7 +261,7 @@ Retryable 只供人选择是否重新操作，不授权自动重发任务或有�
 
 ### 启动与关闭
 
-1. app.go 校验输入并调用 SessionService.Create；Orchestrator 持有单会话锁，用应用 context 派生 session context，而不是使用已返回的绑定请求 context。
+1. internal/desktop 校验输入并调用 SessionService.Create；Orchestrator 持有单会话锁，用应用 context 派生 session context，而不是使用已返回的绑定请求 context。
 2. Orchestrator 调用 Runtime.Health、Kit.Detect、AccountCatalog.Lookup；Policy.Build 校验真实工作区及固定上游，输出不可变快照。原账号元信息由 B 的连接目录提供，不从 Secrets 读密钥。
 3. Gate.Start 创建随机 Sentinel，启动精确绑定 `127.0.0.1` 的模型及 MCP 数据端口并确认 ready，返回 AllowedTCP。失败必须关闭部分已建监听器及上游连接，不留半成品 binding。Start 不再做用户交互或无限期连接测试。
 4. Runtime.Create 接收工作区、只读运行文件和 AllowedTCP，创建私有 HOME/隔离规则并确认限制。**本版工作区配置合并进 Create**，不另设 MountWorkspace，以避免调用顺序歧义；后续后端需保持同等授权语义。
@@ -269,7 +269,7 @@ Retryable 只供人选择是否重新操作，不授权自动重发任务或有�
 6. Exec 返回进程已成功 spawn 后发布 running；监听进程 Wait 和 Gate 致命回调。Runtime.Health 或 Gate 失效禁止转为宿主机直跑。
 7. 停止统一走一个串行清理器：先取消 session context并撤销 Gate → Runtime.Destroy（杀并等待后代、排空输出）→ 等待 Wait/回调结束 → 发布终态。每步即使失败仍尝试其余清理，不只返回第一个错误。
 
-所有后端接口接收 context，普通内部调用返回 error，由 app.go 统一转换成公开 AppError；不能让业务包依赖 Wails。Orchestrator 暂存资源 ID/handle；Gate 持有网络资源，Runtime 持有进程和磁盘资源，Secrets 持有账号生命周期。
+所有后端接口接收 context，普通内部调用返回 error，由 internal/desktop 统一转换成公开 AppError；不能让业务包依赖 Wails。Orchestrator 暂存资源 ID/handle；Gate 持有网络资源，Runtime 持有进程和磁盘资源，Secrets 持有账号生命周期。
 
 Start/Exec 使用会话生命周期 context，准备超时由编排计时器触发会话取消；准备成功后停止该计时器，不能在成功返回时取消仍被监听器/进程使用的 context。Exec 早到输出由编排暂存，发布 running 后按序推送；进程极快退出也必须等最终输出完成再发布终态。Gate 的致命回调只表示监听器/网关自身失效，单次上游 401、超时或拒绝通过协议与审计报告，不等同 Gateway 整体崩溃。
 
@@ -295,7 +295,7 @@ Start/Exec 使用会话生命周期 context，准备超时由编排计时器触�
 | internal/secrets | SecretStore 与内存存储实现、AccountCatalog 的只读元信息实现 | 只读目录不返回真实凭据；Resolve 只注入 Gate；Put/Delete 供受限连接流程 |
 | internal/runtime | RuntimeSpec、Handle、LaunchSpec、ConfigFile、Process/Exit、Runtime | 可用 contracts 输出类型；不导入 kits/gate/policy/orchestrator |
 | internal/kits | KitInfo、KitInput、Kit 接口及注册表 | 可用 contracts/runtime，返回 runtime.LaunchSpec；不依赖 gate，编排层把 binding 字段映射给 KitInput |
-| 根 app.go | DesktopAPI 实现、错误转换、系统目录面板及 Wails 事件 | 只面向 SessionService、Connections 与只读检测能力，不绑定其他对象 |
+| internal/desktop | DesktopAPI 实现、错误转换、系统目录面板及 Wails 事件 | 只面向 SessionService、Connections 与只读检测能力，不绑定其他对象 |
 
 SecretStore.Put 要求 AccountInfo 的 ID 为空，成功分配 ID 并关联元信息；失败不留记录，返回的 ID 由连接流程填入 AccountInfo。连接测试先使用仅内存候选凭据，验证成功后才 Put；失败不创建可用账号。Catalog 与 Store 可是同一个私有实现的不同窄视图，但 A 仅收到 Lookup 能力。
 

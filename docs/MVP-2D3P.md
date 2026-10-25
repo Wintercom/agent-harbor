@@ -6,7 +6,7 @@
 
 **必须交付：桌面填写凭据 → 选择工作区 → 隔离启动一个真实 Agent → 通过宿主机调用模型与一个带认证 MCP → 展示结果和安全边界 → 停止并清理。** MCP 是本议题核心，不能按旧三天 Spike 将其砍掉。
 
-以团队有 macOS 开发机为前提，建议只支持同一款 macOS 版本及 CPU 架构；开工前记录具体版本。技术栈为 Go + Wails v2，前端使用简单 HTML/CSS/JavaScript；Go 统一承担编排、进程、HTTP 与 MCP 网关，MCP 使用现有 Go SDK，Python 仅用于安全验收和演示辅助。不引入数据库、微服务或自研协议栈。
+以团队有 macOS 开发机为前提，建议只支持同一款 macOS 版本及 CPU 架构；开工前记录具体版本。技术栈为 Go + Wails v3.0.0-beta.34，前端使用简单 HTML/CSS/JavaScript；Go 统一承担编排、进程、HTTP 与 MCP 网关，MCP 使用现有 Go SDK，Python 仅用于安全验收和演示辅助。不引入数据库、微服务或自研协议栈。
 
 | 项目 | 两天版本 | 延后 |
 |---|---|---|
@@ -76,7 +76,7 @@ flowchart TB
     E --> IPC
 ```
 
-除 Wails 管理的 WebView 外，团队主要管理 Go 应用进程与 Agent 进程；Agent 子进程继续受同一沙箱约束。Policy、Secrets、Gate 是内部 Go 包，不拆成独立服务。前端只加载本地受信资源，限制导航并配置 CSP；app.go 仅绑定固定业务方法，禁止任意命令执行和通用文件访问，不直接绑定 Runtime、Gate 或 Secrets。
+除 Wails 管理的 WebView 外，团队主要管理 Go 应用进程与 Agent 进程；Agent 子进程继续受同一沙箱约束。Policy、Secrets、Gate 是内部 Go 包，不拆成独立服务。前端只加载本地受信资源，限制导航并配置 CSP；internal/desktop 仅绑定固定业务方法，禁止任意命令执行和通用文件访问，不直接绑定 Runtime、Gate 或 Secrets。
 
 Gate 只开放数据入口，不提供控制、凭据读取、任意目标 URL 或配置修改接口。控制走 Wails Go 绑定，不另开 HTTP 管理端口。Go 后端不得加载远程页面或在 Gateway 中执行 MCP 返回的代码；不得将密钥通过命令行参数传给 Agent。
 
@@ -125,14 +125,14 @@ sequenceDiagram
 | 负责人 | 模块与目录 | 对外交付 | 不承担 |
 |---|---|---|---|
 | A：隔离、Agent 与编排 | `internal/runtime/`、`internal/kits/`、`internal/orchestrator/`、`security/` | profile、私有 HOME、进程树清理；真实 Kit；状态机、业务装配和回滚；隔离负例 | UI、上游认证与 MCP 协议 |
-| B：Gate、凭据与桌面后端 | `internal/gate/`、`internal/secrets/`、`internal/policy/`、根 main.go/app.go 与构建配置 | 模型流式反代、MCP Gateway、Sentinel、策略；Wails 绑定/事件及构建环境 | 会话状态机、桌面页面 |
+| B：Gate、凭据与桌面后端 | `internal/gate/`、`internal/secrets/`、`internal/policy/`、main.go/internal/desktop 与构建配置 | 模型流式反代、MCP Gateway、Sentinel、策略；Wails 绑定/事件及构建环境 | 会话状态机、桌面页面 |
 | C：产品与前端 | `frontend/`、`demos/` | 两视图、范围收敛、产品验收与演示；前端联调 | Go 编排、协议、隔离与构建故障处理 |
 | A/B 确定，C 核对 | `internal/contracts/` | 统一 DTO、错误码和事件；B 生成 Wails 绑定；首小时冻结 | 各目录自行定义同名接口 |
 
 建议目录结构如下；目录为模块边界，不是单独部署单元。
 
 ```text
-main.go / app.go              # B：Wails 启动、受限绑定和事件适配
+main.go / internal/desktop              # B：Wails 启动、受限绑定和事件适配
 internal/
   contracts/                 # A/B 定义，C 核对前端数据需求
   orchestrator/              # A：生命周期、装配及回滚
