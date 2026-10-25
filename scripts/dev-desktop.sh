@@ -14,24 +14,38 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-export PATH="${HOME}/go/bin:${PATH}"
+# Homebrew Go + `go install` 产物常见路径
+export PATH="/opt/homebrew/bin:${HOME}/go/bin:${PATH}"
 WAILS3_BIN="${WAILS3:-wails3}"
 
 echo "→ 仓库: $ROOT"
 echo "→ 分支: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
 echo "→ 口径: 全量 PAGE（页面配置上游；mock 请用 frontend 下 npm run dev）"
 
-if ! command -v "$WAILS3_BIN" >/dev/null 2>&1; then
-  echo "✗ 未找到 $WAILS3_BIN"
-  echo "  安装: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34"
-  echo "  并确保 \$HOME/go/bin 在 PATH 中"
+if ! command -v go >/dev/null 2>&1; then
+  echo "✗ 未找到 go"
+  echo "  macOS: brew install go"
   exit 1
+fi
+
+if ! command -v "$WAILS3_BIN" >/dev/null 2>&1; then
+  if [[ -x "${HOME}/go/bin/wails3" ]]; then
+    WAILS3_BIN="${HOME}/go/bin/wails3"
+  else
+    echo "✗ 未找到 wails3"
+    echo "  安装: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34"
+    echo "  并确保 \$HOME/go/bin 在 PATH（本脚本已尝试加入）"
+    exit 1
+  fi
 fi
 
 if ! command -v node >/dev/null 2>&1; then
   echo "✗ 未找到 node（需要 Node 20.19+ 或 22+）"
   exit 1
 fi
+
+echo "→ go: $(go version)"
+echo "→ wails3: $("$WAILS3_BIN" version 2>/dev/null || echo "$WAILS3_BIN")"
 
 if [[ "${SKIP_GENERATE:-0}" != "1" ]]; then
   echo "→ wails3 generate bindings ./..."
