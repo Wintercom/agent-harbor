@@ -130,16 +130,20 @@ func unimplemented() *contracts.AppError {
 	return contracts.NewAppError(contracts.ErrUnimplemented, "该方法尚未实现，形状已按契约占位。", false)
 }
 
-// ListAccounts 列出已保存账号（V1.1；未接线时 UNIMPLEMENTED）。
+// ListAccounts 列出已保存账号元信息，不返回密钥。
 func (d *DesktopAPI) ListAccounts(kind string) contracts.AccountsResponse {
-	_ = kind
-	return contracts.AccountsResponse{Accounts: []contracts.AccountInfo{}, Error: unimplemented()}
+	if kind != "" && kind != "model" && kind != "mcp" {
+		return contracts.AccountsResponse{Accounts: []contracts.AccountInfo{}, Error: contracts.NewAppError(contracts.ErrInvalidArgument, "账号类型不合法", false)}
+	}
+	return contracts.AccountsResponse{Accounts: d.app.secrets.List(context.Background(), kind)}
 }
 
-// RemoveAccount 删除账号（V1.1 占位）。
+// RemoveAccount 删除账号及其凭据。
 func (d *DesktopAPI) RemoveAccount(accountID string) contracts.EmptyResponse {
-	_ = accountID
-	return contracts.EmptyResponse{Error: unimplemented()}
+	if err := d.app.secrets.Delete(context.Background(), accountID); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
 }
 
 // ListSessions 列出会话摘要（V1.1 占位）。
@@ -153,13 +157,22 @@ func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse 
 	return contracts.SessionResponse{Error: unimplemented()}
 }
 
-// GetRuntimeHealth 返回隔离探测（V1.1 占位；实现接 Runtime.Health）。
+// GetRuntimeHealth 返回真实 Runtime 隔离探测结果。
 func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
-	return contracts.RuntimeHealthResponse{
-		Available: false,
-		Reason:    "健康检查尚未接线",
-		Error:     unimplemented(),
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	d.app.mu.Lock()
+	rt := d.app.runtime
+	d.app.mu.Unlock()
+	if rt == nil {
+		err := unimplemented()
+		return contracts.RuntimeHealthResponse{Available: false, Reason: err.Message, Error: err}
 	}
+	if err := rt.Health(ctx); err != nil {
+		mapped := mapError(err)
+		return contracts.RuntimeHealthResponse{Available: false, Reason: mapped.Message, Error: mapped}
+	}
+	return contracts.RuntimeHealthResponse{Available: true, IsolationLevel: "macos-seatbelt"}
 }
 
 // GetPermissionOverview 权限一览（V1.1 占位）。

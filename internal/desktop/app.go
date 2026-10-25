@@ -9,6 +9,7 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/liyufei916/agent-harbor/internal/gate"
 	"github.com/liyufei916/agent-harbor/internal/policy"
+	harborruntime "github.com/liyufei916/agent-harbor/internal/runtime"
 	"github.com/liyufei916/agent-harbor/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -33,11 +34,16 @@ type App struct {
 	policy  *policy.Builder
 	gate    *gate.Harbor
 	conn    *gate.Connections
+	runtime runtimeHealthChecker
 
 	mu       sync.Mutex
 	sessions SessionService
 	agents   AgentDetector
 	ready    bool
+}
+
+type runtimeHealthChecker interface {
+	Health(context.Context) error
 }
 
 // NewApp 创建 Gate、Policy 与内存凭据。编排在 AttachOrchestrator 中注入。
@@ -47,6 +53,7 @@ func NewApp() *App {
 	app := &App{
 		secrets:  store,
 		policy:   pol,
+		runtime:  harborruntime.NewMacOS(),
 		sessions: unavailableSession{},
 	}
 	app.gate = gate.New(store, pol)

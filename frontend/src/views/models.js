@@ -45,8 +45,20 @@ export function mountModels(root, ctx) {
       <div class="row session-card">
         <span class="ok">● ${a.name || a.id}</span>
         <span class="meta">${a.profileId} · ${a.host || ""} · ${a.id}</span>
+        <button type="button" class="btn" id="btn-remove-model">删除</button>
       </div>
     `;
+    root.querySelector("#btn-remove-model").onclick = async () => {
+      const res = await api.removeAccount(a.id);
+      if (res.error) {
+        status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+        return;
+      }
+      ctx.state.modelAccount = null;
+      status.innerHTML = `<span class="ok">已删除</span>`;
+      renderList();
+      ctx.onAccountsChanged?.();
+    };
   }
   renderList();
   if (acc) status.innerHTML = `<span class="ok">当前已连接</span>`;

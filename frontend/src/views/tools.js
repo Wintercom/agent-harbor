@@ -41,8 +41,20 @@ export function mountTools(root, ctx) {
       <div class="row session-card">
         <span class="ok">● ${a.name || a.id}</span>
         <span class="meta">${a.profileId} · ${a.host || ""} · ${a.id}</span>
+        <button type="button" class="btn" id="btn-remove-mcp">删除</button>
       </div>
     `;
+    root.querySelector("#btn-remove-mcp").onclick = async () => {
+      const res = await api.removeAccount(a.id);
+      if (res.error) {
+        status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+        return;
+      }
+      ctx.state.mcpAccount = null;
+      status.innerHTML = `<span class="ok">已删除</span>`;
+      renderList();
+      ctx.onAccountsChanged?.();
+    };
   }
   renderList();
 

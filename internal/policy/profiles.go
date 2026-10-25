@@ -33,7 +33,10 @@ type FixedProfile struct {
 // DefaultProfiles 返回两天版固定组合。
 // 必须显式登记 origin、模型及工具白名单；没有占位供应商或隐式全工具授权。
 func DefaultProfiles() map[string]FixedProfile {
-	modelOrigin := envOr("HARBOR_DEMO_MODEL_ORIGIN", "")
+	// demo-model 由 Claude Kit 使用。优先采用语义更明确的 Claude 变量，
+	// 同时保留旧 DEMO 变量，避免已有启动脚本在升级后失效。
+	modelOrigin := envFirst("HARBOR_CLAUDE_MODEL_ORIGIN", "HARBOR_DEMO_MODEL_ORIGIN")
+	modelBasePath := envFirst("HARBOR_CLAUDE_MODEL_BASE_PATH", "HARBOR_DEMO_MODEL_BASE_PATH")
 	mcpOrigin := envOr("HARBOR_DEMO_MCP_ORIGIN", "")
 	tools := []string{}
 	for _, tool := range strings.Split(os.Getenv("HARBOR_DEMO_MCP_TOOLS"), ",") {
@@ -44,7 +47,7 @@ func DefaultProfiles() map[string]FixedProfile {
 	return map[string]FixedProfile{
 		ProfileDSHModel:   {ID: ProfileDSHModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL")), Origin: envOr("HARBOR_DSH_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_DSH_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
 		ProfileCodexModel: {ID: ProfileCodexModel, Kind: "model", Protocol: "openai-responses", Model: strings.TrimSpace(os.Getenv("HARBOR_CODEX_MODEL")), Origin: envOr("HARBOR_CODEX_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_CODEX_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_CODEX_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/responses"}, TestPath: "/v1/responses"},
-		ProfileDemoModel:  {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
+		ProfileDemoModel:  {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), BasePath: modelBasePath, Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
 		ProfileDemoMCP:    {ID: ProfileDemoMCP, Kind: "mcp", Protocol: "streamable-http", Origin: mcpOrigin, Host: hostOfOrigin(mcpOrigin), Paths: []string{"/mcp"}, TestPath: "/mcp", Tools: tools},
 	}
 }
@@ -103,6 +106,16 @@ func envOr(key, fallback string) string {
 		return strings.TrimRight(v, "/")
 	}
 	return strings.TrimRight(fallback, "/")
+}
+
+// envFirst 返回第一个非空环境变量，并按配置路径规则去掉末尾斜杠。
+func envFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return strings.TrimRight(value, "/")
+		}
+	}
+	return ""
 }
 
 func hostOfOrigin(origin string) string {

@@ -58,6 +58,7 @@ export function mountSetup(root, ctx, opts = {}) {
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-model">连接模型</button>
           <span class="meta" id="model-status">未连接</span>
+          <button type="button" class="btn hidden" id="btn-remove-model">删除连接</button>
         </div>
       </section>
       <section class="card">
@@ -74,6 +75,7 @@ export function mountSetup(root, ctx, opts = {}) {
         <div class="row">
           <button type="button" class="btn primary" id="btn-connect-mcp">连接 MCP</button>
           <span class="meta" id="mcp-status">未连接</span>
+          <button type="button" class="btn hidden" id="btn-remove-mcp">删除连接</button>
         </div>
       </section>
     </div>
@@ -114,6 +116,8 @@ export function mountSetup(root, ctx, opts = {}) {
     msg: root.querySelector("#setup-msg"),
     btnModel: root.querySelector("#btn-connect-model"),
     btnMcp: root.querySelector("#btn-connect-mcp"),
+    removeModel: root.querySelector("#btn-remove-model"),
+    removeMcp: root.querySelector("#btn-remove-mcp"),
     btnWs: root.querySelector("#btn-pick-ws"),
   };
 
@@ -232,6 +236,7 @@ export function mountSetup(root, ctx, opts = {}) {
       } else {
         ctx.state.modelAccount = res.account;
         els.modelStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+        els.removeModel?.classList?.remove("hidden");
       }
     } finally {
       els.btnModel.disabled = false;
@@ -261,11 +266,38 @@ export function mountSetup(root, ctx, opts = {}) {
       } else {
         ctx.state.mcpAccount = res.account;
         els.mcpStatus.innerHTML = `<span class="ok">已连接 · ${res.account.id} · ${res.account.host}</span>`;
+        els.removeMcp?.classList?.remove("hidden");
       }
     } finally {
       els.btnMcp.disabled = false;
       refreshStart();
     }
+  };
+
+  if (els.removeModel) els.removeModel.onclick = async () => {
+    if (!ctx.state.modelAccount) return;
+    const res = await api.removeAccount(ctx.state.modelAccount.id);
+    if (res.error) {
+      els.modelStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+      return;
+    }
+    ctx.state.modelAccount = null;
+    els.removeModel.classList.add("hidden");
+    els.modelStatus.textContent = "已删除连接";
+    refreshStart();
+  };
+
+  if (els.removeMcp) els.removeMcp.onclick = async () => {
+    if (!ctx.state.mcpAccount) return;
+    const res = await api.removeAccount(ctx.state.mcpAccount.id);
+    if (res.error) {
+      els.mcpStatus.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+      return;
+    }
+    ctx.state.mcpAccount = null;
+    els.removeMcp.classList.add("hidden");
+    els.mcpStatus.textContent = "已删除连接";
+    refreshStart();
   };
 
   els.btnWs.onclick = async () => {

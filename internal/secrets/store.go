@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -115,6 +116,20 @@ func (s *Store) Lookup(_ context.Context, id string) (contracts.AccountInfo, err
 		return contracts.AccountInfo{}, ErrNotFound
 	}
 	return rec.meta, nil
+}
+
+// List 返回脱敏账号元信息；kind 为空时返回全部账号。
+func (s *Store) List(_ context.Context, kind string) []contracts.AccountInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]contracts.AccountInfo, 0, len(s.byID))
+	for _, rec := range s.byID {
+		if kind == "" || rec.meta.Kind == kind {
+			out = append(out, rec.meta)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // Clear 在应用退出时清空全部凭据。
