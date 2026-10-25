@@ -7,43 +7,86 @@
 [![Security checks](https://img.shields.io/badge/security%20checks-Python-3776AB?logo=python&logoColor=white)](security/README.md)
 [![Unit coverage](https://img.shields.io/badge/unit%20coverage-59.2%25-blue)](https://github.com/liyufei916/agent-harbor/actions/workflows/ci.yml)
 
-桌面 Agent 安全沙箱：密钥留在本机、Agent 隔离运行。产品真源是 [PAGE-DESIGN](docs/PAGE-DESIGN.md) **全量**（非两天裁剪）；总纲 [SYSTEM-DESIGN](docs/SYSTEM-DESIGN.md) v2，契约 [CONTRACT](docs/CONTRACT.md) v1.2。
+桌面 Agent **安全沙箱**：密钥留在本机、Agent 隔离运行、出站经 Harbor Gate。产品真源 [PAGE-DESIGN](docs/PAGE-DESIGN.md) 全量；契约 [CONTRACT](docs/CONTRACT.md) v1.2。
 
-分工：A 契约/编排/Runtime/Kit（[DEV-A](docs/DEV-A.md)）；B Gate/Policy/Secrets 与 Wails v3（[DEV-B](docs/DEV-B.md)）；C 全量 PAGE 壳与 mock（[DEV-C](docs/DEV-C.md)，D4 已过）。**交付形态是桌面 App**；浏览器 `frontend` mock 只看 UI，不计 I1–I11。真实模型/MCP/clone/PTY 联调仍待 A/B 接线。
+仓库：https://github.com/liyufei916/agent-harbor · 产品分支 `feat/page-design-full`
 
-徽章中的覆盖率是当前 GitHub Actions 可移植 Go 测试基线，由 `go test -coverprofile` 汇总；每次 CI 会重新生成覆盖率报告。桌面统一使用 Wails v3.0.0-beta.34，Go 依赖、CLI 与前端 runtime 固定同一版本。
+---
 
-仓库：https://github.com/liyufei916/agent-harbor · 当前产品分支 `feat/page-design-full`
+## 核心功能与亮点
 
-可浏览原型（不接真 Runtime）：[`prototype/index.html`](./prototype/index.html)。mock 全量 PAGE：`cd frontend && npm run dev` → [http://127.0.0.1:5173/](http://127.0.0.1:5173/)。桌面 live：仓库根 `./scripts/dev-desktop.sh` 或 `wails3 dev`。
+| 亮点 | 说明 |
+|---|---|
+| **密钥不进沙箱** | Key 只在本机录入与保存；执行面经 Gate 出站，Agent 环境只有 Sentinel |
+| **macOS Seatbelt 隔离** | 工作区授权 + 进程降权；隔离不可用时阻断开跑（无「仍要继续」） |
+| **安全副本 / 一键导回** | 默认 `clone` 在副本改文件；工作台 **导回原文件夹** 合并写回；也可选直接编辑 |
+| **Harbor Gate 出站** | 模型 / MCP 只走白名单主机；扩权三选一（拒绝 / 仅本次 / 本项目），**无全网放行** |
+| **多会话 ≤2** | HOME 会话中心；同工作区禁双开；停止后可 **再次开始**（沿用配置直进工作台） |
+| **工作台 PTY** | 边界条 + 可读输出 + 下方输入发下一轮；支持切换模型、权限一览 |
+| **多 Agent** | Claude Code / DeepSeek dsh（及 Codex 配置项）；页面配置上游，非硬编码供应商 |
+| **MCP 双轨** | Token 或浏览器 OAuth；记住主机可撤销 |
 
-## 研发 B：开发与构建命令
+叙事用语：「隔离运行」「密钥留在本机」「经安全闸口」。交付形态是 **桌面 App**；浏览器 mock 只看 UI，**不计** I1–I11。
 
-前置：Go 1.26+（`go.mod` 会自动拉 toolchain）、[Wails v3 CLI](https://v3.wails.io/zh-cn/quick-start/why-wails/)（`go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34`）、Node 20.19+（或 22.12+，CI 使用 Node 22）。
+---
+
+## 快速构建
+
+前置：Go 1.26+、[Wails v3 CLI](https://v3.wails.io/zh-cn/quick-start/why-wails/) `v3.0.0-beta.34`、Node 20.19+ 或 22.12+。
 
 ```bash
-# 单元测试（gate / policy / secrets / 桌面桥）
-go test ./internal/gate ./internal/policy ./internal/secrets .
-go test ./internal/...
-
-# 生成前端绑定（输出 frontend/bindings，勿手改）
-wails3 generate bindings ./...
-
-# 前端构建（产物 frontend/dist，供 Go embed）
+# 1) 依赖与前端
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34
 npm ci --prefix frontend
-npm test --prefix frontend
 npm run build --prefix frontend
 
-# 开发模式 / 打包
-wails3 dev
-wails3 build
-wails3 task darwin:package  # macOS .app 包与本机 ad-hoc 签名
+# 2) 生成绑定（勿手改 frontend/bindings）
+wails3 generate bindings ./...
 
-# macOS 原生 WebView 冒烟（需要桌面登录环境，先执行 wails3 build）
+# 3a) 桌面开发（推荐）
+./scripts/dev-desktop.sh
+# 或：wails3 dev
+
+# 3b) 仅看 UI（浏览器 mock，不计验收）
+cd frontend && npm run dev   # http://127.0.0.1:5173/
+
+# 4) 测试 / 打包
+go test ./internal/...
+npm test --prefix frontend
+wails3 build
+wails3 task darwin:package   # macOS .app
+```
+
+可浏览静态原型（不接 Runtime）：[`prototype/index.html`](./prototype/index.html)。演示话术见 [demos/README.md](demos/README.md)。
+
+---
+
+## 演示视频
+
+| 内容 | 链接 |
+|---|---|
+| 产品演示（全量 PAGE / 工作台） | _待补充正式链接_ |
+| mock 三分钟话术（可对照操作） | [demos/README.md · 三分钟 mock](demos/README.md#三分钟-mock-话术全量-page--d4) |
+| live 十分钟话术（I1/I2） | [demos/README.md · 十分钟 live](demos/README.md#十分钟-live-话术i1i2-评审向--p0-c-doc-2) |
+
+> 录屏发布后，把上表「待补充」换成 Bilibili / YouTube / 网盘等可公开 URL，并注明对应 commit。
+
+---
+
+## 研发说明（详）
+
+分工：A 契约/编排/Runtime/Kit（[DEV-A](docs/DEV-A.md)）；B Gate/Policy/Secrets 与 Wails v3（[DEV-B](docs/DEV-B.md)）；C 全量 PAGE 壳与 mock（[DEV-C](docs/DEV-C.md)，D4 已过）。
+
+徽章中的覆盖率是 GitHub Actions 可移植 Go 测试基线（`go test -coverprofile`）；桌面统一 Wails v3.0.0-beta.34。
+
+### 更多构建与探测命令
+
+```bash
+go test ./internal/gate ./internal/policy ./internal/secrets .
 go test -tags production,harbor_desktop -run TestNativeDesktopBindingsAndShutdown -v .
 ```
 
-启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 A 的 Runtime、Claude/dsh Kit 与 Orchestrator。Claude `demo-model` 支持通过 `HARBOR_CLAUDE_MODEL_ORIGIN`、`HARBOR_CLAUDE_MODEL_BASE_PATH`、`HARBOR_CLAUDE_MODEL` 登记上游；未设置前两项时兼容旧变量 `HARBOR_DEMO_MODEL_ORIGIN`、`HARBOR_DEMO_MODEL_BASE_PATH`。origin 仅允许 scheme + host/port，不含路径；路径前缀（如 DeepSeek Anthropic 兼容接口的 `/anthropic`）单独放在 `BASE_PATH`。固定 MCP 上游通过 `HARBOR_DEMO_MCP_ORIGIN` 和逗号分隔的 `HARBOR_DEMO_MCP_TOOLS` 登记；可执行文件可用 `HARBOR_CLAUDE_BIN`。未配置时拒绝连接，不默认访问供应商或占位服务。当前仅支持 Anthropic `/v1/messages` 和 Bearer 认证的 Streamable HTTP `/mcp`（2025-03-26）；连接模型会发送最多 1 token 的探测消息。真实服务组合仍需团队登记验收。
+启动时 `main.go` 调用 `desktop.AttachOrchestrator`，接入 Runtime、Claude/dsh Kit 与 Orchestrator。Claude 可通过 `HARBOR_CLAUDE_MODEL_ORIGIN`、`HARBOR_CLAUDE_MODEL_BASE_PATH`、`HARBOR_CLAUDE_MODEL` 登记上游（兼容旧 `HARBOR_DEMO_*`）。origin 仅 scheme + host/port；路径前缀放 `BASE_PATH`。MCP 用 `HARBOR_DEMO_MCP_ORIGIN` / `HARBOR_DEMO_MCP_TOOLS`；二进制可用 `HARBOR_CLAUDE_BIN`。未配置则拒绝连接。当前支持 Anthropic `/v1/messages` 与 Bearer 的 Streamable HTTP `/mcp`（2025-03-26）。
 
 ## DeepSeek dsh
 
