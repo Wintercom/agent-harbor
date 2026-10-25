@@ -1,5 +1,13 @@
 # 研发 A 开发记录
 
+## 扩权等待与决策生命周期
+
+A 已实现 `RequestPermission`/`ResolvePermission`，等待期间保持 running；用 `permission_needed` 告知 UI，允许 deny/once/project，重复决策和无挂起请求返回 INVALID_ARGUMENT。按会话及精确主机隔离等待，最多 8 个，同一目标不重复挂起；请求取消、超时、Stop、Shutdown 均通过 context 解除等待。Sentinel、URL、通配符、本机地址不能进入扩权载荷。
+
+回调通过 GateSpec 注入，桌面 ResolvePermission 仅做错误映射和转发。A 不在编排层存项目白名单，也不直接转发网络请求。B 尚须接入 Gate 真实触发、DNS/IP 校验、once 单次消费和按原工作区持久化 project 规则，再重新求值请求；当前原有拒绝逻辑保持有效，不能称为真实扩权闭环通过。
+
+测试覆盖三种决策、running 状态不变、重复/过期决策、跨会话拒绝、Stop/请求取消解除等待、非法目标及桌面转发。
+
 ## 2026-10-24：共享契约与编排首批实现
 
 工作树基于 `ce2d47b`，本轮尚未提交。下节记录首批成果；最新 Runtime/Kit 实现与限制见文末第二批记录。当前不是可运行桌面应用，也不是研发 A 全部交付完成。

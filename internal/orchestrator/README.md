@@ -4,6 +4,8 @@
 
 ## 当前实现
 
+`permission.go` 提供会话级 `RequestPermission` 等待和 `ResolvePermission` 决策：保持 running、按目标去重、最多 8 个挂起请求，停止和请求取消解除等待。回调随 GateSpec 注入；Gate 触发、Policy 应用决策与重新求值由 B 接入，当前不自动新增出站授权。
+
 - `session.go`：会话状态、最多两个并发会话、规范化工作区冲突、Create/Get/List/Stop/Destroy、同会话多轮输入和 Shutdown。
 - `events.go`：串行事件分发、输出限额、UTF-8 分块与 Sentinel 流式过滤。
 - `ports.go`：注入消费接口；`errors.go`：固定公开错误模板。

@@ -78,6 +78,27 @@ type recordingSession struct {
 	shutdownErr   error
 }
 
+type permissionSession struct {
+	recordingSession
+	input contracts.ResolvePermissionInput
+}
+
+func (s *permissionSession) ResolvePermission(_ context.Context, input contracts.ResolvePermissionInput) error {
+	s.input = input
+	return contracts.NewAppError(contracts.ErrInvalidArgument, "无挂起的扩权请求。", false)
+}
+
+func TestResolvePermissionForwardsToSessionService(t *testing.T) {
+	app := NewApp()
+	svc := &permissionSession{}
+	app.SetSessionService(svc)
+	input := contracts.ResolvePermissionInput{SessionID: "session", Target: "docs.example.test", Decision: "once"}
+	response := NewDesktopAPI(app).ResolvePermission(input)
+	if svc.input != input || response.Error == nil || response.Error.Code != contracts.ErrInvalidArgument {
+		t.Fatalf("决策未转交：%+v %+v", svc.input, response)
+	}
+}
+
 func (r *recordingSession) Create(_ context.Context, spec contracts.SessionSpec) (contracts.SessionSnapshot, error) {
 	r.last = spec
 	return contracts.SessionSnapshot{

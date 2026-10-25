@@ -33,6 +33,9 @@ type GateSpec struct {
 	Policy         policy.PolicySnapshot
 	ModelAccountID string
 	MCPAccountID   string
+	// 可选的宿主机扩权决策回调；nil 时必须拒绝，不能自动放行。
+	// 返回决策后 Gate/Policy 仍须重新求值授权，不得直接绕过固定规则。
+	RequestPermission func(context.Context, contracts.PermissionNeeded) (string, error)
 }
 
 // GateBinding 返回给编排层的注入信息（不得进入前端 DTO）。

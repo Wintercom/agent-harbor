@@ -47,6 +47,7 @@ type session struct {
 	wait           <-chan runtime.Exit
 	process        runtime.Process
 	interactive    bool
+	permissions    map[string]*permissionRequest
 	cleanupDone    chan struct{}
 	finished       chan struct{}
 	retry          chan struct{}
@@ -532,7 +533,9 @@ func (o *Service) provision(s *session) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID},
+	binding, err := o.deps.Gate.Start(ctx, gate.GateSpec{SessionID: s.snapshot.SessionID, Policy: p, ModelAccountID: model.ID, MCPAccountID: mcp.ID, RequestPermission: func(call context.Context, request contracts.PermissionNeeded) (string, error) {
+		return o.RequestPermission(call, s.snapshot.SessionID, request)
+	}},
 		func(data contracts.AuditData) { o.audit(s, data) }, func(err error) { o.fail(s, err, "INTERNAL_ERROR") })
 	if err != nil {
 		return err
