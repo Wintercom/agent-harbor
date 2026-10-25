@@ -24,6 +24,14 @@ func (unavailableSession) Stop(context.Context, string) (contracts.SessionSnapsh
 	return contracts.SessionSnapshot{}, errOrchestratorDown
 }
 
+func (unavailableSession) List(context.Context) ([]contracts.SessionSummary, error) {
+	return nil, errOrchestratorDown
+}
+
+func (unavailableSession) Destroy(context.Context, string) (contracts.SessionSnapshot, error) {
+	return contracts.SessionSnapshot{}, errOrchestratorDown
+}
+
 func (unavailableSession) Shutdown(context.Context) error { return nil }
 
 func (unavailableSession) WithConnection(context.Context, func(context.Context) error) error {

@@ -130,3 +130,18 @@ func (s *Store) Count() int {
 	defer s.mu.RUnlock()
 	return len(s.byID)
 }
+
+// List 返回脱敏账号元信息（无密钥）。kind 为 model|mcp|""（全部）。
+func (s *Store) List(_ context.Context, kind string) []contracts.AccountInfo {
+	want := strings.TrimSpace(kind)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]contracts.AccountInfo, 0, len(s.byID))
+	for _, rec := range s.byID {
+		if want != "" && rec.meta.Kind != want {
+			continue
+		}
+		out = append(out, rec.meta)
+	}
+	return out
+}

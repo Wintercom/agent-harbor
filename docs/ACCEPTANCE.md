@@ -87,8 +87,8 @@ D1 的绑定生成已执行；原生 WebView 冒烟通过生成绑定校验 DTO�
 
 | 编号 | 状态 | 说明 |
 |---|---|---|
-| I1 | **阻断** | 桌面 `GetRuntimeHealth` 返回「健康检查尚未接线」→ 阻断页禁新会话；非本机隔离故障，是 B 未接线。填空见 [evidence-template](../demos/evidence-template.md) |
-| I2 / I8 / I10 / I11 | 待执行 | 依赖 I1 通路；演示请用浏览器 mock（[demos/README](../demos/README.md)） |
-| D4 | 通过（mock） | 见 §4.1；全量 PAGE stub 已推进，仍不计 I |
+| I1 | **待重测** | B 已接 `GetRuntimeHealth` / Accounts / ListSessions 等（见 [DEV-B](DEV-B.md)）。需在桌面 live 重跑：绿灯后连模型/MCP。旧「尚未接线」阻断作废。填空见 [evidence-template](../demos/evidence-template.md) |
+| I2 / I8 / I10 / I11 | 待执行 | 依赖 I1 真通路；mock 见 [demos/README](../demos/README.md) |
+| D4 | 通过（mock） | 见 §4.1；不计 I |
 
-**口径**：阻断须如实记录；mock 演示 ≠ I 通过。A 侧多会话/clone/扩权编排已合入分支，待 B 接到 DesktopAPI 后再重测。
+**口径**：mock ≠ I 通过。A 编排 + B DesktopAPI 子集已合；OAuth/Keychain/扩权 Gate 真触发仍待 B 后续。

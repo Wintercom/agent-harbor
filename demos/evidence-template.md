@@ -16,14 +16,12 @@ HARBOR_DEMO_MCP_ORIGIN / HARBOR_DEMO_MCP_TOOLS：
 工作区绝对路径：
 ```
 
-## 当前联调阻断（2026-10-25 · 可先填）
+## Health 接线后重测备忘（2026-10-25）
 
 ```text
-现象：桌面 live 全页「无法安全启动」；reason=健康检查尚未接线
-根因：DesktopAPI.GetRuntimeHealth 占位 Available=false（等 B 接 Runtime.Health）
-对 C：mock 全量 PAGE 仍可演示；不得记 I 通过
-状态：阻断
-下一步：B 接线后重测 I1；截图可附阻断页作证据
+变更：GetRuntimeHealth 已接 Runtime.Health（不再固定「尚未接线」）
+重测：./scripts/dev-desktop.sh → 侧栏是否「隔离就绪」→ 再跑 I1
+若仍阻断：记录 reason 原文（隔离不可用 vs 其它）与 OS/CPU
 ```
 
 ## I1 桌面真连

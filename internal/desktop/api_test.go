@@ -70,6 +70,46 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 	if agents.Error != nil || len(agents.Agents) != 2 || agents.Agents[0].ID != "claude" || agents.Agents[1].ID != "dsh" || agents.Agents[1].ModelProfileID != "dsh-model" {
 		t.Fatalf("%+v", agents)
 	}
+	health := api.GetRuntimeHealth()
+	if health.Error != nil && health.Error.Code == contracts.ErrUnimplemented {
+		t.Fatalf("Health 仍未接线: %+v", health)
+	}
+	// 非 Darwin25/arm64 时 Available=false 且带隔离错误，属预期；不得再报「尚未接线」
+	if health.Reason == "健康检查尚未接线" {
+		t.Fatalf("仍返回占位文案: %+v", health)
+	}
+}
+
+func TestListAccountsAndPrefs(t *testing.T) {
+	app := NewApp()
+	api := NewDesktopAPI(app)
+	_, err := app.secrets.Put(context.Background(), contracts.AccountInfo{
+		Kind: "model", Name: "demo", ProfileID: "demo-model", Host: "api.example.test",
+	}, []byte("secret-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := api.ListAccounts("model")
+	if listed.Error != nil || len(listed.Accounts) != 1 || listed.Accounts[0].Host != "api.example.test" {
+		t.Fatalf("%+v", listed)
+	}
+	prefs := api.SetUIPrefs(contracts.UIPrefs{SidebarCollapsed: true, AutoCollapseWorkbench: false})
+	if prefs.Error != nil || prefs.Prefs == nil || !prefs.Prefs.SidebarCollapsed {
+		t.Fatalf("%+v", prefs)
+	}
+	again := api.GetUIPrefs()
+	if again.Error != nil || again.Prefs == nil || again.Prefs.AutoCollapseWorkbench {
+		t.Fatalf("%+v", again)
+	}
+	sessions := api.ListSessions()
+	if sessions.Error == nil || sessions.Error.Code != contracts.ErrOrchestratorUnavailable {
+		t.Fatalf("未装配编排时应失败: %+v", sessions)
+	}
+	app.SetSessionService(&recordingSession{})
+	sessions = api.ListSessions()
+	if sessions.Error != nil || len(sessions.Sessions) != 1 {
+		t.Fatalf("%+v", sessions)
+	}
 }
 
 type recordingSession struct {
@@ -113,6 +153,14 @@ func (r *recordingSession) Get(context.Context, string) (contracts.SessionSnapsh
 
 func (r *recordingSession) Stop(context.Context, string) (contracts.SessionSnapshot, error) {
 	return contracts.SessionSnapshot{State: "stopping"}, nil
+}
+
+func (r *recordingSession) List(context.Context) ([]contracts.SessionSummary, error) {
+	return []contracts.SessionSummary{{SessionID: "fake-session", State: "running", Workspace: "/demo", AgentID: "claude"}}, nil
+}
+
+func (r *recordingSession) Destroy(_ context.Context, id string) (contracts.SessionSnapshot, error) {
+	return contracts.SessionSnapshot{SessionID: id, State: "stopped", CleanupComplete: true}, nil
 }
 
 func (r *recordingSession) Shutdown(context.Context) error { return r.shutdownErr }

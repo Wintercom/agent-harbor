@@ -39,6 +39,27 @@ func TestPutRejectsNonEmptyID(t *testing.T) {
 	}
 }
 
+func TestListFiltersByKind(t *testing.T) {
+	s := NewStore()
+	ctx := context.Background()
+	_, err := s.Put(ctx, contracts.AccountInfo{Kind: "model", Name: "m", ProfileID: "demo-model", Host: "m.test"}, []byte("mk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Put(ctx, contracts.AccountInfo{Kind: "mcp", Name: "t", ProfileID: "demo-mcp", Host: "t.test"}, []byte("tk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := s.List(ctx, "model")
+	if len(models) != 1 || models[0].Kind != "model" {
+		t.Fatalf("%+v", models)
+	}
+	all := s.List(ctx, "")
+	if len(all) != 2 {
+		t.Fatalf("%+v", all)
+	}
+}
+
 func TestDeleteThenResolveFails(t *testing.T) {
 	s := NewStore()
 	ctx := context.Background()

@@ -9,14 +9,20 @@
 
 ### 桌面一打开就「无法安全启动」？
 
-**正常现象（当前）**：live 的 `GetRuntimeHealth` 仍返回「健康检查尚未接线」（B 占位）。产品按 PAGE 禁止无隔离开 Agent，故全页阻断、无「仍要继续」。
+2026-10-25 起 `GetRuntimeHealth` **已接线** Runtime 探测（不再固定「尚未接线」）。
+
+| 现象 | 含义 |
+|---|---|
+| 侧栏「隔离就绪」 | Darwin 25 / arm64 非 root 上探测通过，可开新会话 |
+| 阻断页 + 隔离错误文案 | 本机不满足 Runtime 准入（或探测失败）；产品禁止无隔离开 Agent |
+| 仍见「尚未接线」 | 旧二进制；请重新 `./scripts/dev-desktop.sh` |
 
 | 要演示… | 请用 |
 |---|---|
-| 全量 PAGE / 扩权 / 双会话 / 阻断页本身 | **浏览器 mock**（下节三分钟话术） |
-| I1–I11 真闭环 | 等 B 接 Health/Accounts 后再 live；阻断时记 DOC-3「阻断」勿改口 mock 通过 |
+| 全量 PAGE / 扩权 / 双会话 | **浏览器 mock**（下节）或 live（Health 绿后） |
+| I1–I11 | live + 已登记 env；失败如实记 DOC-3 |
 
-设置里切场景 `isolation` 也可在 **mock** 下复现同款阻断页（文案不同：模拟隔离不可用）。
+设置里切场景 `isolation` 可在 **mock** 下复现阻断页。
 
 ---
 

@@ -41,8 +41,9 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+	rt := runtime.NewMacOS()
 	svc, err := orchestrator.New(appCtx, orchestrator.Dependencies{
-		Runtime: runtime.NewMacOS(),
+		Runtime: rt,
 		Kits:    agentKits,
 		Catalog: a.secrets,
 		Policy:  a.policy,
@@ -51,6 +52,7 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.SetRuntime(rt)
 	a.SetAgentDetector(registryDetector{reg: reg})
 	a.SetSessionService(svc)
 	return nil
