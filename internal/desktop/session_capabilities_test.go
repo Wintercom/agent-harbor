@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/runtime"
 	"testing"
 )
 
@@ -21,10 +22,18 @@ func (s *fullSession) Destroy(_ context.Context, id string) (contracts.SessionSn
 	return contracts.SessionSnapshot{SessionID: id, CleanupComplete: true}, s.err
 }
 func (s *fullSession) Health(context.Context) error { s.healthCalls++; return s.err }
+
+type healthRuntime struct {
+	runtime.Runtime
+	service *fullSession
+}
+
+func (r healthRuntime) Health(ctx context.Context) error { return r.service.Health(ctx) }
 func TestSessionCapabilitiesForwardToOrchestrator(t *testing.T) {
 	app := NewApp()
 	svc := &fullSession{}
 	app.SetSessionService(svc)
+	app.SetRuntime(healthRuntime{service: svc})
 	api := NewDesktopAPI(app)
 	list := api.ListSessions()
 	if list.Error != nil || len(list.Sessions) != 2 {

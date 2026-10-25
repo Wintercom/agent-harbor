@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"errors"
 	"net"
 	"net/url"
 	"os"
@@ -12,7 +13,35 @@ const (
 	ProfileDemoModel = "demo-model"
 	ProfileDemoMCP   = "demo-mcp"
 	ProfileDSHModel  = "dsh-model"
+	ProfileCustom    = "custom" // 用户自填 OpenAPI origin（仅 Claude 路径）
 )
+
+// CustomModelProfile 由用户 Origin 构造临时探测/策略 profile（不进 DefaultProfiles 表）。
+func CustomModelProfile(origin, modelName string) (FixedProfile, error) {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	host := hostOfOrigin(origin)
+	if host == "" {
+		return FixedProfile{}, errors.New("policy: invalid custom origin")
+	}
+	model := strings.TrimSpace(modelName)
+	if model == "" {
+		model = "custom-model"
+	}
+	p := FixedProfile{
+		ID:       ProfileCustom,
+		Kind:     "model",
+		Protocol: "anthropic",
+		Model:    model,
+		Origin:   origin,
+		Host:     host,
+		Paths:    []string{"/v1/messages"},
+		TestPath: "/v1/messages",
+	}
+	if !p.ValidConnection() {
+		return FixedProfile{}, errors.New("policy: custom origin not allowed")
+	}
+	return p, nil
+}
 
 // FixedProfile 描述受信后端配置中的固定上游。
 type FixedProfile struct {

@@ -82,3 +82,13 @@ D1 的绑定生成已执行；原生 WebView 冒烟通过生成绑定校验 DTO�
 ## 2026-10-25 联调准入缺陷修复
 
 连接重定向/假成功、在途撤销、桌面准入与前端事件问题已修复并加入回归；退出失败可保留窗口重试，受限绑定仅七个方法。证据与范围见 [ABC 修复进展](ABC-INTEGRATION-REVIEW.md#修复进展)。独立 Postman 上游模拟已实际收到真实 Go HTTP 客户端请求；前端 11 项测试及实际 WebView 关闭通过。上述证据不改变真实 I1/I2 和完整 I3–I11 待执行的状态。
+
+## 2026-10-25 P0-C-DOC-3 草稿状态（产品 C）
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| I1 | **待重测** | B 已接 `GetRuntimeHealth` / Accounts / ListSessions 等（见 [DEV-B](DEV-B.md)）。需在桌面 live 重跑：绿灯后连模型/MCP。旧「尚未接线」阻断作废。填空见 [evidence-template](../demos/evidence-template.md) |
+| I2 / I8 / I10 / I11 | 待执行 | 依赖 I1 真通路；mock 见 [demos/README](../demos/README.md) |
+| D4 | 通过（mock） | 见 §4.1；不计 I |
+
+**口径**：mock ≠ I 通过。A 编排 + B DesktopAPI 子集已合；OAuth/Keychain/扩权 Gate 真触发仍待 B 后续。

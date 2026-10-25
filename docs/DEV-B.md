@@ -140,3 +140,39 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 | 2026-10-25 | `5028331`、`19b428b`、`44b08e7` | dsh Kit 装配，以及 MCP `tools/list` 的 SSE 长连接与有限 JSON 响应 |
 
 当前启动命令、环境变量和「未登记则拒绝连接」以根 [README.md](../README.md) 为准。真实模型与认证 MCP 的端到端验收仍待执行。
+
+## 2026-10-25：DesktopAPI 去占位（FULL-BIND 子集）
+
+本分支产品页已齐，桌面仍返回「健康检查尚未接线」会误伤联调。本轮 **B** 将下列方法接到现有控制面 / A 编排（**不改** Orchestrator 状态机）：
+
+| 方法 | 接线 |
+|---|---|
+| `GetRuntimeHealth` | `AttachOrchestrator` 注入的 `runtime.MacOS.Health`；成功 `isolationLevel=seatbelt` |
+| `ListSessions` / `DestroySession` | 转发 `orchestrator.List` / `Destroy` |
+| `ListAccounts` / `RemoveAccount` | `secrets.Store.List` / `Delete`（仍仅内存） |
+| `GetUIPrefs` / `SetUIPrefs` | 进程内偏好（重启丢失；钥匙串见 P1-B-01） |
+| `GetPermissionOverview` | 会话工作区 + 账号主机 + 记住主机；禁止路径类别文案 |
+| `ListRememberedHosts` / `RevokeRememberedHost` | 进程内表；`ResolvePermission(decision=project)` 成功后写入 |
+
+验证：
+
+```sh
+go test ./internal/desktop ./internal/secrets
+```
+
+桌面需重新 `./scripts/dev-desktop.sh`（或 `wails3 dev`）。Darwin 25 / arm64 非 root 上 Health 应可通过；其它环境 `Available=false` 且 reason 为隔离错误文案，**不再**是「尚未接线」。
+
+## 2026-10-25 续：SwitchModel / 自定义 Origin / OAuth 回环 / 扩权挂接
+
+| 项 | 状态 |
+|---|---|
+| `SwitchModel` | 编排更新账号 + `Gate.SetModelAccount`；桌面转发 |
+| 自定义模型 Origin | `profileId=custom` + `origin=https://host`；Policy/Connect 支持（仅 Claude） |
+| `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
+| 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
+
+**仍未完**：Keychain（P1-B-01）；OAuth 授权码+client_secret 换票；扩权后自动跟随重定向 / DNS·IP 校验全量；Prefs 落盘。
+
+```sh
+go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
+```

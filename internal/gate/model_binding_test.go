@@ -72,6 +72,9 @@ func TestModelSwitchOnlyAffectsSubsequentRequests(t *testing.T) {
 	if err := h.SwitchModel(context.Background(), "session", wrongID); err == nil {
 		t.Fatal("接受不兼容 profile")
 	}
+	if err := h.SetModelAccount("session", wrongID); err == nil {
+		t.Fatal("旧账号切换入口绕过兼容性检查")
+	}
 	if code := call(); code != 200 {
 		t.Fatalf("切换后请求失败：%d", code)
 	}

@@ -87,15 +87,29 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if strings.TrimSpace(req.AgentID) == "" {
 		return PolicySnapshot{}, ErrInvalidAgent
 	}
-	modelProf, ok := b.profiles[req.Model.ProfileID]
-	if !ok || modelProf.Kind != "model" {
-		return PolicySnapshot{}, ErrUnknownProfile
-	}
 	if req.Model.Kind != "model" {
 		return PolicySnapshot{}, ErrKindMismatch
 	}
-	if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel {
-		return PolicySnapshot{}, ErrKindMismatch
+	var modelProf FixedProfile
+	if req.Model.ProfileID == ProfileCustom {
+		if req.AgentID != "claude" {
+			return PolicySnapshot{}, ErrKindMismatch
+		}
+		origin := "https://" + strings.TrimSpace(req.Model.Host)
+		custom, err := CustomModelProfile(origin, envOr("HARBOR_CLAUDE_MODEL", "custom-model"))
+		if err != nil {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		modelProf = custom
+	} else {
+		var ok bool
+		modelProf, ok = b.profiles[req.Model.ProfileID]
+		if !ok || modelProf.Kind != "model" {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel {
+			return PolicySnapshot{}, ErrKindMismatch
+		}
 	}
 	if !ValidBasePath(modelProf.BasePath) {
 		return PolicySnapshot{}, ErrUnknownProfile

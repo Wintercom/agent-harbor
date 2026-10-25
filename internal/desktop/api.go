@@ -130,89 +130,146 @@ func unimplemented() *contracts.AppError {
 	return contracts.NewAppError(contracts.ErrUnimplemented, "该方法尚未实现，形状已按契约占位。", false)
 }
 
-// ListAccounts 列出已保存账号（V1.1；未接线时 UNIMPLEMENTED）。
+// ListAccounts 列出已保存账号元信息（无密钥）。
 func (d *DesktopAPI) ListAccounts(kind string) contracts.AccountsResponse {
-	_ = kind
-	return contracts.AccountsResponse{Accounts: []contracts.AccountInfo{}, Error: unimplemented()}
-}
-
-// RemoveAccount 删除账号（V1.1 占位）。
-func (d *DesktopAPI) RemoveAccount(accountID string) contracts.EmptyResponse {
-	_ = accountID
-	return contracts.EmptyResponse{Error: unimplemented()}
-}
-
-// ListSessions 读取编排记录，不在桌面层重建会话状态。
-func (d *DesktopAPI) ListSessions() contracts.SessionsResponse {
-	service, ok := d.app.sessionRef().(interface {
-		List(context.Context) ([]contracts.SessionSummary, error)
-	})
-	if !ok {
-		return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: unimplemented()}
+	accounts := d.app.secrets.List(context.Background(), kind)
+	if accounts == nil {
+		accounts = []contracts.AccountInfo{}
 	}
+	return contracts.AccountsResponse{Accounts: accounts}
+}
+
+// RemoveAccount 删除账号及其内存凭据。
+func (d *DesktopAPI) RemoveAccount(accountID string) contracts.EmptyResponse {
+	if err := d.app.secrets.Delete(context.Background(), accountID); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
+}
+
+// ListSessions 转发编排层会话摘要。
+func (d *DesktopAPI) ListSessions() contracts.SessionsResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sessions, err := service.List(ctx)
+	items, err := d.app.sessionRef().List(ctx)
 	if err != nil {
 		return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: mapError(err)}
 	}
-	if sessions == nil {
-		sessions = []contracts.SessionSummary{}
+	if items == nil {
+		items = []contracts.SessionSummary{}
 	}
-	return contracts.SessionsResponse{Sessions: sessions}
+	return contracts.SessionsResponse{Sessions: items}
 }
 
-// DestroySession 仅转发请求；终态和清理检查由编排负责。
+// DestroySession 销毁已清理的终态会话记录。
 func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse {
-	service, ok := d.app.sessionRef().(interface {
-		Destroy(context.Context, string) (contracts.SessionSnapshot, error)
-	})
-	if !ok {
-		return contracts.SessionResponse{Error: unimplemented()}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	snapshot, err := service.Destroy(ctx, sessionID)
+	snap, err := d.app.sessionRef().Destroy(ctx, sessionID)
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
-	return contracts.SessionResponse{Session: &snapshot}
+	return contracts.SessionResponse{Session: &snap}
 }
 
-// GetRuntimeHealth 请求编排执行实际隔离探针；失败只返回固定公开错误。
+// GetRuntimeHealth 调用 Runtime.Health；未装配 Runtime 时返回编排未就绪。
 func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
-	service, ok := d.app.sessionRef().(interface{ Health(context.Context) error })
-	if !ok {
-		return contracts.RuntimeHealthResponse{Reason: "隔离探测服务尚未就绪", Error: unimplemented()}
+	rt := d.app.runtimeRef()
+	if rt == nil {
+		return contracts.RuntimeHealthResponse{
+			Available: false,
+			Reason:    "编排/Runtime 尚未装配",
+			Error:     contracts.NewAppError(contracts.ErrOrchestratorUnavailable, "编排服务尚未就绪", false),
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.Health(ctx); err != nil {
-		public := mapError(err)
-		return contracts.RuntimeHealthResponse{Reason: public.Message, Error: public}
+	if err := rt.Health(ctx); err != nil {
+		ae := mapError(err)
+		reason := ae.Message
+		if ae.Code == contracts.ErrIsolationUnavailable {
+			reason = ae.Message
+		}
+		return contracts.RuntimeHealthResponse{
+			Available: false,
+			Reason:    reason,
+			Error:     ae,
+		}
 	}
-	return contracts.RuntimeHealthResponse{Available: true}
+	return contracts.RuntimeHealthResponse{
+		Available:      true,
+		Reason:         "",
+		IsolationLevel: "seatbelt",
+		Error:          nil,
+	}
 }
 
-// GetPermissionOverview 权限一览（V1.1 占位）。
+// GetPermissionOverview 返回只读边界摘要（无 Key/Sentinel）。
 func (d *DesktopAPI) GetPermissionOverview(sessionID string) contracts.PermissionOverviewResponse {
-	_ = sessionID
-	return contracts.PermissionOverviewResponse{Error: unimplemented()}
+	workspace := ""
+	if sessionID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		snap, err := d.app.sessionRef().Get(ctx, sessionID)
+		cancel()
+		if err != nil {
+			return contracts.PermissionOverviewResponse{Error: mapError(err)}
+		}
+		workspace = snap.Workspace
+	}
+	hosts := map[string]struct{}{}
+	var allowed []string
+	for _, acc := range d.app.secrets.List(context.Background(), "") {
+		if acc.Host == "" {
+			continue
+		}
+		if _, ok := hosts[acc.Host]; ok {
+			continue
+		}
+		hosts[acc.Host] = struct{}{}
+		allowed = append(allowed, acc.Host)
+	}
+	for _, h := range d.app.listRemembered(workspace) {
+		if _, ok := hosts[h.Host]; ok {
+			continue
+		}
+		hosts[h.Host] = struct{}{}
+		allowed = append(allowed, h.Host)
+	}
+	mcpNames := []string{}
+	for _, acc := range d.app.secrets.List(context.Background(), "mcp") {
+		mcpNames = append(mcpNames, acc.Name)
+	}
+	overview := &contracts.PermissionOverview{
+		SessionID:            sessionID,
+		Workspace:            workspace,
+		AllowedHosts:         allowed,
+		MCPSummary:           mcpNames,
+		DeniedPathCategories: []string{"系统目录", "SSH 密钥与云厂商凭证", "其它项目路径"},
+	}
+	return contracts.PermissionOverviewResponse{Overview: overview}
 }
 
-// ListRememberedHosts 已记住主机（V1.1 占位）。
+// ListRememberedHosts 返回本机记住的出站主机（进程内；重启清空，钥匙串另见 P1-B-01）。
 func (d *DesktopAPI) ListRememberedHosts(workspace string) contracts.RememberedHostsResponse {
-	_ = workspace
-	return contracts.RememberedHostsResponse{Hosts: []contracts.RememberedHost{}, Error: unimplemented()}
+	hosts := d.app.listRemembered(workspace)
+	if hosts == nil {
+		hosts = []contracts.RememberedHost{}
+	}
+	return contracts.RememberedHostsResponse{Hosts: hosts}
 }
 
-// RevokeRememberedHost 撤销记住主机（V1.1 占位）。
+// RevokeRememberedHost 撤销本项目记住的主机。
 func (d *DesktopAPI) RevokeRememberedHost(in contracts.RevokeHostInput) contracts.EmptyResponse {
-	_ = in
-	return contracts.EmptyResponse{Error: unimplemented()}
+	if in.Host == "" {
+		return contracts.EmptyResponse{Error: contracts.NewAppError(contracts.ErrInvalidArgument, "主机不能为空", false)}
+	}
+	if !d.app.revokeHost(in.Workspace, in.Host) {
+		return contracts.EmptyResponse{Error: contracts.NewAppError(contracts.ErrInvalidArgument, "无此记住项", false)}
+	}
+	return contracts.EmptyResponse{}
 }
 
-// ResolvePermission 将扩权决策转交给唯一的会话状态机。
+// ResolvePermission 将扩权决策转交给唯一的会话状态机；project 成功时写入本机记住表。
 func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) contracts.EmptyResponse {
 	resolver, ok := d.app.sessionRef().(interface {
 		ResolvePermission(context.Context, contracts.ResolvePermissionInput) error
@@ -222,21 +279,41 @@ func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) cont
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return contracts.EmptyResponse{Error: mapError(resolver.ResolvePermission(ctx, in))}
+	if err := resolver.ResolvePermission(ctx, in); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	if (in.Decision == "project" || in.Decision == "once") && in.Target != "" {
+		ws := ""
+		if snap, err := d.app.sessionRef().Get(ctx, in.SessionID); err == nil {
+			ws = snap.Workspace
+		}
+		if in.Decision == "project" {
+			d.app.rememberHost(contracts.RememberedHost{
+				Host:      in.Target,
+				Workspace: ws,
+				Scope:     "project",
+			})
+		}
+		if d.app.gate != nil {
+			_ = d.app.gate.AllowExtraHost(in.SessionID, in.Target, in.Decision)
+		}
+	}
+	return contracts.EmptyResponse{}
 }
 
-// GetUIPrefs 读取 UI 偏好（V1.1 占位，返回默认值形状）。
+// GetUIPrefs 读取本机 UI 偏好（进程内默认；钥匙串/落盘见后续）。
 func (d *DesktopAPI) GetUIPrefs() contracts.UIPrefsResponse {
-	prefs := contracts.UIPrefs{SidebarCollapsed: false, AutoCollapseWorkbench: true}
-	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
+	prefs := d.app.getPrefs()
+	return contracts.UIPrefsResponse{Prefs: &prefs}
 }
 
-// SetUIPrefs 写入 UI 偏好（V1.1 占位）。
+// SetUIPrefs 写入本机 UI 偏好。
 func (d *DesktopAPI) SetUIPrefs(prefs contracts.UIPrefs) contracts.UIPrefsResponse {
-	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
+	saved := d.app.setPrefs(prefs)
+	return contracts.UIPrefsResponse{Prefs: &saved}
 }
 
-// SwitchModel 将运行中模型账号切换转交编排，不自行管理会话状态。
+// SwitchModel 切换会话之后出站所用模型账号。
 func (d *DesktopAPI) SwitchModel(in contracts.SwitchModelInput) contracts.SessionResponse {
 	switcher, ok := d.app.sessionRef().(interface {
 		SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
@@ -246,23 +323,28 @@ func (d *DesktopAPI) SwitchModel(in contracts.SwitchModelInput) contracts.Sessio
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	snapshot, err := switcher.SwitchModel(ctx, in)
+	snap, err := switcher.SwitchModel(ctx, in)
 	if err != nil {
 		return contracts.SessionResponse{Error: mapError(err)}
 	}
-	return contracts.SessionResponse{Session: &snapshot}
+	return contracts.SessionResponse{Session: &snap}
 }
 
-// StartMcpOAuth 启动 MCP OAuth（占位）。
+// StartMcpOAuth 启动本机回环 OAuth 回调（authUrl 打开系统浏览器）。
 func (d *DesktopAPI) StartMcpOAuth(in contracts.StartMcpOAuthInput) contracts.McpOAuthResponse {
-	_ = in
-	return contracts.McpOAuthResponse{Error: unimplemented()}
+	authURL, pendingID, err := d.app.startMcpOAuth(in)
+	if err != nil {
+		return contracts.McpOAuthResponse{Error: mapError(err)}
+	}
+	return contracts.McpOAuthResponse{AuthURL: authURL, PendingID: pendingID}
 }
 
-// CancelMcpOAuth 取消 OAuth（占位）。
+// CancelMcpOAuth 取消进行中的 OAuth pending。
 func (d *DesktopAPI) CancelMcpOAuth(pendingID string) contracts.EmptyResponse {
-	_ = pendingID
-	return contracts.EmptyResponse{Error: unimplemented()}
+	if err := d.app.cancelMcpOAuth(pendingID); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
 }
 
 // WritePty 写入 PTY（占位）。

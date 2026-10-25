@@ -4,11 +4,13 @@ package desktop
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 	"github.com/liyufei916/agent-harbor/internal/gate"
 	"github.com/liyufei916/agent-harbor/internal/policy"
+	"github.com/liyufei916/agent-harbor/internal/runtime"
 	"github.com/liyufei916/agent-harbor/internal/secrets"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -19,6 +21,8 @@ type SessionService interface {
 	Create(context.Context, contracts.SessionSpec) (contracts.SessionSnapshot, error)
 	Get(context.Context, string) (contracts.SessionSnapshot, error)
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
+	List(context.Context) ([]contracts.SessionSummary, error)
+	Destroy(context.Context, string) (contracts.SessionSnapshot, error)
 	Shutdown(context.Context) error
 }
 
@@ -37,6 +41,10 @@ type App struct {
 	mu       sync.Mutex
 	sessions SessionService
 	agents   AgentDetector
+	rt       runtime.Runtime
+	prefs    contracts.UIPrefs
+	hosts    map[string]contracts.RememberedHost // key: workspace\x00host
+	oauth    map[string]*oauthPending
 	ready    bool
 }
 
@@ -48,6 +56,8 @@ func NewApp() *App {
 		secrets:  store,
 		policy:   pol,
 		sessions: unavailableSession{},
+		prefs:    contracts.UIPrefs{SidebarCollapsed: false, AutoCollapseWorkbench: true},
+		hosts:    make(map[string]contracts.RememberedHost),
 	}
 	app.gate = gate.New(store, pol)
 	app.conn = gate.NewConnections(store, pol)
@@ -86,10 +96,74 @@ func (a *App) agentRef() AgentDetector {
 	return a.agents
 }
 
+// SetRuntime 注入隔离 Runtime，供 GetRuntimeHealth 探测。
+func (a *App) SetRuntime(rt runtime.Runtime) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rt = rt
+}
+
+func (a *App) runtimeRef() runtime.Runtime {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.rt
+}
+
 func (a *App) orchestratorReady() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.ready
+}
+
+func hostMapKey(workspace, host string) string {
+	return strings.TrimSpace(workspace) + "\x00" + strings.ToLower(strings.TrimSpace(host))
+}
+
+func (a *App) listRemembered(workspace string) []contracts.RememberedHost {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	want := strings.TrimSpace(workspace)
+	out := make([]contracts.RememberedHost, 0, len(a.hosts))
+	for _, h := range a.hosts {
+		if want != "" && h.Workspace != want {
+			continue
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+func (a *App) rememberHost(host contracts.RememberedHost) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.hosts == nil {
+		a.hosts = make(map[string]contracts.RememberedHost)
+	}
+	a.hosts[hostMapKey(host.Workspace, host.Host)] = host
+}
+
+func (a *App) revokeHost(workspace, host string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := hostMapKey(workspace, host)
+	if _, ok := a.hosts[key]; !ok {
+		return false
+	}
+	delete(a.hosts, key)
+	return true
+}
+
+func (a *App) getPrefs() contracts.UIPrefs {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.prefs
+}
+
+func (a *App) setPrefs(p contracts.UIPrefs) contracts.UIPrefs {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.prefs = p
+	return a.prefs
 }
 
 // forwardEvent 不缓存或推导状态；准入由编排统一管理。

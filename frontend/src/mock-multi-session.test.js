@@ -63,6 +63,23 @@ test("mock 双会话：同工作区 WORKSPACE_BUSY，不同路径可开两条，
     });
     assert.equal(third.error?.code, "SESSION_LIMIT");
 
+    // 扩权：project 写入记住表；状态保持 running（无 awaiting_permission）
+    let sawPerm = false;
+    const off = mock.onEvent((ev) => {
+      if (ev.type === "permission_needed") sawPerm = true;
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    off();
+    assert.equal(sawPerm, true);
+    assert.equal((await mock.getSession(a.session.sessionId)).session.state, "running");
+    await mock.resolvePermission({
+      sessionId: a.session.sessionId,
+      target: "api.npmjs.org",
+      decision: "project",
+    });
+    const hosts = await mock.listRememberedHosts(a.session.workspace);
+    assert.ok(hosts.hosts.some((h) => h.host === "api.npmjs.org"));
+
     const pty = await mock.writePty({
       sessionId: a.session.sessionId,
       data: "hello",

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +65,8 @@ type sessionRuntime struct {
 	done       chan struct{}
 	audit      func(contracts.AuditData)
 	fatal      func(error)
+	// extraHosts：扩权追加的主机 → once|project（会话期；once 消费后删除）
+	extraHosts map[string]string
 }
 
 // Harbor 是控制面出站闸口。
@@ -306,4 +309,32 @@ func (h *Harbor) emitFatal(rt *sessionRuntime, err error) {
 // Health 返回闸口进程自身存活状态。
 func (h *Harbor) Health() string {
 	return "ok"
+}
+
+// SetModelAccount 更新运行中会话的模型账号（仅影响之后出站代填；不改 Origin）。
+func (h *Harbor) SetModelAccount(sessionID, accountID string) error {
+	return h.SwitchModel(context.Background(), sessionID, accountID)
+}
+
+// AllowExtraHost 将扩权通过的主机记入会话（once 仅一次；project 会话期有效）。
+// 供后续出站校验使用；当前模型/MCP 反代仍绑定策略 Origin。
+func (h *Harbor) AllowExtraHost(sessionID, host, scope string) error {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if sessionID == "" || host == "" {
+		return fmt.Errorf("gate: incomplete host allow")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rt, ok := h.sessions[sessionID]
+	if !ok || rt.revoked || rt.ctx.Err() != nil {
+		return ErrSessionNotFound
+	}
+	if rt.extraHosts == nil {
+		rt.extraHosts = make(map[string]string)
+	}
+	if scope != "once" && scope != "project" {
+		scope = "once"
+	}
+	rt.extraHosts[host] = scope
+	return nil
 }

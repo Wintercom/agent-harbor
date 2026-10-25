@@ -41,7 +41,7 @@ export function mountSession(root, ctx) {
         <div class="pty-panel">
           <div class="pty-toolbar meta">终端 / Agent 输出（PTY）</div>
           <div id="sess-pty" class="pty" tabindex="0"></div>
-          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="输入后 Enter 发送到 PTY（mock）"></textarea>
+          <textarea id="sess-pty-input" class="pty-input" rows="2" placeholder="同会话后续轮次：输入后 Enter 发送（mock 回显；live 走 WritePty）"></textarea>
         </div>
         <aside class="session-side">
           <h3>本趟摘要</h3>

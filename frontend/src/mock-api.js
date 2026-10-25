@@ -33,12 +33,27 @@ const modelAccounts = new Map();
 const mcpAccounts = new Map();
 /** @type {Map<string, object>} pending OAuth */
 const oauthPending = new Map();
+/** @type {Map<string, {host:string,workspace:string,scope:string}>} */
+const rememberedHosts = new Map();
 let uiPrefs = {
   sidebarCollapsed: false,
   autoCollapseWorkbench: true,
   askClearOnStop: true,
   clearOnStopDefault: "keep",
 };
+
+function hostKey(host, workspace) {
+  return `${normPath(workspace || FIXED.workspace)}::${String(host || "").toLowerCase()}`;
+}
+
+function seedRememberedHosts() {
+  rememberedHosts.clear();
+  rememberedHosts.set(hostKey("api.example.com", FIXED.workspace), {
+    host: "api.example.com",
+    workspace: FIXED.workspace,
+    scope: "project",
+  });
+}
 const listeners = new Set();
 
 function getModel(id) {
@@ -262,20 +277,20 @@ export async function getPermissionOverview(sessionId) {
   };
 }
 
-export async function listRememberedHosts() {
-  return {
-    hosts: [
-      {
-        host: "api.example.com",
-        workspace: FIXED.workspace,
-        scope: "project",
-      },
-    ],
-    error: null,
-  };
+export async function listRememberedHosts(workspace) {
+  const want = workspace ? normPath(workspace) : "";
+  const hosts = [...rememberedHosts.values()].filter((h) =>
+    want ? normPath(h.workspace) === want : true,
+  );
+  return { hosts, error: null };
 }
 
-export async function revokeRememberedHost() {
+export async function revokeRememberedHost(input) {
+  const key = hostKey(input?.host, input?.workspace);
+  if (!rememberedHosts.has(key)) {
+    return { error: err("INVALID_ARGUMENT", "无此记住项（模拟）") };
+  }
+  rememberedHosts.delete(key);
   return { error: null };
 }
 
@@ -286,9 +301,33 @@ export async function resolvePermission(input) {
   if (!["deny", "once", "project"].includes(input.decision)) {
     return { error: err("INVALID_ARGUMENT", "非法决策（模拟）") };
   }
-  if (!sessions.has(input.sessionId)) {
+  const session = sessions.get(input.sessionId);
+  if (!session) {
     return { error: err("SESSION_NOT_FOUND", "会话不存在（模拟）") };
   }
+  // 与 A 一致：等待期保持 running；project 写入本工作区记住表（once 不持久）
+  if (input.decision === "project") {
+    const ws = session.workspace || FIXED.workspace;
+    rememberedHosts.set(hostKey(input.target, ws), {
+      host: input.target,
+      workspace: ws,
+      scope: "project",
+    });
+  }
+  emit({
+    type: "audit",
+    sessionId: input.sessionId,
+    audit: {
+      target: input.target,
+      tool: "permission",
+      result:
+        input.decision === "deny"
+          ? "denied"
+          : input.decision === "once"
+            ? "allowed"
+            : "allowed",
+    },
+  });
   return { error: null };
 }
 
@@ -642,8 +681,21 @@ export async function createSession(spec) {
       });
     }
   });
+  // 演示扩权：保持 running（契约不增加 awaiting_permission state）
+  scheduleFor(sessionId, 1100, () => {
+    const s = sessions.get(sessionId);
+    if (!s || s.state !== "running" || scenario !== "normal") return;
+    emit({
+      type: "permission_needed",
+      sessionId,
+      permission: {
+        target: "api.npmjs.org",
+        action: "请求访问新地址",
+      },
+    });
+  });
   // 不自动终态，便于演示双会话；用户点停止结束
-  scheduleFor(sessionId, 1400, () => {
+  scheduleFor(sessionId, 1600, () => {
     const s = sessions.get(sessionId);
     if (!s || s.state !== "running") return;
     emit({
@@ -651,7 +703,7 @@ export async function createSession(spec) {
       sessionId,
       output: {
         stream: "stdout",
-        text: "（模拟）已写入工作区示例文件。\n任务可继续；点停止结束本趟。\n",
+        text: "（模拟）已写入工作区示例文件。\n同会话可在 PTY 继续输入；点停止结束本趟。\n",
       },
     });
   });
@@ -757,6 +809,7 @@ export function resetMock() {
   oauthPending.clear();
   modelAccounts.clear();
   mcpAccounts.clear();
+  seedRememberedHosts();
   scenario = "normal";
   uiPrefs = {
     sidebarCollapsed: false,
@@ -765,3 +818,5 @@ export function resetMock() {
     clearOnStopDefault: "keep",
   };
 }
+
+seedRememberedHosts();

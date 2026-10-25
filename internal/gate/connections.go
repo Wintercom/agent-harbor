@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -56,20 +57,43 @@ func (c *Connections) ConnectMcp(ctx context.Context, in contracts.ConnectInput)
 func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, kind string) (contracts.AccountInfo, error) {
 	name := strings.TrimSpace(in.Name)
 	profileID := strings.TrimSpace(in.ProfileID)
+	origin := strings.TrimSpace(in.Origin)
 	key := in.APIKey
-	if name == "" || profileID == "" || len(key) == 0 {
+	if name == "" || len(key) == 0 {
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
 	if utf8.RuneCountInString(name) > 100 || len(key) > 16384 {
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
-	prof, ok := c.policy.Profile(profileID)
-	if !ok || prof.Kind != kind {
-		return contracts.AccountInfo{}, ErrInvalidConnectInput
-	}
-
-	if !prof.ValidConnection() {
-		return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "后端接入配置尚未完整登记或不受支持。", false)
+	var prof policy.FixedProfile
+	if kind == "model" && (profileID == "" || profileID == policy.ProfileCustom) && origin != "" {
+		custom, err := policy.CustomModelProfile(origin, "")
+		if err != nil {
+			return contracts.AccountInfo{}, ErrInvalidConnectInput
+		}
+		if model := strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")); model != "" {
+			custom.Model = model
+		}
+		if !custom.ValidConnection() {
+			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "自定义模型地址不受支持。", false)
+		}
+		prof = custom
+		profileID = policy.ProfileCustom
+	} else {
+		if profileID == "" {
+			return contracts.AccountInfo{}, ErrInvalidConnectInput
+		}
+		var ok bool
+		prof, ok = c.policy.Profile(profileID)
+		if !ok || prof.Kind != kind {
+			return contracts.AccountInfo{}, ErrInvalidConnectInput
+		}
+		if origin != "" && !strings.EqualFold(hostOfOrigin(origin), prof.Host) {
+			return contracts.AccountInfo{}, ErrInvalidConnectInput
+		}
+		if !prof.ValidConnection() {
+			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "后端接入配置尚未完整登记或不受支持。", false)
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

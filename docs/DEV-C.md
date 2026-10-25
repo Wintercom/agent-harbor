@@ -174,13 +174,22 @@ python3 -m http.server 5173
 | 停止确认（询问清除 / 仅停止） | **已做** |
 | `npm test` | **19+**（含 block / prefs） |
 
+### 2026-10-25 晚：跟 A 合入 + DOC-3 阻断如实记
+
+| 项 | 状态 |
+|---|---|
+| `git pull` 对齐远程（多会话/clone/扩权/多轮） | **已拉**；C 不改 `internal/` |
+| 契约核对：扩权不增 state；`permission_needed` + Resolve | **UI/mock 已对齐**；mock 自动弹扩权 + project 写入记住表 |
+| demos：桌面「健康检查尚未接线」说明 | **已写**；三分钟话术含扩权/PTY 多轮 |
+| P0-C-DOC-3 | ACCEPTANCE + evidence-template 记 **I1 阻断**（等 B） |
+
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| 本分支 | 视觉对照 prototype 再扫一遍（P1-C-11） | — |
-| 联调 | **等 B** Accounts/origin/Health；**等 A** 真 clone/PTY | 不代写 `internal/` |
-| P0 | 仍可跟 I 证据，但不挡本分支 UI | ENV |
+| 本分支 | 视觉对照 prototype（P1-C-11） | — |
+| 联调 | **等 B** Health/Accounts/origin/Prefs；扩权 Gate 真触发 | 不代写 `internal/` |
+| P0 | B 接线后重测 I1，改 DOC-3 状态 | ENV |
 
 ### 明确不做（仍禁止）
 
