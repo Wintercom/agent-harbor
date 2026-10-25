@@ -148,7 +148,8 @@ func TestRevokeInvalidatesSentinel(t *testing.T) {
 
 func TestConnectModelWithLocalUpstream(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Api-Key") != "good-key" {
+		keyOK := r.Header.Get("X-Api-Key") == "good-key" || r.Header.Get("Authorization") == "Bearer good-key"
+		if !keyOK {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -183,6 +184,31 @@ func TestConnectModelWithLocalUpstream(t *testing.T) {
 	})
 	if err != ErrUpstreamAuth {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestConnectModelAcceptsBearerOnlyUpstream(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer bearer-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"type":"message","content":[{"type":"text","text":"OK"}]}`))
+	}))
+	defer origin.Close()
+	store := secrets.NewStore()
+	pol := policy.NewBuilder(map[string]policy.FixedProfile{
+		policy.ProfileDemoModel: {
+			ID: policy.ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: "fixture",
+			AllowInsecureLoopback: true, Origin: origin.URL, Paths: []string{"/"}, Host: "127.0.0.1", TestPath: "/",
+		},
+	})
+	meta, err := NewConnections(store, pol).ConnectModel(context.Background(), contracts.ConnectInput{
+		ProfileID: policy.ProfileDemoModel, Name: "Bearer", APIKey: "bearer-key",
+	})
+	if err != nil || meta.ID == "" {
+		t.Fatalf("meta=%+v err=%v", meta, err)
 	}
 }
 

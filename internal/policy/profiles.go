@@ -25,7 +25,8 @@ func CustomModelProfile(origin, modelName string) (FixedProfile, error) {
 	}
 	model := strings.TrimSpace(modelName)
 	if model == "" {
-		model = "custom-model"
+		// 探测会 POST /v1/messages；占位名会被上游 400。优先宿主配置，否则用常见 Haiku 名。
+		model = envOr("HARBOR_CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 	}
 	p := FixedProfile{
 		ID:       ProfileCustom,

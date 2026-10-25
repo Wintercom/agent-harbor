@@ -107,7 +107,7 @@ export function mountSession(root, ctx) {
         ctx.showBlock?.(ctx.state.health.reason);
         return;
       }
-      ctx.navigate?.("wizard");
+      ctx.navigate?.("wizard", { fresh: true });
     });
   }
 

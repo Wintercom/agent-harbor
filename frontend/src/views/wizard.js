@@ -5,8 +5,11 @@ import * as api from "../api.js";
 
 const STEPS = ["workspace", "agent", "model", "tools"];
 
-export function mountWizard(root, ctx) {
-  let step = 0;
+export function mountWizard(root, ctx, opts = {}) {
+  if (opts.fresh) {
+    ctx.state.wizardResume = null;
+  }
+
   let defaultMount = "clone";
   try {
     defaultMount = localStorage.getItem("harbor-default-mount") || "clone";
@@ -15,18 +18,43 @@ export function mountWizard(root, ctx) {
   }
   if (defaultMount !== "direct" && defaultMount !== "clone") defaultMount = "clone";
 
+  const resume = ctx.state.wizardResume;
+  let step = Number.isInteger(resume?.step) ? resume.step : 0;
+  if (step < 0 || step > 3) step = 0;
+
   const draft = {
-    workspace: ctx.state.workspace || "",
-    mountMode: defaultMount,
-    agentId: ctx.state.agentId || "claude",
-    modelAccountId: ctx.state.modelAccount?.id || "",
-    mcpIds: ctx.state.mcpAccount ? [ctx.state.mcpAccount.id] : [],
-    task: ctx.state.lastTask || "在工作区完成一项只读检查并写一行摘要到 summary.txt。",
+    workspace: resume?.draft?.workspace || ctx.state.workspace || "",
+    mountMode: resume?.draft?.mountMode || defaultMount,
+    agentId: resume?.draft?.agentId || ctx.state.agentId || "claude",
+    modelAccountId: resume?.draft?.modelAccountId || ctx.state.modelAccount?.id || "",
+    mcpIds: Array.isArray(resume?.draft?.mcpIds)
+      ? [...resume.draft.mcpIds]
+      : ctx.state.mcpAccount
+        ? [ctx.state.mcpAccount.id]
+        : [],
+    task:
+      resume?.draft?.task ||
+      ctx.state.lastTask ||
+      "在工作区完成一项只读检查并写一行摘要到 summary.txt。",
   };
 
   const wrap = document.createElement("div");
   wrap.className = "wizard";
   root.replaceChildren(wrap);
+
+  function persist() {
+    ctx.state.wizardResume = {
+      step,
+      draft: {
+        workspace: draft.workspace,
+        mountMode: draft.mountMode,
+        agentId: draft.agentId,
+        modelAccountId: draft.modelAccountId,
+        mcpIds: [...draft.mcpIds],
+        task: draft.task,
+      },
+    };
+  }
 
   async function refreshAccounts() {
     const res = await api.listAccounts("");
@@ -47,10 +75,23 @@ export function mountWizard(root, ctx) {
     }).join("")}</ol>`;
   }
 
+  function goAddAccount(kind) {
+    persist();
+    ctx.state.returnAfterAccount = { kind, route: "wizard" };
+    ctx.navigate(kind === "model" ? "models" : "tools", { intent: "add" });
+  }
+
   async function paint() {
+    persist();
     await Promise.all([refreshAgents(), refreshAccounts()]);
     const models = (ctx.state.accounts || []).filter((a) => a.kind === "model");
     const mcps = (ctx.state.accounts || []).filter((a) => a.kind === "mcp");
+    if (!draft.modelAccountId && models[0]) {
+      draft.modelAccountId = models[0].id;
+    }
+    if (draft.modelAccountId && !models.some((m) => m.id === draft.modelAccountId) && models[0]) {
+      draft.modelAccountId = models[0].id;
+    }
     let body = "";
 
     if (step === 0) {
@@ -95,7 +136,7 @@ export function mountWizard(root, ctx) {
             ${models.map((m) => `<option value="${m.id}" ${draft.modelAccountId === m.id ? "selected" : ""}>${m.name} · ${m.host || m.profileId}</option>`).join("")}
           </select>
         </label>
-        ${models.length ? "" : `<p class="meta bad">还没有模型。<button type="button" class="btn" id="wz-go-models">去添加</button></p>`}
+        ${models.length ? `<p class="meta"><button type="button" class="btn" id="wz-go-models">再添加一个</button></p>` : `<p class="meta bad">还没有模型。<button type="button" class="btn" id="wz-go-models">去添加</button></p>`}
       `;
     } else {
       body = `
@@ -139,12 +180,17 @@ export function mountWizard(root, ctx) {
 
     wrap.innerHTML = `${renderSteps()}${body}${nav}`;
 
-    wrap.querySelector("#wz-home").onclick = () => ctx.navigate("home");
-    const back = wrap.querySelector("#wz-back");
-    if (back) back.onclick = () => {
-      step = Math.max(0, step - 1);
-      paint();
+    wrap.querySelector("#wz-home").onclick = () => {
+      persist();
+      ctx.navigate("home");
     };
+    const back = wrap.querySelector("#wz-back");
+    if (back) {
+      back.onclick = () => {
+        step = Math.max(0, step - 1);
+        paint();
+      };
+    }
 
     if (step === 0) {
       const applyPath = (path) => {
@@ -194,11 +240,14 @@ export function mountWizard(root, ctx) {
       };
     } else if (step === 2) {
       const sel = wrap.querySelector("#wz-model");
-      if (sel) sel.onchange = () => {
-        draft.modelAccountId = sel.value;
-      };
+      if (sel) {
+        sel.onchange = () => {
+          draft.modelAccountId = sel.value;
+          persist();
+        };
+      }
       const go = wrap.querySelector("#wz-go-models");
-      if (go) go.onclick = () => ctx.navigate("models");
+      if (go) go.onclick = () => goAddAccount("model");
       wrap.querySelector("#wz-next").disabled = !models.length;
       wrap.querySelector("#wz-next").onclick = () => {
         draft.modelAccountId = sel?.value || draft.modelAccountId;
@@ -208,7 +257,7 @@ export function mountWizard(root, ctx) {
       };
     } else {
       const go = wrap.querySelector("#wz-go-tools");
-      if (go) go.onclick = () => ctx.navigate("tools");
+      if (go) go.onclick = () => goAddAccount("mcp");
       const syncMcp = () => {
         draft.mcpIds = [...wrap.querySelectorAll("[data-mcp]:checked")].map((el) =>
           el.getAttribute("data-mcp"),
@@ -253,6 +302,8 @@ export function mountWizard(root, ctx) {
           return;
         }
         ctx.state.lastTask = draft.task;
+        ctx.state.wizardResume = null;
+        ctx.state.returnAfterAccount = null;
         ctx.onSessionCreated(res.session);
       };
       wrap.querySelector("#wz-skip").onclick = () => start(true);

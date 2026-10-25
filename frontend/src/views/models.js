@@ -1,21 +1,43 @@
 /**
  * PAGE-DESIGN §5.7 模型：自由添加 OpenAPI（名 + 地址 + Key）
- * Live 自定义 origin / ListAccounts 依赖 B（FULL-GATE）；本页以 mock 验收 UI。
+ * Live 自定义 origin 须 Anthropic 兼容 /v1/messages。
  */
 import * as api from "../api.js";
 
 const PRESETS = [
-  { name: "DeepSeek", origin: "https://api.deepseek.com" },
   { name: "Anthropic", origin: "https://api.anthropic.com" },
+  { name: "DeepSeek", origin: "https://api.deepseek.com" },
 ];
 
-export function mountModels(root, ctx) {
-  let editing = null; // account id or "new"
+export function mountModels(root, ctx, opts = {}) {
+  const returning = ctx.state.returnAfterAccount?.kind === "model";
+  let editing = opts.intent === "add" || returning ? "new" : null;
+
+  function clearReturn() {
+    if (ctx.state.returnAfterAccount?.kind === "model") {
+      ctx.state.returnAfterAccount = null;
+    }
+  }
+
+  function resumeWizard(accountId) {
+    const ret = ctx.state.returnAfterAccount;
+    if (!ret || ret.kind !== "model" || ret.route !== "wizard") return false;
+    const prev = ctx.state.wizardResume || { step: 2, draft: {} };
+    ctx.state.wizardResume = {
+      step: 2,
+      draft: {
+        ...(prev.draft || {}),
+        modelAccountId: accountId || prev.draft?.modelAccountId || "",
+      },
+    };
+    ctx.state.returnAfterAccount = null;
+    ctx.navigate("wizard");
+    return true;
+  }
 
   async function load() {
     const res = await api.listAccounts("model");
     ctx.state.modelAccounts = res.accounts || [];
-    // 兼容旧单账号字段
     if (ctx.state.modelAccounts[0]) ctx.state.modelAccount = ctx.state.modelAccounts[0];
     paint();
   }
@@ -30,6 +52,12 @@ export function mountModels(root, ctx) {
         </div>
         <button type="button" class="btn primary" id="btn-add-model">+ 添加</button>
       </div>
+      ${
+        returning
+          ? `<p class="meta ok" id="model-return-banner">添加成功后将回到「新会话」模型步骤。
+             <button type="button" class="btn" id="m-back-wizard">直接返回</button></p>`
+          : ""
+      }
       <div id="model-list" class="session-list"></div>
       ${
         list.length === 0 && editing !== "new"
@@ -66,6 +94,10 @@ export function mountModels(root, ctx) {
     };
     root.querySelector("#btn-add-model").onclick = startAdd;
     root.querySelector("#empty-add-model")?.addEventListener("click", startAdd);
+    root.querySelector("#m-back-wizard")?.addEventListener("click", () => {
+      clearReturn();
+      ctx.navigate("wizard");
+    });
     listEl.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.onclick = () => {
         editing = btn.getAttribute("data-edit");
@@ -91,16 +123,14 @@ export function mountModels(root, ctx) {
       editing === "new"
         ? { name: "", host: "", profileId: "custom" }
         : (ctx.state.modelAccounts || []).find((a) => a.id === editing) || {};
-    // 占位符勿写成真实 URL，否则深色主题下易被当成已填写
-    const originValue =
-      acc.origin || (acc.host ? "https://" + acc.host : "");
+    const originValue = acc.origin || (acc.host ? "https://" + acc.host : "");
     form.classList.remove("hidden");
     form.innerHTML = `
       <section class="card">
         <h3>${editing === "new" ? "添加模型" : "编辑模型"}</h3>
         <label class="field">名称<input id="m-name" value="${acc.name || ""}" maxlength="100"/></label>
-        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="手输 https://主机 或点下方快捷填入"/></label>
-        <p class="meta">须有实际内容（灰色提示不算）。浏览器 mock 可验 UI；桌面 live 的自定义 origin / 列表持久化由 B 接线。</p>
+        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://主机（勿带 path；探测走 /v1/messages）"/></label>
+        <p class="meta">须 Anthropic 兼容：HTTPS 主机 + Key。探测会 POST <code>/v1/messages</code>（同时带 X-Api-Key 与 Bearer）。</p>
         <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
         <p class="meta">快捷填入默认地址（可选）：
           ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}">${p.name}</button>`).join(" ")}
@@ -130,6 +160,11 @@ export function mountModels(root, ctx) {
     });
     form.querySelector("#m-cancel").onclick = () => {
       editing = null;
+      if (returning) {
+        clearReturn();
+        ctx.navigate("wizard");
+        return;
+      }
       paint();
     };
     nameEl.addEventListener("input", clearStatus);
@@ -137,7 +172,7 @@ export function mountModels(root, ctx) {
     keyEl.addEventListener("input", clearStatus);
     form.querySelector("#m-save").onclick = async () => {
       const name = nameEl.value.trim();
-      const origin = originEl.value.trim();
+      let origin = originEl.value.trim().replace(/\/+$/, "");
       const key = keyEl.value.trim();
       const missing = [];
       if (!name) missing.push("名称");
@@ -149,6 +184,16 @@ export function mountModels(root, ctx) {
         else if (!key) keyEl.focus();
         else nameEl.focus();
         return;
+      }
+      // 契约 Origin 仅 scheme+host[:port]；用户若贴了 /v1 等 path，剥掉再提交。
+      try {
+        const u = new URL(origin);
+        if (u.pathname && u.pathname !== "/") {
+          origin = `${u.protocol}//${u.host}`;
+          originEl.value = origin;
+        }
+      } catch (_) {
+        /* 交给后端校验 */
       }
       status.innerHTML = `<span class="meta">正在保存…</span>`;
       const saveBtn = form.querySelector("#m-save");
@@ -162,13 +207,18 @@ export function mountModels(root, ctx) {
           origin,
         });
         if (res.error) {
-          // 失败保留 Key，便于改地址后重试
-          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+          let hint = "";
+          if (res.error.code === "UPSTREAM_AUTH_FAILED") {
+            hint =
+              " 请确认 Key 有效，且地址为 Anthropic 兼容上游（非纯 OpenAI /chat/completions）。";
+          }
+          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span><span class="meta">${hint}</span>`;
           return;
         }
         keyEl.value = "";
         editing = null;
         ctx.onAccountsChanged?.();
+        if (resumeWizard(res.account?.id)) return;
         await load();
       } finally {
         saveBtn.disabled = false;

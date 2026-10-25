@@ -4,11 +4,28 @@
  */
 import * as api from "../api.js";
 
-export function mountTools(root, ctx) {
+export function mountTools(root, ctx, opts = {}) {
   let mode = "token"; // oauth | token
-  let showForm = false;
+  const returning = ctx.state.returnAfterAccount?.kind === "mcp";
+  let showForm = opts.intent === "add" || returning;
   let pendingId = "";
   let pendingTimer = null;
+
+  function clearReturn() {
+    if (ctx.state.returnAfterAccount?.kind === "mcp") {
+      ctx.state.returnAfterAccount = null;
+    }
+  }
+
+  function resumeWizard() {
+    const ret = ctx.state.returnAfterAccount;
+    if (!ret || ret.kind !== "mcp" || ret.route !== "wizard") return false;
+    const prev = ctx.state.wizardResume || { step: 3, draft: {} };
+    ctx.state.wizardResume = { step: 3, draft: { ...(prev.draft || {}) } };
+    ctx.state.returnAfterAccount = null;
+    ctx.navigate("wizard");
+    return true;
+  }
 
   function clearPendingWatch() {
     if (pendingTimer) {
@@ -34,6 +51,12 @@ export function mountTools(root, ctx) {
         </div>
         <button type="button" class="btn primary" id="btn-add-mcp">+ 添加</button>
       </div>
+      ${
+        returning
+          ? `<p class="meta ok">添加成功后将回到「新会话」工具步骤。
+             <button type="button" class="btn" id="t-back-wizard">直接返回</button></p>`
+          : ""
+      }
       <div id="mcp-list" class="session-list"></div>
       ${
         list.length === 0 && !showForm
@@ -66,6 +89,10 @@ export function mountTools(root, ctx) {
     };
     root.querySelector("#btn-add-mcp").onclick = startAdd;
     root.querySelector("#empty-add-mcp")?.addEventListener("click", startAdd);
+    root.querySelector("#t-back-wizard")?.addEventListener("click", () => {
+      clearReturn();
+      ctx.navigate("wizard");
+    });
     listEl.querySelectorAll("[data-del]").forEach((btn) => {
       btn.onclick = async () => {
         if (!confirm("删除该 MCP 及其本机凭据？")) return;
@@ -94,6 +121,7 @@ export function mountTools(root, ctx) {
         pendingId = "";
         showForm = false;
         ctx.onAccountsChanged?.();
+        if (resumeWizard()) return;
         await load();
       }
     }, 500);
@@ -146,6 +174,11 @@ export function mountTools(root, ctx) {
         pendingId = "";
       }
       showForm = false;
+      if (returning) {
+        clearReturn();
+        ctx.navigate("wizard");
+        return;
+      }
       paint();
     };
     const save = form.querySelector("#t-save");
@@ -168,6 +201,7 @@ export function mountTools(root, ctx) {
         }
         showForm = false;
         ctx.onAccountsChanged?.();
+        if (resumeWizard()) return;
         await load();
       };
     }
@@ -197,6 +231,8 @@ export function mountTools(root, ctx) {
           clearPendingWatch();
           pendingId = "";
           showForm = false;
+          ctx.onAccountsChanged?.();
+          if (resumeWizard()) return;
           paint();
         } else {
           const st = form.querySelector("#t-oauth-status");

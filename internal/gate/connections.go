@@ -161,7 +161,9 @@ func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if prof.Kind == "model" {
+		// 官方 Anthropic 认 X-Api-Key；不少兼容网关只认 Bearer。与 model_proxy 出站一致两边都带。
 		req.Header.Set("X-Api-Key", key)
+		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Anthropic-Version", "2023-06-01")
 	} else {
 		req.Header.Set("Authorization", "Bearer "+key)

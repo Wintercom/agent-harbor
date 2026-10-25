@@ -55,8 +55,8 @@ const ctx = {
       clearOnStopDefault: "keep",
     },
   },
-  navigate(name) {
-    navigate(name);
+  navigate(name, opts) {
+    navigate(name, opts);
   },
   showBlock(reason) {
     showBlock(reason || ctx.state.health?.reason);
@@ -241,9 +241,9 @@ function navigate(name, opts = {}) {
   if (name === "home") {
     ctx.refreshHome();
   }
-  if (name === "wizard") wizardView = mountWizard(views.wizard, ctx);
-  if (name === "models") mountModels(views.models, ctx);
-  if (name === "tools") mountTools(views.tools, ctx);
+  if (name === "wizard") wizardView = mountWizard(views.wizard, ctx, opts);
+  if (name === "models") mountModels(views.models, ctx, opts);
+  if (name === "tools") mountTools(views.tools, ctx, opts);
   if (name === "settings") mountSettings(views.settings, ctx);
   if (name === "session") {
     if (!ctx.state.sessionId) {
