@@ -206,13 +206,29 @@ func (c *Connections) probeRequest(ctx context.Context, prof policy.FixedProfile
 		return nil, mapProbeErr(ctx, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := readProbeBody(resp)
 		resp.Body.Close()
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
-			return nil, ErrUpstreamAuth
+			return nil, authProbeError(raw)
 		}
 		return nil, ErrUpstreamDown
 	}
 	return resp, nil
+}
+
+// authProbeError 把上游 401/403 正文收成固定中文提示，不回传 Key/哈希等敏感片段。
+func authProbeError(raw []byte) error {
+	low := strings.ToLower(string(raw))
+	msg := "上游认证失败"
+	switch {
+	case strings.Contains(low, "expected to start with 'sk-'") || strings.Contains(low, `expected to start with "sk-"`):
+		msg = "上游要求 API Key 以 sk- 开头（LiteLLM/七牛虚拟 Key）。请换 sk-… Key，或改用 https://api.qnaigc.com"
+	case strings.Contains(low, "litellm") && (strings.Contains(low, "token_not_found") || strings.Contains(low, "invalid proxy server token")):
+		msg = "上游拒绝了该 Key（LiteLLM 虚拟 Key 无效或未登记）"
+	case strings.Contains(low, "invalid api key") || strings.Contains(low, "invalid x-api-key") || strings.Contains(low, "authentication_error"):
+		msg = "上游认证失败：API Key 无效"
+	}
+	return contracts.NewAppError(contracts.ErrUpstreamAuthFailed, msg, false)
 }
 
 func readProbeBody(resp *http.Response) ([]byte, error) {

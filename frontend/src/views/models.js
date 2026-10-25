@@ -8,6 +8,8 @@ const PRESETS = [
   { name: "Anthropic", origin: "https://api.anthropic.com", model: "claude-haiku-4-5-20251001" },
   // DeepSeek Anthropic 兼容基址（探测 POST …/anthropic/v1/messages，模型 deepseek-chat）
   { name: "DeepSeek", origin: "https://api.deepseek.com/anthropic", model: "deepseek-chat" },
+  // 七牛官方 Anthropic 兼容（勿用 llmapi.qiniu.io 除非 Key 为 sk- 虚拟 Key）
+  { name: "七牛", origin: "https://api.qnaigc.com", model: "" },
 ];
 
 export function mountModels(root, ctx, opts = {}) {
@@ -209,12 +211,26 @@ export function mountModels(root, ctx, opts = {}) {
         if (res.error) {
           let hint = "";
           if (res.error.code === "UPSTREAM_AUTH_FAILED") {
-            hint =
-              " Key 与地址不匹配，或 Key 无效。DeepSeek 请用快捷填入（含 /anthropic）+ deepseek-chat；Anthropic 用官方 Key。纯 OpenAI /chat/completions 不受支持。";
+            const host = (() => {
+              try {
+                return new URL(origin).hostname;
+              } catch {
+                return "";
+              }
+            })();
+            if (host.includes("llmapi.qiniu") || host.includes("qiniu")) {
+              hint =
+                " llmapi.qiniu.io 要 sk- 开头的 LiteLLM 虚拟 Key；也可点「七牛」改用 https://api.qnaigc.com + 控制台 API Key。";
+            } else if (!/sk-/i.test(key) && res.error.message.includes("sk-")) {
+              hint = "";
+            } else {
+              hint =
+                " 请确认 Key 与地址匹配。DeepSeek/Anthropic/七牛用对应快捷填入；纯 OpenAI /chat/completions 不受支持。";
+            }
           } else if (res.error.code === "UPSTREAM_UNAVAILABLE") {
             hint = " 上游可达但协议/模型名可能不对；可改「模型名」后重试。";
           }
-          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span><span class="meta">${hint}</span>`;
+          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<span class="meta">${hint}</span>` : ""}`;
           return;
         }
         keyEl.value = "";

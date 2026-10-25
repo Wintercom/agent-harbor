@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -183,8 +184,10 @@ func TestConnectModelWithLocalUpstream(t *testing.T) {
 	_, err = conn.ConnectModel(context.Background(), contracts.ConnectInput{
 		ProfileID: policy.ProfileDemoModel, Name: "Bad", APIKey: "bad-key",
 	})
-	if err != ErrUpstreamAuth {
-		t.Fatalf("got %v", err)
+	if !errors.Is(err, ErrUpstreamAuth) {
+		if ae, ok := err.(*contracts.AppError); !ok || ae.Code != contracts.ErrUpstreamAuthFailed {
+			t.Fatalf("got %v", err)
+		}
 	}
 }
 
@@ -224,6 +227,17 @@ func TestConnectCustomDeepSeekAnthropicPrefix(t *testing.T) {
 	bad.BasePath = ""
 	if err := conn.probe(context.Background(), bad, "sk-ds"); err == nil {
 		t.Fatal("expected missing prefix to fail")
+	}
+}
+
+func TestAuthProbeErrorLiteLLMSKHint(t *testing.T) {
+	err := authProbeError([]byte(`{"error":{"message":"LiteLLM Virtual Key expected. Received=****, expected to start with 'sk-'.","type":"auth_error"}}`))
+	ae, ok := err.(*contracts.AppError)
+	if !ok || ae.Code != contracts.ErrUpstreamAuthFailed || !strings.Contains(ae.Message, "sk-") {
+		t.Fatalf("%v", err)
+	}
+	if strings.Contains(ae.Message, "Received=") {
+		t.Fatalf("leaked upstream detail: %s", ae.Message)
 	}
 }
 
