@@ -16,6 +16,8 @@ const PRESETS = [
 export function mountModels(root, ctx, opts = {}) {
   const returning = ctx.state.returnAfterAccount?.kind === "model";
   let editing = opts.intent === "add" || returning ? "new" : null;
+  let pendingDelete = "";
+  let listStatus = "";
 
   function clearReturn() {
     if (ctx.state.returnAfterAccount?.kind === "model") {
@@ -63,6 +65,7 @@ export function mountModels(root, ctx, opts = {}) {
           : ""
       }
       <div id="model-list" class="session-list"></div>
+      ${listStatus ? `<p class="meta" id="model-list-status">${listStatus}</p>` : ""}
       ${
         list.length === 0 && editing !== "new"
           ? `<div class="empty-state"><p>还没有模型。自行添加名称、API 地址与 Key；无浏览器登录。</p>
@@ -76,6 +79,7 @@ export function mountModels(root, ctx, opts = {}) {
     list.forEach((a) => {
       const row = document.createElement("article");
       row.className = "card session-card";
+      const confirming = pendingDelete === a.id;
       row.innerHTML = `
         <div class="row" style="justify-content:space-between">
           <div>
@@ -85,7 +89,12 @@ export function mountModels(root, ctx, opts = {}) {
           </div>
           <div class="row">
             <button type="button" class="btn" data-edit="${a.id}">编辑</button>
-            <button type="button" class="btn danger" data-del="${a.id}">删除</button>
+            ${
+              confirming
+                ? `<button type="button" class="btn danger" data-del-confirm="${a.id}">确认删除</button>
+                   <button type="button" class="btn" data-del-cancel="${a.id}">取消</button>`
+                : `<button type="button" class="btn danger" data-del="${a.id}">删除</button>`
+            }
           </div>
         </div>`;
       listEl.appendChild(row);
@@ -93,6 +102,8 @@ export function mountModels(root, ctx, opts = {}) {
 
     const startAdd = () => {
       editing = "new";
+      pendingDelete = "";
+      listStatus = "";
       paint();
       paintForm();
     };
@@ -105,16 +116,39 @@ export function mountModels(root, ctx, opts = {}) {
     listEl.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.onclick = () => {
         editing = btn.getAttribute("data-edit");
+        pendingDelete = "";
         paint();
         paintForm();
       };
     });
     listEl.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.onclick = () => {
+        pendingDelete = btn.getAttribute("data-del") || "";
+        listStatus = "再点一次「确认删除」将移除本机 Key（桌面内不用系统确认框）。";
+        paint();
+      };
+    });
+    listEl.querySelectorAll("[data-del-cancel]").forEach((btn) => {
+      btn.onclick = () => {
+        pendingDelete = "";
+        listStatus = "";
+        paint();
+      };
+    });
+    listEl.querySelectorAll("[data-del-confirm]").forEach((btn) => {
       btn.onclick = async () => {
-        const id = btn.getAttribute("data-del");
-        const acc = list.find((x) => x.id === id);
-        if (!confirm(`删除模型「${acc?.name || id}」及其本机 API Key？`)) return;
-        await api.removeAccount(id);
+        const id = btn.getAttribute("data-del-confirm");
+        pendingDelete = "";
+        listStatus = `<span class="meta">正在删除…</span>`;
+        paint();
+        const res = await api.removeAccount(id);
+        if (res?.error) {
+          listStatus = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+          paint();
+          return;
+        }
+        listStatus = "";
+        if (editing === id) editing = null;
         await load();
       };
     });
@@ -138,7 +172,8 @@ export function mountModels(root, ctx, opts = {}) {
         <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://api.deepseek.com/anthropic"/></label>
         <p class="meta">须 Anthropic 兼容 Messages API（探测 <code>POST …/v1/messages</code>）。七牛：<code>api.qnaigc.com</code> 与 <code>llmapi.qiniu.io</code> 各用各的 Key，不能混用。</p>
         <label class="field">模型名（可选）<input id="m-model" value="${acc.model || ""}" placeholder="空则按主机推断，如 deepseek-chat"/></label>
-        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
+        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴完整 sk-… Key"/></label>
+        <p class="meta" id="m-key-len"></p>
         <p class="meta">快捷填入（可选）：
           ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}" data-model="${p.model || ""}">${p.name}</button>`).join(" ")}
         </p>
@@ -153,6 +188,19 @@ export function mountModels(root, ctx, opts = {}) {
     const modelEl = form.querySelector("#m-model");
     const keyEl = form.querySelector("#m-key");
     const status = form.querySelector("#m-status");
+    const keyLenEl = form.querySelector("#m-key-len");
+    const updateKeyLen = () => {
+      const n = keyEl.value.trim().length;
+      if (!n) {
+        keyLenEl.textContent = "";
+        return;
+      }
+      if (n < 32) {
+        keyLenEl.innerHTML = `<span class="bad">当前 Key ${n} 字节，偏短（完整七牛/LiteLLM Key 通常更长）。请重新完整复制，勿只贴前缀。</span>`;
+      } else {
+        keyLenEl.innerHTML = `<span class="meta">已输入 ${n} 字节${keyEl.value.trim().startsWith("sk-") ? "，前缀 sk-" : ""}</span>`;
+      }
+    };
     const clearStatus = () => {
       status.textContent = "";
     };
@@ -180,7 +228,12 @@ export function mountModels(root, ctx, opts = {}) {
     nameEl.addEventListener("input", clearStatus);
     originEl.addEventListener("input", clearStatus);
     modelEl.addEventListener("input", clearStatus);
-    keyEl.addEventListener("input", clearStatus);
+    keyEl.addEventListener("input", () => {
+      clearStatus();
+      updateKeyLen();
+    });
+    keyEl.addEventListener("paste", () => setTimeout(updateKeyLen, 0));
+    updateKeyLen();
     form.querySelector("#m-save").onclick = async () => {
       const name = nameEl.value.trim();
       const origin = originEl.value.trim().replace(/\/+$/, "");
@@ -197,11 +250,22 @@ export function mountModels(root, ctx, opts = {}) {
         else nameEl.focus();
         return;
       }
+      if (key.length < 32) {
+        status.innerHTML = `<span class="bad">Key 只有 ${key.length} 字节，很可能复制不全。请从控制台重新复制完整 Key 后再保存。</span>`;
+        keyEl.focus();
+        return;
+      }
       status.innerHTML = `<span class="meta">正在保存…</span>`;
       const saveBtn = form.querySelector("#m-save");
       saveBtn.disabled = true;
       try {
-        if (editing !== "new") await api.removeAccount(editing);
+        if (editing !== "new") {
+          const rm = await api.removeAccount(editing);
+          if (rm?.error) {
+            status.innerHTML = `<span class="bad">更新前删除旧账号失败：${rm.error.code}: ${rm.error.message}</span>`;
+            return;
+          }
+        }
         const res = await api.connectModel({
           profileId: "custom",
           name,
@@ -212,19 +276,9 @@ export function mountModels(root, ctx, opts = {}) {
         if (res.error) {
           let hint = "";
           if (res.error.code === "UPSTREAM_AUTH_FAILED") {
-            const host = (() => {
-              try {
-                return new URL(origin).hostname;
-              } catch {
-                return "";
-              }
-            })();
-            if (host.includes("qnaigc") || host.includes("llmapi.qiniu")) {
-              hint = ""; // 后端 message 已含七牛双网关说明
-            } else {
-              hint =
-                " 请确认 Key 与地址匹配。DeepSeek/Anthropic 用对应快捷填入；纯 OpenAI /chat/completions 不受支持。";
-            }
+            hint =
+              " 请用终端验证：export KEY='完整Key'; ./scripts/probe-model-auth.sh " +
+              origin.replace(/'/g, "");
           } else if (res.error.code === "UPSTREAM_UNAVAILABLE") {
             hint = " 上游可达但协议/模型名可能不对；可改「模型名」后重试。";
           }

@@ -95,9 +95,21 @@ export function mountTools(root, ctx, opts = {}) {
     });
     listEl.querySelectorAll("[data-del]").forEach((btn) => {
       btn.onclick = async () => {
-        if (!confirm("删除该 MCP 及其本机凭据？")) return;
-        await api.removeAccount(btn.getAttribute("data-del"));
-        await load();
+        const id = btn.getAttribute("data-del");
+        if (btn.getAttribute("data-confirming") === "1") {
+          btn.disabled = true;
+          const res = await api.removeAccount(id);
+          if (res?.error) {
+            btn.disabled = false;
+            btn.textContent = "删除失败";
+            btn.title = `${res.error.code}: ${res.error.message}`;
+            return;
+          }
+          await load();
+          return;
+        }
+        btn.setAttribute("data-confirming", "1");
+        btn.textContent = "确认删除";
       };
     });
     if (showForm) paintForm();

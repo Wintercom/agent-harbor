@@ -44,7 +44,6 @@ async function call(method, ...args) {
       if (
         method === "getUIPrefs" ||
         method === "setUIPrefs" ||
-        method === "removeAccount" ||
         method === "revokeRememberedHost" ||
         method === "resolvePermission" ||
         method === "destroySession" ||
@@ -52,6 +51,16 @@ async function call(method, ...args) {
         method === "listRememberedHosts"
       ) {
         return { error: null, provisional: true };
+      }
+      if (method === "removeAccount") {
+        return {
+          error: {
+            code: "UNIMPLEMENTED",
+            message: "当前通道未绑定 RemoveAccount，无法删除账号。",
+            retryable: false,
+          },
+          provisional: true,
+        };
       }
       throw new Error(`transport missing ${method}`);
     }
