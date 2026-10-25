@@ -159,17 +159,69 @@ func (k *Kit) resolveLaunch() (launchSpec, error) {
 		return launchSpec{}, err
 	}
 	root := filepath.Dir(script)
-	// Homebrew Node：二进制在 Cellar/.../bin/node，运行时常读同版本 lib。
+	// Homebrew Node：二进制在 Cellar/.../bin/node，并依赖 /opt/homebrew/opt/*/lib 下的 dylib。
 	readOnly := []string{node, root}
-	if nodeHome := filepath.Dir(filepath.Dir(node)); strings.Contains(nodeHome, "/Cellar/node/") || strings.Contains(nodeHome, "/node/") {
-		readOnly = append(readOnly, nodeHome)
-	}
+	readOnly = append(readOnly, brewRuntimeRoots(node)...)
 	return launchSpec{
 		Command:  node,
 		Args:     []string{script},
 		ReadOnly: readOnly,
 		Label:    script,
 	}, nil
+}
+
+// brewRuntimeRoots 返回运行 brew 版 Node 所需的只读前缀。
+// opt 下的 dylib 是指向 Cellar 的符号链接，Seatbelt 按真实路径鉴权，因此必须授权对应 Cellar 公式目录。
+func brewRuntimeRoots(node string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = filepath.Clean(p)
+		if p == "" || seen[p] {
+			return
+		}
+		if st, err := os.Stat(p); err != nil || !st.IsDir() {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if nodeHome := filepath.Dir(filepath.Dir(node)); strings.Contains(nodeHome, string(filepath.Separator)+"Cellar"+string(filepath.Separator)+"node"+string(filepath.Separator)) {
+		add(nodeHome)
+	}
+	// dyld 先打开 opt/... 再落到 Cellar；OpenSSL 还读 etc/openssl@3。
+	if strings.HasPrefix(node, "/opt/homebrew/") {
+		add("/opt/homebrew/opt")
+		add("/opt/homebrew/etc")
+	} else if strings.HasPrefix(node, "/usr/local/") {
+		add("/usr/local/opt")
+		add("/usr/local/etc")
+	}
+	cmd := exec.Command("otool", "-L", node)
+	raw, err := cmd.Output()
+	if err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if i := strings.Index(line, " (compatibility"); i >= 0 {
+				line = strings.TrimSpace(line[:i])
+			}
+			if !strings.HasPrefix(line, "/opt/homebrew/") && !strings.HasPrefix(line, "/usr/local/") {
+				continue
+			}
+			resolved, err := filepath.EvalSymlinks(line)
+			if err != nil {
+				resolved = line
+			}
+			parts := strings.Split(resolved, string(filepath.Separator))
+			for i := 0; i+2 < len(parts); i++ {
+				if parts[i] == "Cellar" {
+					add(string(filepath.Separator) + filepath.Join(parts[1:i+3]...))
+					break
+				}
+			}
+		}
+	}
+	return out
 }
 
 func detectProbeReason(label, step string, err error) string {
