@@ -1,0 +1,41 @@
+package policy
+
+import (
+	"context"
+	"fmt"
+	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"testing"
+)
+
+func TestBuildOptionalAndMultipleMCP(t *testing.T) {
+	profiles := map[string]FixedProfile{
+		ProfileDemoModel: {Kind: "model", Host: "model.test", Origin: "https://model.test"},
+		"mcp":            {Kind: "mcp", Host: "mcp.test", Origin: "https://mcp.test", Paths: []string{"/mcp"}, Tools: []string{"read"}},
+	}
+	b := NewBuilder(profiles)
+	request := PolicyRequest{Workspace: t.TempDir(), AgentID: "claude", Model: contracts.AccountInfo{ID: "model", Kind: "model", ProfileID: ProfileDemoModel, Host: "model.test"}}
+	for _, count := range []int{0, 1, 8} {
+		request.MCPs = nil
+		for i := 0; i < count; i++ {
+			request.MCPs = append(request.MCPs, contracts.AccountInfo{ID: fmt.Sprint(i), Kind: "mcp", ProfileID: "mcp", Host: "mcp.test"})
+		}
+		snapshot, err := b.Build(context.Background(), request)
+		if err != nil || len(snapshot.MCPMounts) != count {
+			t.Fatalf("count=%d %+v %v", count, snapshot, err)
+		}
+	}
+	request.MCPs = append(request.MCPs, request.MCPs[0])
+	if _, err := b.Build(context.Background(), request); err == nil {
+		t.Fatal("接受超过8个挂载")
+	}
+	request.MCPs = request.MCPs[:2]
+	request.MCPs[1] = request.MCPs[0]
+	if _, err := b.Build(context.Background(), request); err == nil {
+		t.Fatal("接受重复挂载")
+	}
+	request.MCPs[1].ID = "other"
+	request.MCPs[1].Host = "wrong.test"
+	if _, err := b.Build(context.Background(), request); err == nil {
+		t.Fatal("接受不匹配主机")
+	}
+}

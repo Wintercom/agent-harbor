@@ -186,3 +186,34 @@ func TestOutputQueueDoesNotConfuseSessionSequenceNumbers(t *testing.T) {
 		t.Fatal("不同会话重复 seq 导致输出截断死循环")
 	}
 }
+
+// UI 卡住时，结构化交互输出也必须计入共同预算。
+func TestSlowSinkBoundsMixedPtyOutput(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	q := newEventQueue(func(contracts.Event) { once.Do(func() { close(entered); <-release }) })
+	q.push(contracts.Event{SessionID: "s", Seq: 1, Type: "error", Error: publicError("INTERNAL_ERROR")})
+	<-entered
+	defer func() { q.close(); close(release); <-q.done }()
+	for seq := uint64(2); seq < 160; seq++ {
+		e := contracts.Event{SessionID: "s", Seq: seq, Type: "pty", Pty: &contracts.OutputData{Stream: "stdout", Text: strings.Repeat("x", chunkLimit)}}
+		if seq%2 == 0 {
+			e.Type, e.Output, e.Pty = "output", e.Pty, nil
+		}
+		q.push(e)
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	actual := 0
+	for _, e := range q.items {
+		if e.Output != nil {
+			actual += len(e.Output.Text)
+		}
+		if e.Pty != nil {
+			actual += len(e.Pty.Text)
+		}
+	}
+	if actual > outputLimit || q.bytes != actual {
+		t.Fatalf("实际排队=%d，计数=%d，上限=%d", actual, q.bytes, outputLimit)
+	}
+}

@@ -21,6 +21,17 @@ import (
 
 const sentinel = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+func TestBrewRuntimeDoesNotAuthorizeAllHostConfiguration(t *testing.T) {
+	if info, err := os.Stat("/opt/homebrew/etc"); err != nil || !info.IsDir() {
+		t.Skip("本机没有 Homebrew 配置目录")
+	}
+	for _, path := range brewRuntimeRoots("/opt/homebrew/bin/node") {
+		if path == "/opt/homebrew/etc" || path == "/usr/local/etc" {
+			t.Fatal("Agent 可读取整个包管理器配置目录，可能包含其它服务凭据")
+		}
+	}
+}
+
 func input() kits.KitInput {
 	return kits.KitInput{Task: "特殊字符 ' \" $(touch never)\n中文", PrivateHome: "/private/test home", ModelBaseURL: "http://127.0.0.1:41001/model", MCPURL: "http://127.0.0.1:41002/mcp", Sentinel: sentinel}
 }
@@ -299,4 +310,33 @@ func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
 		t.Fatal("未收到结构化初始化事件，不能判为非交互启动通过")
 	}
 	t.Logf("无真实上游启动探测完成：退出码=%d，取消=%v，输出字节=%d；不代表模型/MCP 兼容通过", exit.Code, exit.Cancelled, len(text))
+}
+
+func TestBuildOptionalAndMultipleMCP(t *testing.T) {
+	k, _ := New("/usr/bin/true", "fixture-model")
+	for _, urls := range [][]string{nil, {"http://127.0.0.1:40002/mcp/0", "http://127.0.0.1:40002/mcp/1"}} {
+		i := input()
+		i.MCPURL = ""
+		i.MCPURLs = urls
+		launch, err := k.Build(context.Background(), i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Servers map[string]struct {
+				URL string `json:"url"`
+			} `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(launch.ConfigFiles[0].Content, &config); err != nil {
+			t.Fatal(err)
+		}
+		if len(config.Servers) != len(urls) {
+			t.Fatalf("%+v", config)
+		}
+		for index, endpoint := range urls {
+			if config.Servers[kits.MCPName(index)].URL != endpoint {
+				t.Fatal("挂载配置串用")
+			}
+		}
+	}
 }

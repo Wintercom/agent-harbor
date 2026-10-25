@@ -62,7 +62,7 @@ export function mountHome(root, ctx) {
       ctx.showBlock?.(ctx.state.health.reason);
       return;
     }
-    ctx.navigate("wizard");
+    ctx.navigate("wizard", { fresh: true });
   });
   list.forEach((s) => {
     const terminal = ["stopped", "failed"].includes(s.state) && s.cleanupComplete;
@@ -94,7 +94,7 @@ export function mountHome(root, ctx) {
       ctx.showBlock?.(ctx.state.health.reason);
       return;
     }
-    ctx.navigate("wizard");
+    ctx.navigate("wizard", { fresh: true });
   };
   root.querySelector("#btn-home-block")?.addEventListener("click", () => {
     ctx.showBlock?.(ctx.state.health?.reason);
@@ -121,6 +121,6 @@ export function mountHome(root, ctx) {
     };
   });
   listEl.querySelectorAll("[data-again]").forEach((btn) => {
-    btn.onclick = () => ctx.navigate("wizard");
+    btn.onclick = () => ctx.navigate("wizard", { fresh: true });
   });
 }

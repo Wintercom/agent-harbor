@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type GateSpec struct {
 type GateBinding struct {
 	ModelBaseURL string
 	MCPURL       string
+	MCPURLs      []string
 	Sentinel     string
 	AllowedTCP   []string
 }
@@ -98,15 +100,18 @@ func New(store *secrets.Store, pol *policy.Builder) *Harbor {
 // Start 创建随机 Sentinel，启动精确绑定 127.0.0.1 的模型与 MCP 端口。
 // 仅在监听器 ready 后返回；部分失败会关闭已创建资源。
 func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.AuditData), fatal func(error)) (GateBinding, error) {
-	if spec.SessionID == "" || spec.ModelAccountID == "" || spec.MCPAccountID == "" {
+	if spec.SessionID == "" || spec.ModelAccountID == "" {
 		return GateBinding{}, fmt.Errorf("gate: incomplete spec")
 	}
 	if _, err := h.secrets.Lookup(ctx, spec.ModelAccountID); err != nil {
 		return GateBinding{}, err
 	}
-	if _, err := h.secrets.Lookup(ctx, spec.MCPAccountID); err != nil {
+	mounts, err := h.mcpMounts(ctx, spec)
+	if err != nil {
 		return GateBinding{}, err
 	}
+	spec.Policy.MCPMounts = mounts
+
 	sentinel, err := newSentinel()
 	if err != nil {
 		return GateBinding{}, err
@@ -123,15 +128,21 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 	if err != nil {
 		return GateBinding{}, err
 	}
-	mcpLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		_ = modelLn.Close()
-		return GateBinding{}, err
+	var mcpLn net.Listener
+	if len(mounts) > 0 {
+		mcpLn, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			_ = modelLn.Close()
+			return GateBinding{}, err
+		}
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	mp := newModelProxy(h, spec.SessionID, modelLn)
-	gw := newMCPGateway(h, spec.SessionID, mcpLn)
+	var gw *mcpGateway
+	if mcpLn != nil {
+		gw = newMCPGateway(h, spec.SessionID, mcpLn)
+	}
 
 	rt := &sessionRuntime{
 		spec:      spec,
@@ -139,7 +150,6 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 		model:     mp,
 		mcp:       gw,
 		modelAddr: modelLn.Addr().String(),
-		mcpAddr:   mcpLn.Addr().String(),
 		cancel:    cancel,
 		ctx:       runCtx, done: make(chan struct{}),
 		audit: audit,
@@ -147,36 +157,54 @@ func (h *Harbor) Start(ctx context.Context, spec GateSpec, audit func(contracts.
 	}
 
 	mp.server.BaseContext = func(net.Listener) context.Context { return runCtx }
-	gw.server.BaseContext = func(net.Listener) context.Context { return runCtx }
-	rt.serving.Add(2)
+	rt.serving.Add(1)
+	if gw != nil {
+		rt.mcpAddr = mcpLn.Addr().String()
+		gw.server.BaseContext = func(net.Listener) context.Context { return runCtx }
+		rt.serving.Add(1)
+	}
 
 	h.mu.Lock()
 	if _, exists := h.sessions[spec.SessionID]; exists {
 		h.mu.Unlock()
 		cancel()
 		_ = modelLn.Close()
-		_ = mcpLn.Close()
+		if mcpLn != nil {
+			_ = mcpLn.Close()
+		}
 		return GateBinding{}, ErrSessionExists
 	}
 	h.sessions[spec.SessionID] = rt
 	h.mu.Unlock()
 
 	go func() { defer rt.serving.Done(); mp.serve(runCtx) }()
-	go func() { defer rt.serving.Done(); gw.serve(runCtx) }()
+	if gw != nil {
+		go func() { defer rt.serving.Done(); gw.serve(runCtx) }()
+	}
 	go func() { <-runCtx.Done(); _ = h.Revoke(context.Background(), spec.SessionID) }()
 
 	// 确认端口可接受连接
-	if err := waitReady(ctx, rt.modelAddr, rt.mcpAddr); err != nil {
+	addrs := []string{rt.modelAddr}
+	if gw != nil {
+		addrs = append(addrs, rt.mcpAddr)
+	}
+	if err := waitReady(ctx, addrs...); err != nil {
 		_ = h.Revoke(context.Background(), spec.SessionID)
 		return GateBinding{}, err
 	}
 
-	return GateBinding{
-		ModelBaseURL: "http://" + rt.modelAddr,
-		MCPURL:       "http://" + rt.mcpAddr + "/mcp",
-		Sentinel:     sentinel,
-		AllowedTCP:   []string{rt.modelAddr, rt.mcpAddr},
-	}, nil
+	binding := GateBinding{ModelBaseURL: "http://" + rt.modelAddr, Sentinel: sentinel, AllowedTCP: addrs, MCPURLs: []string{}}
+	for i := range mounts {
+		endpoint := "http://" + rt.mcpAddr + "/mcp"
+		if len(mounts) > 1 {
+			endpoint += "/" + strconv.Itoa(i)
+		}
+		binding.MCPURLs = append(binding.MCPURLs, endpoint)
+	}
+	if len(mounts) == 1 {
+		binding.MCPURL = binding.MCPURLs[0]
+	}
+	return binding, nil
 }
 
 func waitReady(ctx context.Context, addrs ...string) error {
@@ -285,20 +313,7 @@ func (h *Harbor) Health() string {
 
 // SetModelAccount 更新运行中会话的模型账号（仅影响之后出站代填；不改 Origin）。
 func (h *Harbor) SetModelAccount(sessionID, accountID string) error {
-	if sessionID == "" || accountID == "" {
-		return fmt.Errorf("gate: incomplete model account update")
-	}
-	if _, err := h.secrets.Lookup(context.Background(), accountID); err != nil {
-		return err
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	rt, ok := h.sessions[sessionID]
-	if !ok || rt.revoked || rt.ctx.Err() != nil {
-		return ErrSessionNotFound
-	}
-	rt.spec.ModelAccountID = accountID
-	return nil
+	return h.SwitchModel(context.Background(), sessionID, accountID)
 }
 
 // AllowExtraHost 将扩权通过的主机记入会话（once 仅一次；project 会话期有效）。

@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,7 +15,7 @@ import (
 func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *sessionRuntime, resp *http.Response, originAuth string) (*http.Response, string, error) {
 	locURL, err := redirectAbsoluteURL(resp)
 	defer resp.Body.Close()
-	if err != nil || locURL == nil || locURL.Host == "" {
+	if err != nil || locURL == nil || locURL.Host == "" || locURL.User != nil {
 		return nil, "", fmt.Errorf("gate: bad redirect")
 	}
 	locAuth := strings.ToLower(locURL.Host)
@@ -27,7 +28,7 @@ func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *se
 	if !allowed && rt.spec.RequestPermission != nil {
 		decision, perr := rt.spec.RequestPermission(ctx, contracts.PermissionNeeded{
 			Target: locHost,
-			Action: "请求跟随跨主机重定向",
+			Action: "connect",
 		})
 		if perr == nil && (decision == "once" || decision == "project") {
 			_ = h.AllowExtraHost(sid, locHost, decision)
@@ -40,11 +41,15 @@ func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *se
 	if !allowed {
 		return nil, locHost, fmt.Errorf("gate: redirect not permitted")
 	}
-	if err := ValidatePublicHostname(locHost); err != nil {
+	ips, err := resolvePublicHostname(locHost)
+	if err != nil {
 		return nil, locHost, err
 	}
 	if locURL.Scheme != "https" && !(locURL.Scheme == "http" && egressAllowLoopback) {
 		return nil, locHost, fmt.Errorf("gate: redirect scheme denied")
+	}
+	if port := locURL.Port(); port != "" && port != "443" && !(egressAllowLoopback && locURL.Scheme == "http" && port == "80") {
+		return nil, locHost, fmt.Errorf("gate: redirect port denied")
 	}
 
 	method := http.MethodGet
@@ -62,7 +67,41 @@ func (h *Harbor) followCrossHostRedirect(ctx context.Context, sid string, rt *se
 		}
 	}
 
-	next, err := h.client.Do(followReq)
+	// 只拨号本次解析并校验的 IP，禁止代理环境或再次 DNS 解析绕过私网拒绝。
+	base, ok := h.client.Transport.(*http.Transport)
+	if !ok {
+		return nil, locHost, fmt.Errorf("gate: redirect transport cannot enforce address pinning")
+	}
+	transport := base.Clone()
+	transport.Proxy = nil
+	transport.DisableKeepAlives = true
+	transport.DialTLSContext, transport.DialTLS = nil, nil
+	dial := base.DialContext
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	transport.DialContext = func(call context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil || !strings.EqualFold(host, locHost) {
+			return nil, fmt.Errorf("gate: unexpected redirect authority")
+		}
+		var last error
+		for _, ip := range ips {
+			connection, err := dial(call, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return connection, nil
+			}
+			last = err
+			if call.Err() != nil {
+				return nil, call.Err()
+			}
+		}
+		return nil, last
+	}
+	client := *h.client
+	client.Transport = transport
+	defer transport.CloseIdleConnections()
+	next, err := client.Do(followReq)
 	if err != nil {
 		return nil, locHost, err
 	}

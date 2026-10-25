@@ -1,21 +1,47 @@
 /**
  * PAGE-DESIGN §5.7 模型：自由添加 OpenAPI（名 + 地址 + Key）
- * Live 自定义 origin / ListAccounts 依赖 B（FULL-GATE）；本页以 mock 验收 UI。
+ * Live 自定义 origin 须 Anthropic 兼容 /v1/messages。
  */
 import * as api from "../api.js";
 
 const PRESETS = [
-  { name: "DeepSeek", origin: "https://api.deepseek.com" },
-  { name: "Anthropic", origin: "https://api.anthropic.com" },
+  { name: "Anthropic", origin: "https://api.anthropic.com", model: "claude-haiku-4-5-20251001" },
+  // DeepSeek Anthropic 兼容基址（探测 POST …/anthropic/v1/messages，模型 deepseek-chat）
+  { name: "DeepSeek", origin: "https://api.deepseek.com/anthropic", model: "deepseek-chat" },
+  // 两套七牛网关 Key 不互通：官方 Token API vs LiteLLM
+  { name: "七牛官方", origin: "https://api.qnaigc.com", model: "" },
+  { name: "七牛LiteLLM", origin: "https://llmapi.qiniu.io", model: "GPT-5.6" },
 ];
 
-export function mountModels(root, ctx) {
-  let editing = null; // account id or "new"
+export function mountModels(root, ctx, opts = {}) {
+  const returning = ctx.state.returnAfterAccount?.kind === "model";
+  let editing = opts.intent === "add" || returning ? "new" : null;
+
+  function clearReturn() {
+    if (ctx.state.returnAfterAccount?.kind === "model") {
+      ctx.state.returnAfterAccount = null;
+    }
+  }
+
+  function resumeWizard(accountId) {
+    const ret = ctx.state.returnAfterAccount;
+    if (!ret || ret.kind !== "model" || ret.route !== "wizard") return false;
+    const prev = ctx.state.wizardResume || { step: 2, draft: {} };
+    ctx.state.wizardResume = {
+      step: 2,
+      draft: {
+        ...(prev.draft || {}),
+        modelAccountId: accountId || prev.draft?.modelAccountId || "",
+      },
+    };
+    ctx.state.returnAfterAccount = null;
+    ctx.navigate("wizard");
+    return true;
+  }
 
   async function load() {
     const res = await api.listAccounts("model");
     ctx.state.modelAccounts = res.accounts || [];
-    // 兼容旧单账号字段
     if (ctx.state.modelAccounts[0]) ctx.state.modelAccount = ctx.state.modelAccounts[0];
     paint();
   }
@@ -30,6 +56,12 @@ export function mountModels(root, ctx) {
         </div>
         <button type="button" class="btn primary" id="btn-add-model">+ 添加</button>
       </div>
+      ${
+        returning
+          ? `<p class="meta ok" id="model-return-banner">添加成功后将回到「新会话」模型步骤。
+             <button type="button" class="btn" id="m-back-wizard">直接返回</button></p>`
+          : ""
+      }
       <div id="model-list" class="session-list"></div>
       ${
         list.length === 0 && editing !== "new"
@@ -66,6 +98,10 @@ export function mountModels(root, ctx) {
     };
     root.querySelector("#btn-add-model").onclick = startAdd;
     root.querySelector("#empty-add-model")?.addEventListener("click", startAdd);
+    root.querySelector("#m-back-wizard")?.addEventListener("click", () => {
+      clearReturn();
+      ctx.navigate("wizard");
+    });
     listEl.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.onclick = () => {
         editing = btn.getAttribute("data-edit");
@@ -91,19 +127,20 @@ export function mountModels(root, ctx) {
       editing === "new"
         ? { name: "", host: "", profileId: "custom" }
         : (ctx.state.modelAccounts || []).find((a) => a.id === editing) || {};
-    // 占位符勿写成真实 URL，否则深色主题下易被当成已填写
     const originValue =
-      acc.origin || (acc.host ? "https://" + acc.host : "");
+      acc.origin ||
+      (acc.host ? "https://" + acc.host + (acc.basePath || "") : "");
     form.classList.remove("hidden");
     form.innerHTML = `
       <section class="card">
         <h3>${editing === "new" ? "添加模型" : "编辑模型"}</h3>
         <label class="field">名称<input id="m-name" value="${acc.name || ""}" maxlength="100"/></label>
-        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="手输 https://主机 或点下方快捷填入"/></label>
-        <p class="meta">须有实际内容（灰色提示不算）。浏览器 mock 可验 UI；桌面 live 的自定义 origin / 列表持久化由 B 接线。</p>
+        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://api.deepseek.com/anthropic"/></label>
+        <p class="meta">须 Anthropic 兼容 Messages API（探测 <code>POST …/v1/messages</code>）。七牛：<code>api.qnaigc.com</code> 与 <code>llmapi.qiniu.io</code> 各用各的 Key，不能混用。</p>
+        <label class="field">模型名（可选）<input id="m-model" value="${acc.model || ""}" placeholder="空则按主机推断，如 deepseek-chat"/></label>
         <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
-        <p class="meta">快捷填入默认地址（可选）：
-          ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}">${p.name}</button>`).join(" ")}
+        <p class="meta">快捷填入（可选）：
+          ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}" data-model="${p.model || ""}">${p.name}</button>`).join(" ")}
         </p>
         <div class="actions">
           <button type="button" class="btn" id="m-cancel">取消</button>
@@ -113,6 +150,7 @@ export function mountModels(root, ctx) {
       </section>`;
     const nameEl = form.querySelector("#m-name");
     const originEl = form.querySelector("#m-origin");
+    const modelEl = form.querySelector("#m-model");
     const keyEl = form.querySelector("#m-key");
     const status = form.querySelector("#m-status");
     const clearStatus = () => {
@@ -121,6 +159,8 @@ export function mountModels(root, ctx) {
     form.querySelectorAll("[data-preset]").forEach((btn) => {
       btn.onclick = () => {
         originEl.value = btn.getAttribute("data-preset") || "";
+        const presetModel = btn.getAttribute("data-model") || "";
+        if (presetModel) modelEl.value = presetModel;
         if (!nameEl.value.trim()) {
           nameEl.value = "我的 " + (btn.getAttribute("data-pname") || "");
         }
@@ -130,14 +170,21 @@ export function mountModels(root, ctx) {
     });
     form.querySelector("#m-cancel").onclick = () => {
       editing = null;
+      if (returning) {
+        clearReturn();
+        ctx.navigate("wizard");
+        return;
+      }
       paint();
     };
     nameEl.addEventListener("input", clearStatus);
     originEl.addEventListener("input", clearStatus);
+    modelEl.addEventListener("input", clearStatus);
     keyEl.addEventListener("input", clearStatus);
     form.querySelector("#m-save").onclick = async () => {
       const name = nameEl.value.trim();
-      const origin = originEl.value.trim();
+      const origin = originEl.value.trim().replace(/\/+$/, "");
+      const model = modelEl.value.trim();
       const key = keyEl.value.trim();
       const missing = [];
       if (!name) missing.push("名称");
@@ -160,15 +207,34 @@ export function mountModels(root, ctx) {
           name,
           apiKey: key,
           origin,
+          model,
         });
         if (res.error) {
-          // 失败保留 Key，便于改地址后重试
-          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+          let hint = "";
+          if (res.error.code === "UPSTREAM_AUTH_FAILED") {
+            const host = (() => {
+              try {
+                return new URL(origin).hostname;
+              } catch {
+                return "";
+              }
+            })();
+            if (host.includes("qnaigc") || host.includes("llmapi.qiniu")) {
+              hint = ""; // 后端 message 已含七牛双网关说明
+            } else {
+              hint =
+                " 请确认 Key 与地址匹配。DeepSeek/Anthropic 用对应快捷填入；纯 OpenAI /chat/completions 不受支持。";
+            }
+          } else if (res.error.code === "UPSTREAM_UNAVAILABLE") {
+            hint = " 上游可达但协议/模型名可能不对；可改「模型名」后重试。";
+          }
+          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<span class="meta">${hint}</span>` : ""}`;
           return;
         }
         keyEl.value = "";
         editing = null;
         ctx.onAccountsChanged?.();
+        if (resumeWizard(res.account?.id)) return;
         await load();
       } finally {
         saveBtn.disabled = false;

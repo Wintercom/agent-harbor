@@ -244,6 +244,7 @@ type SessionService interface {
     List(context.Context) ([]SessionSummary, error)
     Destroy(context.Context, string) (SessionSnapshot, error)
     ResolvePermission(context.Context, ResolvePermissionInput) error
+    SwitchModel(context.Context, SwitchModelInput) (SessionSnapshot, error)
     WritePty(context.Context, PtyInput) error
     ResizePty(context.Context, PtyInput) error
     Shutdown(context.Context) error
@@ -360,7 +361,7 @@ type Runtime interface {
 }
 ```
 
-内部扩权回调 `GateSpec.RequestPermission` 由 A 按会话注入。仅接受 `Action=connect` 和小写精确主机名（不含 URL、端口、通配符或本机地址）；同一会话每个目标只允许一个挂起请求，最多 8 个。返回 `deny|once|project`，取消/停止返回 CANCELLED；无回调、回调失败或超时必须拒绝。批准只表示用户决策，B 的 Gate/Policy 仍须执行 DNS/IP 出站校验、按原工作区存 project 规则、限制 once 仅用于原请求并重新求值；不得直接转发任意目标或注入当前账号凭据。当前 Gate 尚未触发此回调，不表示真实扩权流已验收。
+内部扩权回调 `GateSpec.RequestPermission` 由 A 按会话注入。仅接受 `Action=connect` 和小写精确主机名（不含 URL、端口、通配符或本机地址）；同一会话每个目标只允许一个挂起请求，最多 8 个。返回 `deny|once|project`，取消/停止返回 CANCELLED；无回调、回调失败或超时必须拒绝。批准只表示用户决策，Gate/Policy 仍须执行 DNS/IP 出站校验、按原工作区存 project 规则、限制 once 仅用于原请求并重新求值；不得直接转发任意目标或注入当前账号凭据。当前 Gate 的跨域重定向可触发回调，经批准后最多跟随一跳 HTTPS（默认/443），不复制认证头或原请求正文；拨号固定为本次已校验的公网 IP，TLS 仍验证原目标主机名。project 跨会话重新应用与撤销的完整闭环仍待联调，不代表通用出站扩权已验收。
 
 ### dsh 契约增量（2026-10-25）
 
@@ -381,7 +382,7 @@ type Runtime interface {
 | ListAccounts | 返回已保存账号元信息（无 Key） | kind 过滤；空列表 `[]` |
 | RemoveAccount | 删除账号与密钥 | 会话仍引用该账号 → `SESSION_BUSY`；未知 → `ACCOUNT_NOT_FOUND` |
 | CreateSession | 占会话槽，返回 provisioning | running+preparing 总数 **≤2**，否则 `SESSION_LIMIT`；同规范化工作区已有非终态 → `WORKSPACE_BUSY`；mountMode∈direct\|clone；mcpIds 0..8 |
-| SwitchModel | 仅影响之后模型出站 | 未知会话/账号 → 对应错误；不改工作区/Agent |
+| SwitchModel | 仅影响之后模型出站 | 仅 running 可切换；未知会话/账号 → 对应错误；必须为相同 profile 与 Host 的模型账号，不兼容 → INVALID_ARGUMENT；不改工作区/Agent |
 | StartMcpOAuth / CancelMcpOAuth | 打开浏览器完成 MCP 登录 | 回调成功后出现在 ListAccounts；取消清 pending |
 | WritePty / ResizePty | 向焦点会话 PTY 写输入/改尺寸 | 无 PTY 或未 running → `INVALID_ARGUMENT` |
 | GetSession | 最新快照与 seq | 未知 → `SESSION_NOT_FOUND`；无任务正文/凭据 |
@@ -490,3 +491,9 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 公开 Event 须满足 `contracts.Event.Validate`。本文是并行实现的唯一方法/字段来源；变更先改本文与 `internal/contracts`，再 sync mock/bindings。
 
 既有约定仍有效：WithConnection 准入锁；Connect 探测语义。自定义 Origin 须 HTTPS；OAuth 仅工具页。
+
+### 多 MCP 的 Go 内部交接（2026-10-25）
+
+`SessionSpec.mcpIds` 为 0–8 个不重复的已连接账号 ID；空列表表示不挂载工具。PolicyRequest.MCPs 按该顺序构造 PolicySnapshot.MCPMounts（AccountID、Endpoint、Tools），GateBinding.MCPURLs 按同一顺序交给 Kit。每个挂载有独立 Gateway 路径，按挂载解析宿主凭据及工具白名单，不合并同名工具。Kit 将其映射为 harbor、harbor-2 等独立服务器；0 个挂载生成空 MCP 配置，不连接占位服务。
+
+旧单 MCP 字段仅兼容内部单挂载调用：MCP/MCPID/Tools、MCPAccountID、MCPURL；新列表与旧字段同时提供且有歧义时拒绝。多挂载路径仅用于选定授权项，上游仍使用固定 `/mcp`，不得把路径或账号由执行面替换为任意目标。公开 Wails DTO 和绑定签名不变。

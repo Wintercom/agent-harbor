@@ -13,14 +13,16 @@ import (
 )
 
 type SessionService interface {
+	Health(context.Context) error
+	Boundary(context.Context, string) (contracts.PermissionOverview, error)
 	WithConnection(context.Context, func(context.Context) error) error
 	Create(context.Context, contracts.SessionSpec) (contracts.SessionSnapshot, error)
 	Get(context.Context, string) (contracts.SessionSnapshot, error)
 	Stop(context.Context, string) (contracts.SessionSnapshot, error)
 	List(context.Context) ([]contracts.SessionSummary, error)
 	Destroy(context.Context, string) (contracts.SessionSnapshot, error)
-	SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
 	ResolvePermission(context.Context, contracts.ResolvePermissionInput) error
+	SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
 	WritePty(context.Context, contracts.PtyInput) error
 	ResizePty(context.Context, contracts.PtyInput) error
 	Shutdown(context.Context) error

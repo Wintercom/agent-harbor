@@ -33,7 +33,7 @@ func (a *App) AttachOrchestrator(appCtx context.Context) error {
 	if dshModel == "" {
 		dshModel = "deepseek-flash"
 	}
-	dshKit, err := dsh.New(os.Getenv("HARBOR_DSH_NODE"), os.Getenv("HARBOR_DSH_INSTALLATION"), dshModel)
+	dshKit, err := dsh.NewConversation(os.Getenv("HARBOR_DSH_NODE"), os.Getenv("HARBOR_DSH_INSTALLATION"), dshModel)
 	if err != nil {
 		return err
 	}

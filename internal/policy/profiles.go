@@ -13,27 +13,35 @@ const (
 	ProfileDemoModel = "demo-model"
 	ProfileDemoMCP   = "demo-mcp"
 	ProfileDSHModel  = "dsh-model"
-	ProfileCustom    = "custom" // 用户自填 OpenAPI origin（仅 Claude 路径）
+	ProfileCustom    = "custom" // 用户自填 Anthropic 兼容 origin（可带 /anthropic 等 BasePath）
 )
 
 // CustomModelProfile 由用户 Origin 构造临时探测/策略 profile（不进 DefaultProfiles 表）。
+// Origin 允许带 path：https://api.deepseek.com/anthropic → Origin 主机 + BasePath=/anthropic。
 func CustomModelProfile(origin, modelName string) (FixedProfile, error) {
-	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
-	host := hostOfOrigin(origin)
-	if host == "" {
+	raw := strings.TrimSpace(origin)
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return FixedProfile{}, errors.New("policy: invalid custom origin")
 	}
-	model := strings.TrimSpace(modelName)
-	if model == "" {
-		model = "custom-model"
+	basePath := strings.TrimRight(u.Path, "/")
+	if basePath == "/" {
+		basePath = ""
 	}
+	if basePath != "" && !ValidBasePath(basePath) {
+		return FixedProfile{}, errors.New("policy: invalid custom base path")
+	}
+	host := strings.ToLower(u.Hostname())
+	cleanOrigin := u.Scheme + "://" + u.Host
+	model := defaultModelForHost(host, modelName)
 	p := FixedProfile{
 		ID:       ProfileCustom,
 		Kind:     "model",
 		Protocol: "anthropic",
 		Model:    model,
-		Origin:   origin,
+		Origin:   cleanOrigin,
 		Host:     host,
+		BasePath: basePath,
 		Paths:    []string{"/v1/messages"},
 		TestPath: "/v1/messages",
 	}
@@ -41,6 +49,92 @@ func CustomModelProfile(origin, modelName string) (FixedProfile, error) {
 		return FixedProfile{}, errors.New("policy: custom origin not allowed")
 	}
 	return p, nil
+}
+
+// CustomModelProbeCandidates 返回自定义 Origin 的探测候选（BasePath × 模型）。
+// 先试用户显式 path/模型，再为 DeepSeek 等补 /anthropic 与厂商模型名。
+func CustomModelProbeCandidates(origin, modelName string) ([]FixedProfile, error) {
+	base, err := CustomModelProfile(origin, modelName)
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{base.BasePath}
+	if base.BasePath == "" && strings.Contains(base.Host, "deepseek") {
+		paths = append(paths, "/anthropic")
+	} else if base.BasePath == "/anthropic" {
+		paths = append(paths, "")
+	}
+	models := []string{base.Model}
+	for _, m := range defaultModelCandidates(base.Host, modelName) {
+		if m != base.Model {
+			models = append(models, m)
+		}
+	}
+	seen := map[string]bool{}
+	var out []FixedProfile
+	for _, path := range paths {
+		for _, model := range models {
+			key := path + "\x00" + model
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			cand := base
+			cand.BasePath = path
+			cand.Model = model
+			if cand.ValidConnection() {
+				out = append(out, cand)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("policy: no custom probe candidates")
+	}
+	return out, nil
+}
+
+func defaultModelForHost(host, explicit string) string {
+	if m := strings.TrimSpace(explicit); m != "" {
+		return m
+	}
+	if m := strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")); m != "" {
+		return m
+	}
+	cands := defaultModelCandidates(host, "")
+	if len(cands) > 0 {
+		return cands[0]
+	}
+	return "claude-haiku-4-5-20251001"
+}
+
+func defaultModelCandidates(host, explicit string) []string {
+	var out []string
+	add := func(m string) {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			return
+		}
+		for _, x := range out {
+			if x == m {
+				return
+			}
+		}
+		out = append(out, m)
+	}
+	add(explicit)
+	add(os.Getenv("HARBOR_CLAUDE_MODEL"))
+	h := strings.ToLower(host)
+	switch {
+	case strings.Contains(h, "deepseek"):
+		add("deepseek-chat")
+		add("deepseek-reasoner")
+	case strings.Contains(h, "anthropic"):
+		add("claude-haiku-4-5-20251001")
+	default:
+		add("claude-haiku-4-5-20251001")
+		add("deepseek-chat")
+	}
+	return out
 }
 
 // FixedProfile 描述受信后端配置中的固定上游。

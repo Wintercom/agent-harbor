@@ -66,7 +66,7 @@ func TestFollowRedirectAfterPermissionWithoutCredentials(t *testing.T) {
 	base := h.client.Transport.(*http.Transport).Clone()
 	base.Proxy = nil
 	base.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if strings.HasPrefix(addr, "cdn.example.test:") {
+		if strings.HasPrefix(addr, "cdn.example.test:") || strings.HasPrefix(addr, "203.0.113.10:") {
 			return (&net.Dialer{}).DialContext(ctx, network, secondAddr)
 		}
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
