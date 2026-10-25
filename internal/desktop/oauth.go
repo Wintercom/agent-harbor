@@ -89,6 +89,7 @@ func (a *App) startMcpOAuth(in contracts.StartMcpOAuthInput) (authURL, pendingID
 	q.Set("state", id)
 	q.Set("client_id", clientID)
 	authURL = origin + "/authorize?" + q.Encode()
+	openSystemBrowser(authURL)
 	return authURL, id, nil
 }
 

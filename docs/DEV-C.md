@@ -188,8 +188,8 @@ python3 -m http.server 5173
 | 优先级 | 项 | 依赖 |
 |---|---|---|
 | 本分支 | 视觉对照 prototype（P1-C-11） | — |
-| 联调 | **等 B** Health/Accounts/origin/Prefs；扩权 Gate 真触发 | 不代写 `internal/` |
-| P0 | B 接线后重测 I1，改 DOC-3 状态 | ENV |
+| 联调 | B 已接线（Health/Accounts/Prefs/OAuth/扩权）；桌面 live 重测 I1 | 真上游进 DECISIONS |
+| P0 | I1 通过后改 DOC-3；配合 I2 演示目录 | ENV |
 
 ### 明确不做（仍禁止）
 

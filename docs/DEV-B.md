@@ -188,10 +188,19 @@ go test ./internal/desktop ./internal/secrets
 | 跨主机重定向 | 用户 `once`/`project` 后 **跟随一跳**；不携带 Authorization/API Key；多跳拒绝 |
 | DNS/IP | `ValidatePublicHostname`：拒绝回环/私网/链路本地/组播/CGNAT；解析结果任一违规即拒 |
 
-**仍未完**：真实 IdP live 证据；MCP 网关侧同等跟随（若需要）；Connect 探测阶段强制公网 DNS（当前固定 profile/回环测试除外）。
+## 2026-10-25 四续：浏览器打开 + MCP 跟随 + Connect DNS
+
+| 项 | 状态 |
+|---|---|
+| OAuth | `StartMcpOAuth` 成功后 `open`/`xdg-open` 打开系统浏览器（失败不阻断 pending） |
+| MCP 网关 | 与模型反代同一套 `followCrossHostRedirect`（一跳、无凭据、DNS/IP） |
+| Connect | 非 `AllowInsecureLoopback` 的 profile 在探测前 `ValidatePublicHostname` |
+
+**仍未完**：真实 IdP / 模型 / MCP 的 I1 live 证据；PTY 真终端（A）。
 
 ```sh
 go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
 ```
+
 
 
