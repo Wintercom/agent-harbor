@@ -12,6 +12,7 @@
 | [MVP-2D3P.md](MVP-2D3P.md) | 当前优先阅读：两天范围、架构、分工、接口、排期和验收 |
 | [TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) | 对照第一版设计 × 当前实现的 A/B/C 任务拆分（P0 两天 / P1 V1） |
 | [DEV-A.md](DEV-A.md) | 研发 A：契约/编排/Runtime/Kit 实现与证据 |
+| [DEV-B.md](DEV-B.md) | 研发 B：Gate/Policy/Secrets 与 Wails v3 桌面桥 |
 | [DEV-C.md](DEV-C.md) | 产品 C：前端 mock 两页、D4 场景与接入说明 |
 | [DESIGN.md](DESIGN.md) | 产品定位、威胁模型与长期范围 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 控制/执行面、组件边界与完整会话契约 |
