@@ -41,12 +41,21 @@ const ctx = {
 let sessionView;
 
 function syncBadge() {
+  const banner = document.getElementById("mode-banner");
   if (api.isMock()) {
     badge.textContent = "模拟模式";
     badge.className = "badge mock";
+    if (banner) {
+      banner.textContent =
+        "两天版：direct 会改原文件；凭据只在宿主机内存。当前为浏览器模拟模式，不能记入 I1–I11。";
+    }
   } else {
     badge.textContent = "真实绑定";
     badge.className = "badge live";
+    if (banner) {
+      banner.textContent =
+        "真实绑定：任务请去掉 mock/search；工作区用 demos/workspace；凭据提交后清空。演示步骤见 demos/README。";
+    }
   }
 }
 

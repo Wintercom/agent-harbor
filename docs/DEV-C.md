@@ -99,7 +99,42 @@ python3 -m http.server 5173
 
 ### 模型 / MCP 示例填写
 
-见 [demos/README.md](../demos/README.md)「模型 / MCP 填写示例」：mock 可用 `mock-model-key-not-secret` / `mock-mcp-token-not-secret`；live 仅换本机真实凭据，profileId 仍为 `demo-model` / `demo-mcp`。
+见 [demos/README.md](../demos/README.md)：mock 可用示例假 Key；live 用真凭据；Claude=`demo-model`，dsh=`dsh-model`，MCP=`demo-mcp`。上游 **无默认 origin**，须 `HARBOR_*` 登记。
+
+---
+
+## 2026-10-25：按 TASK-SPLIT 启动 C 分工
+
+任务源：[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md)。本轮 **先做 P0 文档与可独立项**；P1 页面等 P0.5 契约冻结。
+
+### 本轮已交付（C）
+
+| ID | 内容 |
+|---|---|
+| P0-C-DOC-1 | [demos/README.md](../demos/README.md)：live 启动命令、env、工作区、真实任务模板、I1/I2 检查表 |
+| P0-C-DOC-2 | 同文档「十分钟 live 话术」 |
+| P0-C-DOC-3 骨架 | [demos/evidence-template.md](../demos/evidence-template.md) 填空模板（真机后再写入 ACCEPTANCE） |
+| UI | live 下隐藏 mock 场景卡；任务提示；真机任务含 mock/search 时开始前警告；顶栏 banner 随模式切换 |
+| — | 纠正过时表述（live 无默认 DeepSeek/占位 MCP origin） |
+
+### 当前页面边界（跟 main）
+
+- 配置 / 工作台两页；Agent **下拉**（claude / dsh）
+- 桌面强制 live；浏览器默认 mock
+- 无 HOME / Wizard / 扩权 / PTY；工作台为文本输出
+
+### C 下一步（认领）
+
+| 优先级 | 项 | 依赖 |
+|---|---|---|
+| P0 | 跟 B 跑 I1/I2 操作与脱敏证据（P0-C-DOC-3） | ENV-1/2/4、Detect |
+| P0 | I8/I10/I11 点选记录 | 可起桌面 |
+| P0.5 | 冻结会后：`mock-api` 对齐新 API（P0.5-MOCK） | CONTRACT PR |
+| P1 | 壳/Onboarding stub（C-01/02） | API-01 已冻或约定 stub |
+
+### 明确不做（本迭代除非冻结）
+
+完整 PAGE-DESIGN、手改 `bindings/`、改 `internal/`、把 mock 记为 I 通过。
 
 ---
 
@@ -108,7 +143,7 @@ python3 -m http.server 5173
 | 负责 | 目录 |
 |---|---|
 | 配置页、工作台、样式与交互 | `frontend/index.html`、`frontend/src/**` |
-| 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js` |
-| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项 |
+| 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js`、`live-api.js` |
+| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项、[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) 中 C 卡 |
 
 不修改桌面 Go 入口与会话状态机；不手改 `frontend/bindings/`。
