@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
@@ -77,6 +78,25 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 	// 非 Darwin25/arm64 时 Available=false 且带隔离错误，属预期；不得再报「尚未接线」
 	if health.Reason == "健康检查尚未接线" {
 		t.Fatalf("仍返回占位文案: %+v", health)
+	}
+}
+
+func TestStartCancelMcpOAuth(t *testing.T) {
+	app := NewApp()
+	api := NewDesktopAPI(app)
+	started := api.StartMcpOAuth(contracts.StartMcpOAuthInput{
+		Name: "Notion", Origin: "https://auth.example.test",
+	})
+	if started.Error != nil || started.PendingID == "" || !strings.Contains(started.AuthURL, "127.0.0.1") {
+		t.Fatalf("%+v", started)
+	}
+	cancelled := api.CancelMcpOAuth(started.PendingID)
+	if cancelled.Error != nil {
+		t.Fatalf("%+v", cancelled)
+	}
+	again := api.CancelMcpOAuth(started.PendingID)
+	if again.Error == nil {
+		t.Fatal("重复取消应失败")
 	}
 }
 

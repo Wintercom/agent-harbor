@@ -44,6 +44,7 @@ type App struct {
 	rt       runtime.Runtime
 	prefs    contracts.UIPrefs
 	hosts    map[string]contracts.RememberedHost // key: workspace\x00host
+	oauth    map[string]*oauthPending
 	ready    bool
 }
 

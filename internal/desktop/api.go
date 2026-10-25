@@ -282,16 +282,21 @@ func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) cont
 	if err := resolver.ResolvePermission(ctx, in); err != nil {
 		return contracts.EmptyResponse{Error: mapError(err)}
 	}
-	if in.Decision == "project" && in.Target != "" {
+	if (in.Decision == "project" || in.Decision == "once") && in.Target != "" {
 		ws := ""
 		if snap, err := d.app.sessionRef().Get(ctx, in.SessionID); err == nil {
 			ws = snap.Workspace
 		}
-		d.app.rememberHost(contracts.RememberedHost{
-			Host:      in.Target,
-			Workspace: ws,
-			Scope:     "project",
-		})
+		if in.Decision == "project" {
+			d.app.rememberHost(contracts.RememberedHost{
+				Host:      in.Target,
+				Workspace: ws,
+				Scope:     "project",
+			})
+		}
+		if d.app.gate != nil {
+			_ = d.app.gate.AllowExtraHost(in.SessionID, in.Target, in.Decision)
+		}
 	}
 	return contracts.EmptyResponse{}
 }
@@ -308,22 +313,38 @@ func (d *DesktopAPI) SetUIPrefs(prefs contracts.UIPrefs) contracts.UIPrefsRespon
 	return contracts.UIPrefsResponse{Prefs: &saved}
 }
 
-// SwitchModel 切换会话模型（全量 PAGE 占位）。
+// SwitchModel 切换会话之后出站所用模型账号。
 func (d *DesktopAPI) SwitchModel(in contracts.SwitchModelInput) contracts.SessionResponse {
-	_ = in
-	return contracts.SessionResponse{Error: unimplemented()}
+	switcher, ok := d.app.sessionRef().(interface {
+		SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
+	})
+	if !ok {
+		return contracts.SessionResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	snap, err := switcher.SwitchModel(ctx, in)
+	if err != nil {
+		return contracts.SessionResponse{Error: mapError(err)}
+	}
+	return contracts.SessionResponse{Session: &snap}
 }
 
-// StartMcpOAuth 启动 MCP OAuth（占位）。
+// StartMcpOAuth 启动本机回环 OAuth 回调（authUrl 打开系统浏览器）。
 func (d *DesktopAPI) StartMcpOAuth(in contracts.StartMcpOAuthInput) contracts.McpOAuthResponse {
-	_ = in
-	return contracts.McpOAuthResponse{Error: unimplemented()}
+	authURL, pendingID, err := d.app.startMcpOAuth(in)
+	if err != nil {
+		return contracts.McpOAuthResponse{Error: mapError(err)}
+	}
+	return contracts.McpOAuthResponse{AuthURL: authURL, PendingID: pendingID}
 }
 
-// CancelMcpOAuth 取消 OAuth（占位）。
+// CancelMcpOAuth 取消进行中的 OAuth pending。
 func (d *DesktopAPI) CancelMcpOAuth(pendingID string) contracts.EmptyResponse {
-	_ = pendingID
-	return contracts.EmptyResponse{Error: unimplemented()}
+	if err := d.app.cancelMcpOAuth(pendingID); err != nil {
+		return contracts.EmptyResponse{Error: mapError(err)}
+	}
+	return contracts.EmptyResponse{}
 }
 
 // WritePty 写入 PTY（占位）。

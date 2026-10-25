@@ -154,8 +154,6 @@ wails3 task package # macOS 上得到 bin/AgentHarbor.app，可双击打开
 | `GetPermissionOverview` | 会话工作区 + 账号主机 + 记住主机；禁止路径类别文案 |
 | `ListRememberedHosts` / `RevokeRememberedHost` | 进程内表；`ResolvePermission(decision=project)` 成功后写入 |
 
-**仍占位 / 未完**：OAuth 回调（P1-B-03）、Keychain（P1-B-01）、扩权 Gate 真触发与 DNS 校验（P1-B-04）、自定义 origin 策略全量、`SwitchModel` 桌面接线。
-
 验证：
 
 ```sh
@@ -163,3 +161,18 @@ go test ./internal/desktop ./internal/secrets
 ```
 
 桌面需重新 `./scripts/dev-desktop.sh`（或 `wails3 dev`）。Darwin 25 / arm64 非 root 上 Health 应可通过；其它环境 `Available=false` 且 reason 为隔离错误文案，**不再**是「尚未接线」。
+
+## 2026-10-25 续：SwitchModel / 自定义 Origin / OAuth 回环 / 扩权挂接
+
+| 项 | 状态 |
+|---|---|
+| `SwitchModel` | 编排更新账号 + `Gate.SetModelAccount`；桌面转发 |
+| 自定义模型 Origin | `profileId=custom` + `origin=https://host`；Policy/Connect 支持（仅 Claude） |
+| `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
+| 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
+
+**仍未完**：Keychain（P1-B-01）；OAuth 授权码+client_secret 换票；扩权后自动跟随重定向 / DNS·IP 校验全量；Prefs 落盘。
+
+```sh
+go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
+```

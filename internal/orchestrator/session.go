@@ -321,6 +321,53 @@ func (o *Service) List(ctx context.Context) ([]contracts.SessionSummary, error) 
 	return result, nil
 }
 
+// SwitchModel 切换之后出站所用模型账号；不重建隔离壳与工作区。
+func (o *Service) SwitchModel(ctx context.Context, in contracts.SwitchModelInput) (contracts.SessionSnapshot, error) {
+	if ctx.Err() != nil {
+		return contracts.SessionSnapshot{}, publicError("CANCELLED")
+	}
+	if in.SessionID == "" || in.ModelAccountID == "" {
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	model, err := o.deps.Catalog.Lookup(ctx, in.ModelAccountID)
+	if err != nil || model.ID != in.ModelAccountID || model.Kind != "model" {
+		return contracts.SessionSnapshot{}, publicError("ACCOUNT_NOT_FOUND")
+	}
+	o.mu.Lock()
+	s, ok := o.sessions[in.SessionID]
+	if !ok {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("SESSION_NOT_FOUND")
+	}
+	if s.snapshot.State != contracts.StateRunning && s.snapshot.State != contracts.StateProvisioning {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	expected := "demo-model"
+	if s.spec.AgentID == "dsh" {
+		expected = "dsh-model"
+	}
+	if model.ProfileID != "custom" && model.ProfileID != expected {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	if s.spec.AgentID == "dsh" && model.ProfileID == "custom" {
+		o.mu.Unlock()
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
+	s.spec.ModelAccountID = in.ModelAccountID
+	result := snapshot(s)
+	o.mu.Unlock()
+	if updater, ok := o.deps.Gate.(interface {
+		SetModelAccount(string, string) error
+	}); ok {
+		if err := updater.SetModelAccount(in.SessionID, in.ModelAccountID); err != nil {
+			return contracts.SessionSnapshot{}, safeError(err, "INVALID_ARGUMENT")
+		}
+	}
+	return result, nil
+}
+
 // Destroy 仅移除已完成清理的终态记录；运行中的会话必须先 Stop。
 func (o *Service) Destroy(ctx context.Context, id string) (contracts.SessionSnapshot, error) {
 	if ctx.Err() != nil {

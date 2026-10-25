@@ -97,6 +97,16 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if blockedRedirect(resp, host) {
+		locHost := redirectHostname(resp)
+		if locHost != "" && rt.spec.RequestPermission != nil {
+			decision, perr := rt.spec.RequestPermission(r.Context(), contracts.PermissionNeeded{
+				Target: locHost,
+				Action: "请求跟随跨主机重定向",
+			})
+			if perr == nil && (decision == "once" || decision == "project") {
+				_ = p.h.AllowExtraHost(p.sid, locHost, decision)
+			}
+		}
 		resp.Body.Close()
 		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
 		http.Error(w, "redirect blocked", http.StatusBadGateway)
@@ -141,18 +151,23 @@ func blockedRedirect(resp *http.Response, allowedHost string) bool {
 	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 		return false
 	}
+	locHost := redirectHostname(resp)
+	if locHost == "" {
+		return false
+	}
+	return !strings.EqualFold(locHost, allowedHost)
+}
+
+func redirectHostname(resp *http.Response) string {
 	loc := resp.Header.Get("Location")
 	if loc == "" {
-		return false
+		return ""
 	}
 	u, err := url.Parse(loc)
-	if err != nil {
-		return true
+	if err != nil || u.Host == "" {
+		return ""
 	}
-	if u.Host == "" {
-		return false
-	}
-	return !strings.EqualFold(u.Hostname(), allowedHost)
+	return strings.ToLower(u.Hostname())
 }
 
 func hostOfOrigin(origin string) string {
