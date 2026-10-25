@@ -67,9 +67,11 @@ agent-harbor/
 ├── security/ demos/ docs/ scripts/ prototype/
 ```
 
-模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [模块设计](docs/MODULE-DESIGN.md) 与 [接口契约](docs/CONTRACT.md)；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
+模块职责见 [internal/README.md](internal/README.md) 和 [frontend/README.md](frontend/README.md)。A 负责 Runtime/Kit/编排，B 负责 Gate/Policy/Secrets 与 Wails 绑定，C 负责页面与演示。并行开发先读 [SYSTEM-DESIGN](docs/SYSTEM-DESIGN.md)（含 §6.1 易混主责）、[模块设计](docs/MODULE-DESIGN.md)、[接口契约](docs/CONTRACT.md) **v1.2** 与 [TASK-SPLIT](docs/TASK-SPLIT-ABC.md) **v2.0**；版本与命令见 [实施决策](docs/DECISIONS.md)，验收见 [ACCEPTANCE.md](docs/ACCEPTANCE.md)。目录映射见 [DIRECTORY-STRUCTURE.md](docs/DIRECTORY-STRUCTURE.md)。
 
-当前实现：单一 macOS 环境、Claude Code / DeepSeek dsh 两种 Agent 可选、各自固定模型组合、一个认证远程 MCP、单会话与 direct 工作区，凭据仅存宿主机内存。dsh 为 2026-10-25 授权的范围扩展。其余能力仍是完整 V1 或后续目标，详见 [MVP-2D3P.md](docs/MVP-2D3P.md)。
+**分支 `feat/page-design-full`**：按 [PAGE-DESIGN](docs/PAGE-DESIGN.md) **全量**做（含 OAuth / clone / PTY / 双会话≤2 / 完整导航）；live 可暂 `UNIMPLEMENTED`，**不以排期砍范围**。`main` 上仍可能是两天缩减实现，见 [MVP-2D3P.md](docs/MVP-2D3P.md)（参考，非本分支准绳）。
+
+当前代码基线：macOS、Claude Code / DeepSeek dsh、Gate 反代与认证 MCP；本分支前端/mock 已对齐全量 PAGE，后端新方法多为占位待 A/B 接线。
 
 ## GitHub 推送 / 拉取
 

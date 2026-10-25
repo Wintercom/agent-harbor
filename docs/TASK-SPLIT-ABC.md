@@ -133,7 +133,7 @@
 | | |
 |---|---|
 | **目标** | ACCEPTANCE D3 正式「通过」 |
-| **步骤** | 对照 CONTRACT：七个绑定方法、Response.error、事件名 `harbor:event`、无原始 Go error 进 UI；补/贴已有测试与 WebView 冒烟 |
+| **步骤** | 对照 CONTRACT **v1.2 全方法面**（含 OAuth/PTY/SwitchModel 等）、Response.error、事件名 `harbor:event`、无原始 Go error 进 UI；补/贴已有测试与 WebView 冒烟 |
 | **DoD** | ACCEPTANCE 增加 D3 证据段；状态=通过 |
 | **证据** | 测试名+日志摘要；字段对照表 |
 | **依赖** | 无 |
@@ -403,7 +403,7 @@ CONTRACT v1.2（全量）
 | **目标** | 列表字段、运行中 **x/2**、打开工作台/停止/再次开始/销毁 |
 | **步骤** | 列表 UI → `listSessions`/`destroySession` → `SESSION_LIMIT`/`WORKSPACE_BUSY` 文案 |
 | **DoD** | 达上限与同目录冲突有产品文案；销毁二次确认 |
-| **依赖** | **V1-ORCH / P1-A-01**（mock 可先演示） |
+| **依赖** | **FULL-ORCH / P1-A-01**（mock 可先演示） |
 | **参考** | PAGE §5.2 |
 | **进度** | stub：`sessionHistory` + mock `listSessions`；文案 x/2；销毁确认已有 |
 
@@ -586,6 +586,17 @@ CONTRACT v1.2（全量）
 | **DoD** | 与 P1-B-04/C-09 联调一条完整扩权；**不**新增 snapshot.state 枚举值 |
 | **参考** | CONTRACT v1.2 事件节 |
 
+#### P1-A-08 · 内嵌 PTY · 估 4–6d · **全量必做**（含于 FULL-ORCH）
+
+| | |
+|---|---|
+| **目标** | 焦点会话可 `WritePty`/`ResizePty`；事件 `pty` 流式到 UI |
+| **步骤** | Runtime PTY → Orch 绑定会话 → B desktop 转发 → 与 C 工作台联调 |
+| **DoD** | mock 与 live 各至少一条可打字回显（live 可后于 stub）；终态关闭 PTY |
+| **依赖** | FULL-BIND（B 桥）；P1-C-08 |
+| **参考** | CONTRACT API-09；PAGE §5.4 |
+| **边界** | **A 主实现**；B 只做绑定/事件桥；C 只做终端区 UI |
+
 #### P1-A-06 · 一期隔离证据包 · 估 2–3d
 
 | | |
@@ -619,15 +630,18 @@ P0-I11 ← 绑定稳定 + I1 缩略路径
 CONTRACT v1.2（全量，本分支）
   ├─► FULL-MOCK (C) ──► P1-C-* 全屏打磨
   ├─► FULL-BIND (B) ──► FULL-GATE（含 OAuth）
-  └─► FULL-ORCH (A) ──► P1-A-01/02/05 + PTY
+  └─► FULL-ORCH (A) ──► P1-A-01/02/05/08（多会话/clone/扩权/PTY）
 P1-B-05 + FULL-GATE ──► P1-C-08
 P1-A-05 + Gate 扩权 ──► P1-C-09
 P1-A-02 clone ──► P1-C-04
-API-09 PTY ──► P1-C-08
+P1-A-08 / API-09 PTY ──► P1-C-08
+P1-B-03 OAuth ──► P1-C-06
 ```
 
 **本分支不因时间删减**：clone / PTY / OAuth **均保留**。  
 **不可删**：真 Agent、真认证 MCP、隔离强制、凭据外置、停止清理、CONTRACT 形状一致。
+
+易混主责见 [SYSTEM-DESIGN §6.1](SYSTEM-DESIGN.md)。
 
 ---
 
@@ -635,9 +649,9 @@ API-09 PTY ──► P1-C-08
 
 | 角色 | 可改 | 不可改 |
 |---|---|---|
-| A | `orchestrator` / `runtime` / `kits`、security、**CONTRACT 主笔** | 手改 bindings；为赶演示放宽隔离 |
-| B | `gate` / `policy` / `secrets`、desktop、构建、绑定生成 | 第二套会话状态机；前端绕过 Gate |
-| C | `frontend/` 手写、`demos/`、验收记录、**字段需求提案** | `frontend/bindings/`、`internal/` |
+| A | `orchestrator` / `runtime` / `kits`、security、**CONTRACT 主笔**；**PTY·clone 真实现** | 手改 bindings；为赶演示放宽隔离；实现 MCP OAuth |
+| B | `gate` / `policy` / `secrets`、desktop、构建、绑定生成；**OAuth 回调**；PTY **事件桥** | 第二套会话状态机；前端绕过 Gate；在 Runtime 里开伪终端 |
+| C | `frontend/` 手写、`demos/`、验收记录、**字段需求提案** | `frontend/bindings/`、`internal/`；把 mock 记为 I 通过 |
 
 ---
 

@@ -63,12 +63,12 @@
 | **contracts** | `internal/contracts` | A 主笔 / B 复核 | 可序列化 DTO、错误码、事件形状 | 纯数据 | IO、状态机 |
 | **desktop** | `internal/desktop` + `main` | B | Wails 生命周期、绑定、目录面板、事件桥、偏好落盘 | `DesktopAPI` | 再造会话状态机 |
 | **frontend** | `frontend/src` | C | 壳与各页、api/mock、演示文案 | 仅调 `api.js` | 手改 bindings、改 `internal/` |
-| **orchestrator** | `internal/orchestrator` | A | 会话表、上限=2、同工作区冲突、Stop/Destroy、扩权挂起、事件 seq | `SessionService`（扩展见 CONTRACT） | 存 Key、解析 MCP 协议 |
-| **runtime** | `internal/runtime` | A | 隔离探测 Health、私有 HOME、进程树 | `Runtime` | 账号、UI |
+| **orchestrator** | `internal/orchestrator` | A | 会话表、上限=2、同工作区冲突、Stop/Destroy、扩权挂起、**clone 挂载**、**PTY 会话**、事件 seq | `SessionService`（扩展见 CONTRACT） | 存 Key、解析 MCP 协议、OAuth 浏览器流 |
+| **runtime** | `internal/runtime` | A | 隔离探测 Health、私有 HOME、进程树、**PTY 底层** | `Runtime` | 账号、UI |
 | **kits** | `internal/kits` | A | Detect / Build LaunchSpec | `Kit` | 读 Secrets |
 | **policy** | `internal/policy` | B | 工作区、host 白名单、记住主机、mount 校验 | `PolicyBuilder` + 记住主机读写 | 网络转发 |
-| **gate** | `internal/gate` | B | 模型反代、MCP、Sentinel、审计回调、扩权触发点 | `Gate` / `Connections` | Agent 生命周期 |
-| **secrets** | `internal/secrets` | B | 凭据与账号元信息 | `SecretStore` + `AccountCatalog` | UI 回显 Key |
+| **gate** | `internal/gate` | B | 模型反代、MCP、**OAuth 回调**、Sentinel、审计、扩权触发 | `Gate` / `Connections` | Agent 生命周期、PTY |
+| **secrets** | `internal/secrets` | B | 凭据与账号元信息（含 OAuth 落账） | `SecretStore` + `AccountCatalog` | UI 回显 Key |
 | **security** | `security/` + A 记录 | A | 真实隔离/泄密验收 | 证据 | 用 mock 冒充通过 |
 
 ### 3.2 模块交互（只经接口）
@@ -144,19 +144,30 @@ flowchart LR
 ## 6. ABC 并行分工（按模块）
 
 ```text
-合同（本文 + CONTRACT）已定
-    ├─ A：contracts DTO · Orchestrator 多会话/扩权/Destroy · Runtime.Health 暴露
-    ├─ B：DesktopAPI 绑定占位→实现 · Connections 扩展 origin · Policy 记住主机
-    │     · 权限一览组装 · UIPrefs 落盘 · generate bindings
-    └─ C：mock 全方法 · 壳/页接真字段 · 扩权 Modal · 权限一览 UI · demos
+合同（本文 + CONTRACT v1.2）已定
+    ├─ A：contracts DTO · 多会话/Destroy/ResolvePermission · clone · PTY 真实现 · Health
+    ├─ B：generate + DesktopAPI 去占位 · OAuth 回调 · Overview/Accounts/origin/Prefs
+    │     · PTY 事件桥 · Gate→permission 事件
+    └─ C：mock 全方法 · PAGE 全屏 · 扩权 Modal · PTY/OAuth UI · demos
 合流：方法名 / JSON / 错误码一致后再换 live
 ```
 
 | 角色 | 立即开工 | 依赖对方完成才算交付 |
 |---|---|---|
-| **A** | 扩展 `SessionService`：`List`/`Destroy`/`ResolvePermission`；多会话锁；Runtime.Health 语义供桌面 | Gate 扩权回调真触发（B） |
-| **B** | `wails3 generate`；DesktopAPI 去 `UNIMPLEMENTED`；Catalog 列表/删除；Overview；Prefs；origin；Gate→permission 事件 | Orch 多会话（A）联调 HOME/上限 |
-| **C** | **按 PAGE-DESIGN 全屏实现**（可 mock）；四步向导、双轨工具、PTY UI、扩权/一览 | live 真 OAuth/PTY/多会话由 A/B 接线 |
+| **A** | 多会话锁；`List`/`Destroy`/`ResolvePermission`；**clone**；**PTY**；Health 语义 | Gate 扩权真触发（B）；PTY 事件经 desktop 桥（B） |
+| **B** | `wails3 generate`；去 `UNIMPLEMENTED`；**OAuth**；Catalog；Overview；Prefs；origin；PTY 事件转发 | Orch 多会话/PTY（A）联调 |
+| **C** | **按 PAGE-DESIGN 全屏**（可 mock）；四步向导、双轨工具、PTY UI、扩权/一览 | live OAuth/PTY/clone/多会话由 A/B 接线 |
+
+### 6.1 易混能力：谁主责（一眼表）
+
+| 能力 | 主责 | 协作 | 不算谁的活 |
+|---|---|---|---|
+| **OAuth / SSO（MCP）** | **B**（Gate 回调 + 账号落盘 + DesktopAPI） | C 双轨 UI；A 不解析 OAuth | C 不自己开浏览器协议；A 不接 Token 换发 |
+| **clone 挂载** | **A**（Runtime/Orch 副本与策略） | C 向导 `mountMode`；B Policy 校验 | C 不做磁盘副本 |
+| **PTY** | **A**（会话 PTY + Runtime） | B `WritePty`/`ResizePty` 绑定与 `pty` 事件桥；C 工作台区 | B 不实现伪终端；C 不直连进程 |
+| **SwitchModel** | **A**（会话侧切换语义） | B 绑定；C 工作台 UI | — |
+| **扩权** | **B** 触发事件 · **A** `ResolvePermission` · **C** Modal | 三方联调一条完整流 | UI 不得本地「假装已授权」 |
+| **GetRuntimeHealth** | **A** 语义 · **B** 绑定 · **C** 灯/引导 | — | mock 健康 ≠ I 通过 |
 
 **本分支优先级**：**PAGE-DESIGN 完整体验 > 排期**；live 未就绪用 mock，不删屏。
 
@@ -179,3 +190,4 @@ flowchart LR
 | 2026-10-25 | 初版定案：取消冻结会依赖；V1 范围与模块所有权一次写死 |
 | 2026-10-25 | 复核：明确 Health/Accounts/扩权三段所有权；P0 优先于 V1 |
 | 2026-10-25 | **v2.0**：分支 `feat/page-design-full` 改为全量 PAGE-DESIGN（含 OAuth/clone/PTY） |
+| 2026-10-25 | 补 §6.1 易混主责表；模块矩阵标明 PTY/OAuth/clone 所有权 |

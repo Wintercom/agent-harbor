@@ -1,8 +1,10 @@
-# 两天版实施决策
+# 实施决策（环境 / 版本 / 上游登记）
 
-已定：Go 主业务、简单 HTML/CSS/JavaScript、Python 验收辅助；单应用、单会话、单任务、direct 演示工作区、宿主机内存凭据；Claude Code 优先，一个固定模型组合和一个远程 Streamable HTTP 认证 MCP。详细边界以 AGENTS.md 为准。
+> **分支 `feat/page-design-full`**：产品范围与接口以 [PAGE-DESIGN](PAGE-DESIGN.md)、[CONTRACT v1.2](CONTRACT.md)、[SYSTEM-DESIGN v2](SYSTEM-DESIGN.md) 为准（含 OAuth/clone/PTY/双会话）。下文「单会话 / direct / 内存凭据」是 **P0 两天联调基线**与当前 live 能力现状，**不是**本分支砍功能的理由。
 
-2026-10-25：用户确认本轮整体采用 **Wails v3.0.0-beta.34**，替代此前 v2 决策。Go module、CLI 与 `@wailsio/runtime` 必须锁定同版，不使用 latest。桌面入口为 `main.go`，受限绑定在 `internal/desktop`，生成绑定在 `frontend/bindings`，配置在 `build/config.yml` 与 `Taskfile.yml`。版本验证见 [Wails v3 评估与验证](WAILS-V3-ASSESSMENT.md)。接口仍以 [CONTRACT.md](CONTRACT.md) v1 为准，不因升级改变 DTO、事件或安全边界。
+已定技术栈：Go 主业务、简单 HTML/CSS/JavaScript、Python 验收辅助；单应用；Claude Code 优先 + dsh；一个已验证模型组合与一个远程 Streamable HTTP 认证 MCP 用于 I 证据。详细边界以 AGENTS.md + SYSTEM-DESIGN 为准。
+
+2026-10-25：用户确认本轮整体采用 **Wails v3.0.0-beta.34**，替代此前 v2 决策。Go module、CLI 与 `@wailsio/runtime` 必须锁定同版，不使用 latest。桌面入口为 `main.go`，受限绑定在 `internal/desktop`，生成绑定在 `frontend/bindings`，配置在 `build/config.yml` 与 `Taskfile.yml`。版本验证见 [Wails v3 评估与验证](WAILS-V3-ASSESSMENT.md)。接口以 [CONTRACT.md](CONTRACT.md) **v1.2** 为准，不因升级 Wails 改变 DTO、事件或安全边界。
 
 | 开工首小时登记项 | 负责人 | 当前状态 / 证据要求 |
 |---|---|---|
