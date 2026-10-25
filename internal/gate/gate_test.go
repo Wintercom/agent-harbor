@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -184,6 +185,45 @@ func TestConnectModelWithLocalUpstream(t *testing.T) {
 	})
 	if err != ErrUpstreamAuth {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestConnectCustomDeepSeekAnthropicPrefix(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/anthropic/v1/messages" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer sk-ds" && r.Header.Get("X-Api-Key") != "sk-ds" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Model != "deepseek-chat" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"type":"message","content":[{"type":"text","text":"OK"}]}`))
+	}))
+	defer origin.Close()
+
+	conn := NewConnections(secrets.NewStore(), policy.NewBuilder(map[string]policy.FixedProfile{}))
+	prof := policy.FixedProfile{
+		ID: policy.ProfileCustom, Kind: "model", Protocol: "anthropic", Model: "deepseek-chat",
+		AllowInsecureLoopback: true, Origin: origin.URL, Host: "127.0.0.1",
+		BasePath: "/anthropic", Paths: []string{"/v1/messages"}, TestPath: "/v1/messages",
+	}
+	if err := conn.probe(context.Background(), prof, "sk-ds"); err != nil {
+		t.Fatal(err)
+	}
+	bad := prof
+	bad.BasePath = ""
+	if err := conn.probe(context.Background(), bad, "sk-ds"); err == nil {
+		t.Fatal("expected missing prefix to fail")
 	}
 }
 

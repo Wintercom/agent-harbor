@@ -16,6 +16,23 @@ func TestCustomModelProfileHTTPS(t *testing.T) {
 	}
 }
 
+func TestCustomModelProfileDeepSeekAnthropicPath(t *testing.T) {
+	p, err := CustomModelProfile("https://api.deepseek.com/anthropic", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Origin != "https://api.deepseek.com" || p.BasePath != "/anthropic" || p.Model != "deepseek-chat" {
+		t.Fatalf("%+v", p)
+	}
+	cands, err := CustomModelProbeCandidates("https://api.deepseek.com", "")
+	if err != nil || len(cands) < 2 {
+		t.Fatalf("cands=%v err=%v", cands, err)
+	}
+	if cands[0].Model != "deepseek-chat" {
+		t.Fatalf("want deepseek-chat first, got %+v", cands[0])
+	}
+}
+
 func TestBuildAcceptsCustomModelForClaude(t *testing.T) {
 	b := NewBuilder(map[string]FixedProfile{
 		ProfileDemoMCP: {

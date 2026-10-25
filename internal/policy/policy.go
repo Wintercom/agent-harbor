@@ -87,8 +87,17 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 			return PolicySnapshot{}, ErrKindMismatch
 		}
 		origin := "https://" + strings.TrimSpace(req.Model.Host)
-		custom, err := CustomModelProfile(origin, envOr("HARBOR_CLAUDE_MODEL", "custom-model"))
+		custom, err := CustomModelProfile(origin, req.Model.Model)
 		if err != nil {
+			return PolicySnapshot{}, ErrUnknownProfile
+		}
+		if bp := strings.TrimRight(strings.TrimSpace(req.Model.BasePath), "/"); bp != "" {
+			if !ValidBasePath(bp) {
+				return PolicySnapshot{}, ErrUnknownProfile
+			}
+			custom.BasePath = bp
+		}
+		if !custom.ValidConnection() {
 			return PolicySnapshot{}, ErrUnknownProfile
 		}
 		modelProf = custom

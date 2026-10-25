@@ -5,8 +5,9 @@
 import * as api from "../api.js";
 
 const PRESETS = [
-  { name: "Anthropic", origin: "https://api.anthropic.com" },
-  { name: "DeepSeek", origin: "https://api.deepseek.com" },
+  { name: "Anthropic", origin: "https://api.anthropic.com", model: "claude-haiku-4-5-20251001" },
+  // DeepSeek Anthropic 兼容基址（探测 POST …/anthropic/v1/messages，模型 deepseek-chat）
+  { name: "DeepSeek", origin: "https://api.deepseek.com/anthropic", model: "deepseek-chat" },
 ];
 
 export function mountModels(root, ctx, opts = {}) {
@@ -123,17 +124,20 @@ export function mountModels(root, ctx, opts = {}) {
       editing === "new"
         ? { name: "", host: "", profileId: "custom" }
         : (ctx.state.modelAccounts || []).find((a) => a.id === editing) || {};
-    const originValue = acc.origin || (acc.host ? "https://" + acc.host : "");
+    const originValue =
+      acc.origin ||
+      (acc.host ? "https://" + acc.host + (acc.basePath || "") : "");
     form.classList.remove("hidden");
     form.innerHTML = `
       <section class="card">
         <h3>${editing === "new" ? "添加模型" : "编辑模型"}</h3>
         <label class="field">名称<input id="m-name" value="${acc.name || ""}" maxlength="100"/></label>
-        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://主机（勿带 path；探测走 /v1/messages）"/></label>
-        <p class="meta">须 Anthropic 兼容：HTTPS 主机 + Key。探测会 POST <code>/v1/messages</code>（同时带 X-Api-Key 与 Bearer）。</p>
+        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="https://api.deepseek.com/anthropic"/></label>
+        <p class="meta">须 Anthropic 兼容 Messages API。地址可带前缀（如 DeepSeek 的 <code>/anthropic</code>）；探测 POST <code>{origin}/v1/messages</code>。</p>
+        <label class="field">模型名（可选）<input id="m-model" value="${acc.model || ""}" placeholder="空则按主机推断，如 deepseek-chat"/></label>
         <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
-        <p class="meta">快捷填入默认地址（可选）：
-          ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}">${p.name}</button>`).join(" ")}
+        <p class="meta">快捷填入（可选）：
+          ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}" data-model="${p.model || ""}">${p.name}</button>`).join(" ")}
         </p>
         <div class="actions">
           <button type="button" class="btn" id="m-cancel">取消</button>
@@ -143,6 +147,7 @@ export function mountModels(root, ctx, opts = {}) {
       </section>`;
     const nameEl = form.querySelector("#m-name");
     const originEl = form.querySelector("#m-origin");
+    const modelEl = form.querySelector("#m-model");
     const keyEl = form.querySelector("#m-key");
     const status = form.querySelector("#m-status");
     const clearStatus = () => {
@@ -151,6 +156,8 @@ export function mountModels(root, ctx, opts = {}) {
     form.querySelectorAll("[data-preset]").forEach((btn) => {
       btn.onclick = () => {
         originEl.value = btn.getAttribute("data-preset") || "";
+        const presetModel = btn.getAttribute("data-model") || "";
+        if (presetModel) modelEl.value = presetModel;
         if (!nameEl.value.trim()) {
           nameEl.value = "我的 " + (btn.getAttribute("data-pname") || "");
         }
@@ -169,10 +176,12 @@ export function mountModels(root, ctx, opts = {}) {
     };
     nameEl.addEventListener("input", clearStatus);
     originEl.addEventListener("input", clearStatus);
+    modelEl.addEventListener("input", clearStatus);
     keyEl.addEventListener("input", clearStatus);
     form.querySelector("#m-save").onclick = async () => {
       const name = nameEl.value.trim();
-      let origin = originEl.value.trim().replace(/\/+$/, "");
+      const origin = originEl.value.trim().replace(/\/+$/, "");
+      const model = modelEl.value.trim();
       const key = keyEl.value.trim();
       const missing = [];
       if (!name) missing.push("名称");
@@ -185,16 +194,6 @@ export function mountModels(root, ctx, opts = {}) {
         else nameEl.focus();
         return;
       }
-      // 契约 Origin 仅 scheme+host[:port]；用户若贴了 /v1 等 path，剥掉再提交。
-      try {
-        const u = new URL(origin);
-        if (u.pathname && u.pathname !== "/") {
-          origin = `${u.protocol}//${u.host}`;
-          originEl.value = origin;
-        }
-      } catch (_) {
-        /* 交给后端校验 */
-      }
       status.innerHTML = `<span class="meta">正在保存…</span>`;
       const saveBtn = form.querySelector("#m-save");
       saveBtn.disabled = true;
@@ -205,12 +204,15 @@ export function mountModels(root, ctx, opts = {}) {
           name,
           apiKey: key,
           origin,
+          model,
         });
         if (res.error) {
           let hint = "";
           if (res.error.code === "UPSTREAM_AUTH_FAILED") {
             hint =
-              " 请确认 Key 有效，且地址为 Anthropic 兼容上游（非纯 OpenAI /chat/completions）。";
+              " Key 与地址不匹配，或 Key 无效。DeepSeek 请用快捷填入（含 /anthropic）+ deepseek-chat；Anthropic 用官方 Key。纯 OpenAI /chat/completions 不受支持。";
+          } else if (res.error.code === "UPSTREAM_UNAVAILABLE") {
+            hint = " 上游可达但协议/模型名可能不对；可改「模型名」后重试。";
           }
           status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span><span class="meta">${hint}</span>`;
           return;

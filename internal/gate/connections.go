@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -66,18 +65,15 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		return contracts.AccountInfo{}, ErrInvalidConnectInput
 	}
 	var prof policy.FixedProfile
+	var customCandidates []policy.FixedProfile
+	modelHint := strings.TrimSpace(in.Model)
 	if kind == "model" && (profileID == "" || profileID == policy.ProfileCustom) && origin != "" {
-		custom, err := policy.CustomModelProfile(origin, "")
-		if err != nil {
+		cands, err := policy.CustomModelProbeCandidates(origin, modelHint)
+		if err != nil || len(cands) == 0 {
 			return contracts.AccountInfo{}, ErrInvalidConnectInput
 		}
-		if model := strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")); model != "" {
-			custom.Model = model
-		}
-		if !custom.ValidConnection() {
-			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "自定义模型地址不受支持。", false)
-		}
-		prof = custom
+		customCandidates = cands
+		prof = cands[0]
 		profileID = policy.ProfileCustom
 	} else {
 		if profileID == "" {
@@ -103,7 +99,38 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer c.client.CloseIdleConnections()
-	if err := c.probe(ctx, prof, key); err != nil {
+	if len(customCandidates) > 0 {
+		var probeErr error
+		sawAuth, sawOther := false, false
+		ok := false
+		for _, cand := range customCandidates {
+			if err := c.probe(ctx, cand, key); err != nil {
+				if ctx.Err() != nil {
+					return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
+				}
+				probeErr = err
+				if errors.Is(err, ErrUpstreamAuth) {
+					sawAuth = true
+				} else {
+					sawOther = true
+				}
+				continue
+			}
+			prof = cand
+			ok = true
+			break
+		}
+		if !ok {
+			// 全是 401 才报认证失败；夹杂 404/协议错误时优先「上游不可用」，避免把错 path/模型误报成 Key 无效。
+			if sawAuth && !sawOther {
+				return contracts.AccountInfo{}, ErrUpstreamAuth
+			}
+			if probeErr != nil {
+				return contracts.AccountInfo{}, probeErr
+			}
+			return contracts.AccountInfo{}, ErrUpstreamDown
+		}
+	} else if err := c.probe(ctx, prof, key); err != nil {
 		if ctx.Err() != nil {
 			return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
 		}
@@ -115,6 +142,8 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		Name:      name,
 		ProfileID: profileID,
 		Host:      prof.Host,
+		BasePath:  prof.BasePath,
+		Model:     prof.Model,
 	}
 	id, err := c.secrets.Put(ctx, meta, []byte(key))
 	if err != nil {

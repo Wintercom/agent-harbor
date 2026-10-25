@@ -21,12 +21,14 @@ type AgentInfo struct {
 }
 
 // ConnectInput 为模型/MCP 连接的单向输入；APIKey 不得回显或写入事件。
-// 自定义 OpenAPI 模型时填写 Origin（https://host[:port]）；固定 profile 时 Origin 为空。
+// 自定义模型：Origin 为 https://host[:port][/basePath]（path 会收成 BasePath）；固定 profile 时 Origin 为空。
+// Model 可选，探测/出站模型名；空则按主机推断（如 deepseek→deepseek-chat）。
 type ConnectInput struct {
 	ProfileID string `json:"profileId"`
 	Name      string `json:"name"`
 	APIKey    string `json:"apiKey"`
 	Origin    string `json:"origin,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 // AccountInfo 是脱敏后的账号元信息。
@@ -36,6 +38,8 @@ type AccountInfo struct {
 	Name      string `json:"name"`
 	ProfileID string `json:"profileId"`
 	Host      string `json:"host"`
+	BasePath  string `json:"basePath,omitempty"` // 自定义模型 Anthropic 前缀，如 /anthropic
+	Model     string `json:"model,omitempty"`    // 探测成功时的模型名
 }
 
 // SessionSpec 是创建会话的前端请求。
