@@ -95,6 +95,11 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "后端接入配置尚未完整登记或不受支持。", false)
 		}
 	}
+	if !prof.AllowInsecureLoopback {
+		if err := ValidatePublicHostname(prof.Host); err != nil {
+			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "目标主机未通过出站校验（须为可解析公网地址）。", false)
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer c.client.CloseIdleConnections()

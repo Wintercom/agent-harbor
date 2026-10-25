@@ -22,7 +22,7 @@ func main() {
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
 
-	host := desktop.NewApp()
+	host := desktop.NewDesktopApp()
 	if err := host.AttachOrchestrator(appCtx); err != nil {
 		log.Fatal(err)
 	}

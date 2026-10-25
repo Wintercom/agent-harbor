@@ -183,7 +183,7 @@ export function mountTools(root, ctx) {
           return;
         }
         pendingId = res.pendingId || "";
-        st.innerHTML = `<span class="ok">已请求授权：${res.authUrl || ""}</span>`;
+        st.innerHTML = `<span class="ok">已打开系统浏览器授权（可轮询或点「我已完成」）。回调地址已就绪。</span>`;
         startPendingWatch();
         paintForm();
       };

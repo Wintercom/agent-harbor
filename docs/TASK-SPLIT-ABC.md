@@ -671,15 +671,15 @@ P1-B-03 OAuth ──► P1-C-06
 - [x] SYSTEM-DESIGN v2 / CONTRACT v1.2 / PAGE-API-MAP  
 - [x] `internal/contracts` + desktop 占位（含 OAuth/PTY）  
 - [x] FULL-MOCK 骨架（C UI stub）  
-- [ ] FULL-BIND generate（B）  
-- [ ] FULL-ORCH 多会话/clone/扩权/PTY（A）  
-- [ ] FULL-GATE 一览/账号/OAuth/Prefs（B）  
+- [x] FULL-BIND 去占位子集（B：Health/会话/账号/Prefs/OAuth/SwitchModel；PTY 桥已绑，真终端仍靠 A）  
+- [~] FULL-ORCH 多会话/clone/扩权（A 已合）；**真 PTY/Resize 仍 UNIMPLEMENTED**  
+- [x] FULL-GATE 一览/账号/origin/OAuth/Prefs/Keychain/扩权跟随+DNS（B）  
 
 **全量 PAGE 产品**
 - [x] 侧栏 HOME/模型/工具/设置 + 顶栏会话切换（stub）  
 - [x] 四步向导 / 模型 OpenAPI / 工具双轨 / 工作台 PTY·扩权（stub）  
-- [ ] HOME 接真 listSessions / 上限文案联调  
-- [ ] OAuth / clone / PTY live 各至少一条  
+- [x] HOME mock `listSessions` / 上限文案；live 待 I1  
+- [ ] OAuth / clone / PTY **live** 各至少一条  
 - [ ] 第二 Agent 真机一条路径  
 
 ---

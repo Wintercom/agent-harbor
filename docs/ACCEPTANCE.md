@@ -91,4 +91,4 @@ D1 的绑定生成已执行；原生 WebView 冒烟通过生成绑定校验 DTO�
 | I2 / I8 / I10 / I11 | 待执行 | 依赖 I1 真通路；mock 见 [demos/README](../demos/README.md) |
 | D4 | 通过（mock） | 见 §4.1；不计 I |
 
-**口径**：mock ≠ I 通过。A 编排 + B DesktopAPI 子集已合；OAuth/Keychain/扩权 Gate 真触发仍待 B 后续。
+**口径**：mock ≠ I 通过。A 编排（多会话/clone/扩权挂起）+ B DesktopAPI（Health/账号/Prefs 落盘/Keychain/OAuth 换票/扩权跟随+DNS）已合。缺的是 **live I1+** 证据与真 PTY，不是方法占位。

@@ -51,6 +51,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rt.active.Done()
+	originAuth := authorityOfOrigin(rt.spec.Policy.Model.Origin)
 	host := hostOfOrigin(rt.spec.Policy.Model.Origin)
 	if !policy.PathAllowed(rt.spec.Policy.Model, r.URL.Path) {
 		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
@@ -96,25 +97,27 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
-	if blockedRedirect(resp, host) {
-		locHost := redirectHostname(resp)
-		if locHost != "" && rt.spec.RequestPermission != nil {
-			decision, perr := rt.spec.RequestPermission(r.Context(), contracts.PermissionNeeded{
-				Target: locHost,
-				Action: "connect",
-			})
-			if perr == nil && (decision == "once" || decision == "project") {
-				_ = p.h.AllowExtraHost(p.sid, locHost, decision)
+	if blockedRedirect(resp, originAuth) {
+		followed, locHost, ferr := p.h.followCrossHostRedirect(r.Context(), p.sid, rt, resp, originAuth)
+		if ferr != nil || followed == nil {
+			if locHost == "" {
+				locHost = host
 			}
+			p.h.emitAudit(rt, contracts.AuditData{Target: locHost, Tool: auditToolModel, Result: "denied"})
+			http.Error(w, "redirect blocked", http.StatusBadGateway)
+			return
 		}
-		resp.Body.Close()
-		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
-		http.Error(w, "redirect blocked", http.StatusBadGateway)
-		return
+		resp = followed
+		host = locHost
+		// 不向重定向目标注入凭据，但响应脱敏仍覆盖原账号和 Sentinel。
 	}
 	p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "allowed"})
 	idle, total := p.h.streamTimeouts()
-	if err := writeRelay(w, resp, []string{rt.sentinel, string(key)}, idle, total); err != nil {
+	secretsToRedact := []string{rt.sentinel}
+	if len(key) > 0 {
+		secretsToRedact = append(secretsToRedact, string(key))
+	}
+	if err := writeRelay(w, resp, secretsToRedact, idle, total); err != nil {
 		if streamTimeoutStatus(err) == http.StatusGatewayTimeout {
 			p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "failed"})
 		}
@@ -145,37 +148,6 @@ func (p *modelProxy) applyModelKey(req *http.Request, keyStr string) {
 	if req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer "+keyStr)
 	}
-}
-
-func blockedRedirect(resp *http.Response, allowedHost string) bool {
-	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
-		return false
-	}
-	locHost := redirectHostname(resp)
-	if locHost == "" {
-		return false
-	}
-	return !strings.EqualFold(locHost, allowedHost)
-}
-
-func redirectHostname(resp *http.Response) string {
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return ""
-	}
-	u, err := url.Parse(loc)
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	return strings.ToLower(u.Hostname())
-}
-
-func hostOfOrigin(origin string) string {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return origin
-	}
-	return u.Hostname()
 }
 
 func joinOrigin(origin string, u *url.URL) (string, error) {

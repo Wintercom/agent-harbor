@@ -128,8 +128,26 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
+	originAuth := authorityOfOrigin(mount.Endpoint.Origin)
+	if blockedRedirect(resp, originAuth) {
+		followed, locHost, ferr := g.h.followCrossHostRedirect(r.Context(), g.sid, rt, resp, originAuth)
+		if ferr != nil || followed == nil {
+			if locHost == "" {
+				locHost = host
+			}
+			g.h.emitAudit(rt, contracts.AuditData{Target: locHost, Tool: auditTool, Result: "denied"})
+			http.Error(w, "redirect blocked", http.StatusBadGateway)
+			return
+		}
+		resp = followed
+		host = locHost
+		// 重定向不携带凭据；保留原密钥用于过滤响应，避免回显泄漏。
+	}
 	g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "allowed"})
-	secrets := []string{rt.sentinel, string(key)}
+	secrets := []string{rt.sentinel}
+	if len(key) > 0 {
+		secrets = append(secrets, string(key))
+	}
 	if method == "tools/list" {
 		if err := g.writeFilteredList(w, resp, mount.Tools, secrets); err != nil {
 			if streamTimeoutStatus(err) == http.StatusGatewayTimeout {

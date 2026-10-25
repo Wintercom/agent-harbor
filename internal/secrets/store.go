@@ -1,4 +1,4 @@
-// Package secrets 在宿主机进程内存中保存凭据。
+// Package secrets 在宿主机保存凭据。
 // 负责人：研发 B。Resolve 只注入 Gate；编排层仅获得 AccountCatalog.Lookup。
 package secrets
 
@@ -22,18 +22,19 @@ var (
 
 type record struct {
 	meta contracts.AccountInfo
-	key  []byte
 }
 
-// Store 是进程内凭据库，同时实现 SecretStore 与 AccountCatalog。
+// Store 是凭据库，同时实现 SecretStore 与 AccountCatalog。
 type Store struct {
-	mu   sync.RWMutex
-	byID map[string]*record
+	mu       sync.RWMutex
+	byID     map[string]*record
+	vault    vault
+	metaPath string
 }
 
-// NewStore 创建空的内存凭据库。
+// NewStore 创建纯内存凭据库（单测默认）。
 func NewStore() *Store {
-	return &Store{byID: make(map[string]*record)}
+	return &Store{byID: make(map[string]*record), vault: newMemoryVault()}
 }
 
 func newID(kind string) string {
@@ -80,7 +81,15 @@ func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	s.byID[id] = &record{meta: meta, key: keyCopy}
+	if err := s.vault.Set(id, keyCopy); err != nil {
+		return "", err
+	}
+	s.byID[id] = &record{meta: meta}
+	if err := s.saveMetaLocked(); err != nil {
+		_ = s.vault.Delete(id)
+		delete(s.byID, id)
+		return "", err
+	}
 	return id, nil
 }
 
@@ -88,11 +97,10 @@ func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte)
 func (s *Store) Resolve(_ context.Context, id string) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	rec, ok := s.byID[id]
-	if !ok {
+	if _, ok := s.byID[id]; !ok {
 		return nil, ErrNotFound
 	}
-	return append([]byte(nil), rec.key...), nil
+	return s.vault.Get(id)
 }
 
 // Delete 删除账号及其凭据。
@@ -102,8 +110,9 @@ func (s *Store) Delete(_ context.Context, id string) error {
 	if _, ok := s.byID[id]; !ok {
 		return ErrNotFound
 	}
+	_ = s.vault.Delete(id)
 	delete(s.byID, id)
-	return nil
+	return s.saveMetaLocked()
 }
 
 // Lookup 返回脱敏元信息，不返回密钥。
@@ -121,7 +130,11 @@ func (s *Store) Lookup(_ context.Context, id string) (contracts.AccountInfo, err
 func (s *Store) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for id := range s.byID {
+		_ = s.vault.Delete(id)
+	}
 	s.byID = make(map[string]*record)
+	_ = s.saveMetaLocked()
 }
 
 // Count 供诊断使用，不向 UI 暴露。

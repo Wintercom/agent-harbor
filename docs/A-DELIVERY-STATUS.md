@@ -10,7 +10,7 @@
 | P1-A-03 dsh | 固定版本真进程在沙箱内通过 Gate 完成受控任务；两轮同实例历史已验证 | `HARBOR_TEST_DSH=1 HARBOR_DSH_NODE=… HARBOR_DSH_INSTALLATION=… go test -race ./internal/kits/dsh` | 真模型、真 MCP、桌面长会话人工验收 |
 | P1-A-03 Codex | **未完成**；全量分支未注册 Codex，不能宣称支持 | 旧分支实验实现需按当前契约重新移植与复核 | 固定 CLI/Responses 协议、私有 HOME、受控子进程和真实验收 |
 | P1-A-04 子进程 | 严格禁止 fork/posix_spawn，失败关闭；未达到允许子进程门禁 | `go test -race -tags harbor_platform ./internal/runtime`，含原生 `POSIX_SPAWN_SETPGROUP` 负例 | 选定可信隔离后端，证明脱离进程组的后代可追踪和清理，设计评审后再开放 |
-| P1-A-05 扩权 | 会话决策生命周期及真实 Gate 重定向挂起/拒绝通过 | `go test -race ./internal/orchestrator -run 'TestPermission|TestGateRedirectPermission'` | B 完成审批后重新求值、DNS/IP 校验、once 消耗、project 持久化与撤销；不能凭当前事件认为已放行 |
+| P1-A-05 扩权 | 会话决策生命周期、Gate 挂起/拒绝、审批后一跳无凭据重定向与固定公网 IP 拨号通过 | `go test -race ./internal/orchestrator ./internal/gate`；含 DNS 重绑定拨号回归 | project 跨会话重新应用与撤销、页面 live 联调；不能凭当前事件认为通用出站已放行 |
 | P1-A-08 内嵌 PTY | OS PTY、resize、回显、中文输入、取消与关闭已验证 | `go test -race -tags harbor_platform ./internal/runtime -run 'TestRealTerminal|TestTerminalInput'` | 真 Agent TUI 模式及 C 工作台 live 人工联调；Claude JSONL/dsh 会话消息仍不是终端字节流 |
 | P1-A-06 安全证据包 | 平台探针和脱敏证据格式校验齐备；真实 I1–I11 未关闭 | `go test -race -tags harbor_platform ./internal/runtime ./internal/orchestrator`；`python3 -m unittest discover -s security -p 'test_*.py'` | 真实模型和认证 MCP 凭据在宿主机录入后，按 [验收清单](ACCEPTANCE.md) 逐项生成脱敏报告 |
 

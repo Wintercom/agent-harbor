@@ -171,8 +171,40 @@ go test ./internal/desktop ./internal/secrets
 | `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
 | 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
 
-**仍未完**：Keychain（P1-B-01）；OAuth 授权码+client_secret 换票；扩权后自动跟随重定向 / DNS·IP 校验全量；Prefs 落盘。
+## 2026-10-25 再续：Prefs 落盘 + Keychain + once 消费
+
+| 项 | 状态 |
+|---|---|
+| UIPrefs / 记住主机 | `~/Library/Application Support/AgentHarbor/ui-state.json`（`NewDesktopApp`） |
+| 凭据持久 | Darwin：优先 Keychain `com.liyufei916.agent-harbor`（探测失败则回退文件）；非 Darwin / 回退：`accounts/keys/*.key`（0600）+ `accounts.json` 元信息 |
+| 退出 | 持久化 Store **不清空**凭据（仅纯内存 `NewApp` 退出时 `Clear`） |
+| `once` 扩权 | `Harbor.HasExtraHost` 命中后删除；跨主机重定向本请求授权后立即消费 |
+
+## 2026-10-25 三续：OAuth 换票 + 安全跟随重定向 + DNS/IP
+
+| 项 | 状态 |
+|---|---|
+| OAuth | 默认 `response_type=code`；回调用 `code` 向 `{origin}/oauth/token` 换票；`HARBOR_MCP_OAUTH_CLIENT_ID`（默认 `agent-harbor`）/`HARBOR_MCP_OAUTH_CLIENT_SECRET`/`HARBOR_MCP_OAUTH_TOKEN_PATH`；仍兼容 `access_token` 查询/fragment |
+| 跨主机重定向 | 用户 `once`/`project` 后 **跟随一跳**；不携带 Authorization/API Key；多跳拒绝 |
+| DNS/IP | `ValidatePublicHostname`：拒绝回环/私网/链路本地/组播/CGNAT；解析结果任一违规即拒 |
+
+## 2026-10-25 四续：浏览器打开 + MCP 跟随 + Connect DNS
+
+| 项 | 状态 |
+|---|---|
+| OAuth | `StartMcpOAuth` 成功后 `open`/`xdg-open` 打开系统浏览器（失败不阻断 pending） |
+| MCP 网关 | 与模型反代同一套 `followCrossHostRedirect`（一跳、无凭据、DNS/IP） |
+| Connect | 非 `AllowInsecureLoopback` 的 profile 在探测前 `ValidatePublicHostname` |
+
+## 2026-10-25：Claude Detect 联调修复（配合 A Kit）
+
+本机常见：`claude --version` 为 `2.1.69` 而旧 Detect 硬钉 `2.1.292`，且帮助已无 `--permission-prompts`，导致「重新检测」一直不可用。现改为能力检测 + 明确 reason；`HARBOR_CLAUDE_BIN` / Homebrew 路径回退；可选 `HARBOR_CLAUDE_REQUIRE_VERSION` 钉版本。
+
+**仍未完**：真实 IdP / 模型 / MCP 的 I1 live 证据；PTY 真终端（A）。
 
 ```sh
 go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
 ```
+
+
+

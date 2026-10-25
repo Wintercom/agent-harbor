@@ -18,6 +18,16 @@
 
 这些未决项阻碍真实端到端验收，但不阻碍基于契约、固定 profileId 和替身进行独立模块开发。实际服务不兼容时保留失败证据，调整受支持组合，不偷偷更改“所有 Agent/MCP 已支持”的产品口径。
 
+### MCP OAuth 回环（B，2026-10-25）
+
+| 项 | 约定 |
+|---|---|
+| 回调 | 桌面进程 `127.0.0.1:<ephemeral>/callback`（每次 `StartMcpOAuth` 新端口） |
+| 授权 | `GET {origin}/authorize?response_type=code&redirect_uri=…&client_id=…&state=…` |
+| 换票 | `POST {origin}{HARBOR_MCP_OAUTH_TOKEN_PATH||/oauth/token}`，`grant_type=authorization_code`；可选 `HARBOR_MCP_OAUTH_CLIENT_SECRET` |
+| client_id | `HARBOR_MCP_OAUTH_CLIENT_ID`，默认 `agent-harbor` |
+| 成功 | `access_token` 写入 Secrets；UI 轮询 `ListAccounts` |
+
 ## 2026-10-24 开发环境观测
 
 A 在 macOS 26.7 arm64、Go 1.27.2 下完成契约与编排测试，检测到 Claude Code 2.1.292 原生安装。为独立编译加入最小 go.mod（module 沿用上文建议值，暂定 go 1.23.0，尚未在该最低版本运行验证）；B 已在本分支完成 Wails v3 初始化与版本登记。Seatbelt 初探有正/负例，但生产限制与进程树清理仍待实现。观测不等于团队环境冻结或真实 Agent 兼容性通过，详细证据见 [研发 A 开发记录](DEV-A.md)。

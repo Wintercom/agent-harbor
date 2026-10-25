@@ -189,3 +189,5 @@ Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `Agen
 当前未关闭项：Codex Kit 在全量分支的安全移植及受控子进程方案、真实 Agent TUI 与 C 工作台联调、真实远程模型/认证 MCP、扩权 Gate/Policy 与页面完整联调、对外安全证据索引。microVM 仍为 backlog。上述缺口未完成前，不将 A 总体标为完成。
 
 同步 B 最新提交后，删除了另一份未经 Gate 原子校验的 SwitchModel 实现，旧 `SetModelAccount` 入口也统一转交受校验方法。Gate 重定向触发的 `Action` 已改为 `connect`，真实 HTTP→Gate→Orchestrator 测试确认挂起、决策及拒绝恢复；重定向仍不可因批准而自动携带凭据。会话权限一览由编排中的实际 Policy 构建，clone 项目规则标识仍为原工作区。证据索引见 [研发 A 交付状态](A-DELIVERY-STATUS.md)。
+
+再次同步 B 的重定向/DNS 与 Homebrew Claude 修复：多 MCP 跟随判断使用各自挂载的 Origin；跨域响应仍过滤原密钥与 Sentinel。新增失败测试复现“先校验 DNS、再按主机名拨号”的重绑定窗口，现改为仅连接本次校验的公网 IP，禁代理和额外端口，保留 TLS 主机名校验。Homebrew 检测所需配置只开放 OpenSSL/CA 目录，拒绝给 Agent 授权整个 `/opt/homebrew/etc` 或 `/usr/local/etc`。

@@ -131,7 +131,17 @@ export function mountSettings(root, ctx) {
     });
   }
 
-  root.querySelector("#btn-refresh-agents").onclick = refreshAgents;
+  root.querySelector("#btn-refresh-agents").onclick = async () => {
+    const btn = root.querySelector("#btn-refresh-agents");
+    btn.disabled = true;
+    btn.textContent = "检测中…";
+    try {
+      await refreshAgents();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "重新检测";
+    }
+  };
   root.querySelector("#btn-reload-hosts").onclick = refreshHosts;
   root.querySelector("#set-mount").value =
     localStorage.getItem("harbor-default-mount") || "clone";

@@ -361,7 +361,7 @@ type Runtime interface {
 }
 ```
 
-内部扩权回调 `GateSpec.RequestPermission` 由 A 按会话注入。仅接受 `Action=connect` 和小写精确主机名（不含 URL、端口、通配符或本机地址）；同一会话每个目标只允许一个挂起请求，最多 8 个。返回 `deny|once|project`，取消/停止返回 CANCELLED；无回调、回调失败或超时必须拒绝。批准只表示用户决策，B 的 Gate/Policy 仍须执行 DNS/IP 出站校验、按原工作区存 project 规则、限制 once 仅用于原请求并重新求值；不得直接转发任意目标或注入当前账号凭据。当前 Gate 已在跨域重定向时触发回调，并验证挂起与拒绝恢复；批准后仍阻断该重定向，不表示动态扩权放行已实现或验收。
+内部扩权回调 `GateSpec.RequestPermission` 由 A 按会话注入。仅接受 `Action=connect` 和小写精确主机名（不含 URL、端口、通配符或本机地址）；同一会话每个目标只允许一个挂起请求，最多 8 个。返回 `deny|once|project`，取消/停止返回 CANCELLED；无回调、回调失败或超时必须拒绝。批准只表示用户决策，Gate/Policy 仍须执行 DNS/IP 出站校验、按原工作区存 project 规则、限制 once 仅用于原请求并重新求值；不得直接转发任意目标或注入当前账号凭据。当前 Gate 的跨域重定向可触发回调，经批准后最多跟随一跳 HTTPS（默认/443），不复制认证头或原请求正文；拨号固定为本次已校验的公网 IP，TLS 仍验证原目标主机名。project 跨会话重新应用与撤销的完整闭环仍待联调，不代表通用出站扩权已验收。
 
 ### dsh 契约增量（2026-10-25）
 
