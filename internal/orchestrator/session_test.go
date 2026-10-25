@@ -300,6 +300,54 @@ func TestLifecycleAndEvents(t *testing.T) {
 	}
 }
 
+func TestListAndDestroyRetainOnlyExplicitlyDestroyedRecords(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	s := create(t, o)
+	if _, err := o.Destroy(context.Background(), s.SessionID); err == nil {
+		t.Fatal("运行中的会话不应允许 Destroy")
+	} else {
+		assertCode(t, err, "INVALID_ARGUMENT")
+	}
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	f.exit <- runtime.Exit{Code: 0}
+	awaitState(t, o, s.SessionID, contracts.StateStopped)
+	items, err := o.List(context.Background())
+	if err != nil || len(items) != 1 || items[0].SessionID != s.SessionID || !items[0].CleanupComplete {
+		t.Fatalf("终态记录未保留：%+v %v", items, err)
+	}
+	if _, err := o.Destroy(context.Background(), s.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = o.List(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("Destroy 后仍有会话：%+v %v", items, err)
+	}
+}
+
+func TestAllowsTwoDifferentWorkspacesAndCapsThird(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	second := spec()
+	second.Workspace = "/test/other-workspace"
+	third := spec()
+	third.Workspace = "/test/third-workspace"
+	one := create(t, o)
+	two, err := o.Create(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.Create(context.Background(), third); err == nil {
+		t.Fatal("第三个并发会话不应获准")
+	} else {
+		assertCode(t, err, "SESSION_LIMIT")
+	}
+	_, _ = o.Stop(context.Background(), one.SessionID)
+	_, _ = o.Stop(context.Background(), two.SessionID)
+	await(t, o, one.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+	await(t, o, two.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
 func TestProvisionFailuresRollback(t *testing.T) {
 	for _, tc := range []struct {
 		step, code      string
