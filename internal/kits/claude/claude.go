@@ -24,7 +24,16 @@ const SupportedVersion = "2.1.292"
 
 type Kit struct {
 	executable, model string
-	inspect           func(context.Context, string, []string) (string, error)
+	inspect           func(context.Context, string, []string, []string) (string, error)
+}
+
+// launchSpec 是受限探测/启动用的 Command+Args+只读路径。
+// Homebrew Claude 是 node 包装的 cli.js，必须用 node 执行，不能直接 sandbox-exec cli.js。
+type launchSpec struct {
+	Command  string
+	Args     []string // 已含脚本路径（若有）；Detect/Build 再追加 CLI 参数
+	ReadOnly []string
+	Label    string // 用于 reason 展示
 }
 
 var _ kits.Kit = (*Kit)(nil)
@@ -55,7 +64,6 @@ func (k *Kit) resolve() (string, error) {
 	candidates := []string{k.executable}
 	base := filepath.Base(k.executable)
 	if base == "claude" || k.executable == "claude" {
-		// GUI/Wails 常缺 Homebrew PATH；补常见绝对路径。
 		candidates = append(candidates,
 			"/opt/homebrew/bin/claude",
 			"/usr/local/bin/claude",
@@ -81,6 +89,51 @@ func (k *Kit) resolve() (string, error) {
 			continue
 		}
 		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+			continue
+		}
+		// 原生二进制须可执行；node 脚本允许仅可读（由 node 执行）。
+		if !isNodeScript(path) && info.Mode().Perm()&0111 == 0 {
+			continue
+		}
+		return path, nil
+	}
+	return "", kitError("AGENT_UNSUPPORTED")
+}
+
+func isNodeScript(path string) bool {
+	if strings.EqualFold(filepath.Ext(path), ".js") {
+		return true
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 128)
+	n, _ := f.Read(buf)
+	line := string(buf[:n])
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	return strings.HasPrefix(line, "#!") && strings.Contains(line, "node")
+}
+
+func resolveNode() (string, error) {
+	for _, cand := range []string{"node", "/opt/homebrew/bin/node", "/usr/local/bin/node"} {
+		path := cand
+		if !filepath.IsAbs(path) {
+			p, err := exec.LookPath(path)
+			if err != nil {
+				continue
+			}
+			path = p
+		}
+		path, err := filepath.EvalSymlinks(path)
+		if err != nil || !filepath.IsAbs(path) {
+			continue
+		}
+		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
 			continue
 		}
@@ -89,7 +142,37 @@ func (k *Kit) resolve() (string, error) {
 	return "", kitError("AGENT_UNSUPPORTED")
 }
 
-func detectProbeReason(path, step string, err error) string {
+func (k *Kit) resolveLaunch() (launchSpec, error) {
+	script, err := k.resolve()
+	if err != nil {
+		return launchSpec{}, err
+	}
+	if !isNodeScript(script) {
+		return launchSpec{
+			Command:  script,
+			ReadOnly: []string{script},
+			Label:    script,
+		}, nil
+	}
+	node, err := resolveNode()
+	if err != nil {
+		return launchSpec{}, err
+	}
+	root := filepath.Dir(script)
+	// Homebrew Node：二进制在 Cellar/.../bin/node，运行时常读同版本 lib。
+	readOnly := []string{node, root}
+	if nodeHome := filepath.Dir(filepath.Dir(node)); strings.Contains(nodeHome, "/Cellar/node/") || strings.Contains(nodeHome, "/node/") {
+		readOnly = append(readOnly, nodeHome)
+	}
+	return launchSpec{
+		Command:  node,
+		Args:     []string{script},
+		ReadOnly: readOnly,
+		Label:    script,
+	}, nil
+}
+
+func detectProbeReason(label, step string, err error) string {
 	if ae, ok := err.(*contracts.AppError); ok && ae != nil {
 		if ae.Code == "ISOLATION_UNAVAILABLE" {
 			return "本机隔离不可用，无法在受限环境中检测 Agent（先看侧栏隔离状态 / 重新检测隔离）。"
@@ -97,10 +180,9 @@ func detectProbeReason(path, step string, err error) string {
 		if ae.Code == "CANCELLED" {
 			return "检测已取消。"
 		}
-		// 只用固定错误码文案，不回传可能含内部细节的 Message。
-		return "可执行文件 " + path + " 在受限环境执行 " + step + " 未通过（" + ae.Code + "）。"
+		return "可执行文件 " + label + " 在受限环境执行 " + step + " 未通过（" + ae.Code + "）。"
 	}
-	return "可执行文件 " + path + " 在受限环境执行 " + step + " 未通过。"
+	return "可执行文件 " + label + " 在受限环境执行 " + step + " 未通过。"
 }
 
 func parseClaudeVersion(raw string) (string, bool) {
@@ -117,8 +199,6 @@ func parseClaudeVersion(raw string) (string, bool) {
 }
 
 // requiredHelpFlags 是启动规格依赖、且须出现在 --help 中的参数。
-// --bare 以能成功执行 `--bare --help` 为准（帮助文案可能不列出）。
-// --permission-prompts 在较新 CLI 中已移除，改用 --permission-mode。
 var requiredHelpFlags = []string{
 	"--print", "--input-format", "stream-json",
 	"--strict-mcp-config", "--mcp-config", "--setting-sources",
@@ -137,16 +217,16 @@ func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
 	if ctx.Err() != nil {
 		return info, kitError("CANCELLED")
 	}
-	path, err := k.resolve()
+	launch, err := k.resolveLaunch()
 	if err != nil {
 		return info, nil
 	}
-	versionOut, err := k.inspect(ctx, path, []string{"--version"})
+	versionOut, err := k.inspect(ctx, launch.Command, append(append([]string{}, launch.Args...), "--version"), launch.ReadOnly)
 	if err != nil {
 		if ctx.Err() != nil {
 			return info, kitError("CANCELLED")
 		}
-		info.Agent.Reason = detectProbeReason(path, "--version", err)
+		info.Agent.Reason = detectProbeReason(launch.Label, "--version", err)
 		return info, nil
 	}
 	version, ok := parseClaudeVersion(versionOut)
@@ -159,12 +239,12 @@ func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
 		info.Agent.Reason = "已安装 " + version + "，当前要求 " + want + "（HARBOR_CLAUDE_REQUIRE_VERSION）。"
 		return info, nil
 	}
-	help, err := k.inspect(ctx, path, []string{"--bare", "--help"})
+	help, err := k.inspect(ctx, launch.Command, append(append([]string{}, launch.Args...), "--bare", "--help"), launch.ReadOnly)
 	if err != nil {
 		if ctx.Err() != nil {
 			return info, kitError("CANCELLED")
 		}
-		info.Agent.Reason = "已安装 " + version + "。" + detectProbeReason(path, "--bare --help", err)
+		info.Agent.Reason = "已安装 " + version + "。" + detectProbeReason(launch.Label, "--bare --help", err)
 		return info, nil
 	}
 	var missing []string
@@ -178,7 +258,7 @@ func (k *Kit) Detect(ctx context.Context) (kits.KitInfo, error) {
 		return info, nil
 	}
 	info.Agent.Available, info.Agent.Reason = true, ""
-	info.ReadOnlyPaths = []string{path}
+	info.ReadOnlyPaths = append([]string{}, launch.ReadOnly...)
 	return info, nil
 }
 
@@ -204,7 +284,7 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 			return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 		}
 	}
-	command, err := k.resolve()
+	launch, err := k.resolveLaunch()
 	if err != nil {
 		return runtime.LaunchSpec{}, err
 	}
@@ -218,10 +298,15 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if err != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
+	args := append(append([]string{}, launch.Args...),
+		"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
+		"--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath,
+		"--setting-sources", "", "--permission-mode", "dontAsk", "--disable-slash-commands", "--no-chrome",
+		"--tools", "Read,Write,Edit", "--model", k.model,
+	)
 	return runtime.LaunchSpec{
-		Command: command,
-		// 不再传 --permission-prompts（新 CLI 已移除）；dontAsk 由 --permission-mode 承担。
-		Args:        []string{"--bare", "--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", mcpPath, "--settings", settingsPath, "--setting-sources", "", "--permission-mode", "dontAsk", "--disable-slash-commands", "--no-chrome", "--tools", "Read,Write,Edit", "--model", k.model},
+		Command:     launch.Command,
+		Args:        args,
 		Env:         map[string]string{"ANTHROPIC_BASE_URL": input.ModelBaseURL, "ANTHROPIC_API_KEY": input.Sentinel, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"},
 		Stdin:       []byte(input.Task),
 		Interactive: true,

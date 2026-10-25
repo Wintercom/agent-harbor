@@ -1,6 +1,6 @@
 # Claude Code 适配
 
-负责人：A。两天版优先适配的唯一必交 Agent；离线 Detect 默认按**能力**（`--bare --help` + 必需参数）放行，版本号写入 `AgentInfo.version`。文档基线仍记 `2.1.292`；若需钉死版本设 `HARBOR_CLAUDE_REQUIRE_VERSION`。GUI 缺 PATH 时会尝试 `/opt/homebrew/bin/claude`。真实模型/MCP 兼容未验证。
+负责人：A。两天版优先适配的唯一必交 Agent；离线 Detect 默认按**能力**放行。Homebrew 安装是 `node` + `cli.js`：探测/启动必须 `ProbeInstallation(node, [cli.js, …], [node, packageRoot])`，不能直接 sandbox-exec 脚本。文档基线 `2.1.292`；钉版本用 `HARBOR_CLAUDE_REQUIRE_VERSION`。真实模型/MCP 兼容未验证。
 
 ## 当前实现
 

@@ -130,13 +130,13 @@ func TestDetectFailsClosed(t *testing.T) {
 		t.Fatal("缺少 CLI 却报告可用")
 	}
 	k, _ = New("/usr/bin/true", "model")
-	for _, inspect := range []func(context.Context, string, []string) (string, error){
-		func(context.Context, string, []string) (string, error) {
+	for _, inspect := range []func(context.Context, string, []string, []string) (string, error){
+		func(context.Context, string, []string, []string) (string, error) {
 			return "", errors.New("不能公开的内部错误")
 		},
-		func(context.Context, string, []string) (string, error) { return "0.0.0 (Claude Code)", nil },
-		func(_ context.Context, _ string, args []string) (string, error) {
-			if args[0] == "--version" {
+		func(context.Context, string, []string, []string) (string, error) { return "0.0.0 (Claude Code)", nil },
+		func(_ context.Context, _ string, args []string, _ []string) (string, error) {
+			if len(args) > 0 && args[0] == "--version" {
 				return SupportedVersion + " (Claude Code)", nil
 			}
 			return "old-help", nil
@@ -153,7 +153,7 @@ func TestDetectFailsClosed(t *testing.T) {
 func TestDetectCapabilityBasedAcceptsCompatibleVersion(t *testing.T) {
 	k, _ := New("/usr/bin/true", "model")
 	helpParts := append([]string{"Usage:"}, requiredHelpFlags...)
-	k.inspect = func(_ context.Context, _ string, args []string) (string, error) {
+	k.inspect = func(_ context.Context, _ string, args []string, _ []string) (string, error) {
 		if len(args) > 0 && args[0] == "--version" {
 			return "2.1.69 (Claude Code)", nil
 		}
@@ -168,7 +168,7 @@ func TestDetectCapabilityBasedAcceptsCompatibleVersion(t *testing.T) {
 func TestDetectRequireVersionEnv(t *testing.T) {
 	t.Setenv("HARBOR_CLAUDE_REQUIRE_VERSION", "2.1.292")
 	k, _ := New("/usr/bin/true", "model")
-	k.inspect = func(_ context.Context, _ string, args []string) (string, error) {
+	k.inspect = func(_ context.Context, _ string, args []string, _ []string) (string, error) {
 		if len(args) > 0 && args[0] == "--version" {
 			return "2.1.69 (Claude Code)", nil
 		}
@@ -194,16 +194,20 @@ func TestInstalledCLIInStrictRuntime(t *testing.T) {
 	}
 	info, err := k.Detect(context.Background())
 	if err != nil || !info.Agent.Available {
-		help, helpErr := k.inspect(context.Background(), path, []string{"--bare", "--help"})
-		t.Logf("受限帮助检测：字节=%d 错误=%v", len(help), helpErr)
-		for _, flag := range requiredHelpFlags {
-			if !strings.Contains(help, flag) {
-				t.Logf("帮助缺少参数：%s", flag)
+		launch, lerr := k.resolveLaunch()
+		t.Logf("resolveLaunch=%+v err=%v", launch, lerr)
+		if lerr == nil {
+			help, helpErr := k.inspect(context.Background(), launch.Command, append(append([]string{}, launch.Args...), "--bare", "--help"), launch.ReadOnly)
+			t.Logf("受限帮助检测：字节=%d 错误=%v", len(help), helpErr)
+			for _, flag := range requiredHelpFlags {
+				if !strings.Contains(help, flag) {
+					t.Logf("帮助缺少参数：%s", flag)
+				}
 			}
 		}
 		t.Fatalf("受限 CLI 检测未通过：%+v %v", info, err)
 	}
-	t.Logf("本机 CLI 受限检测通过：%s", info.Agent.Version)
+	t.Logf("本机 CLI 受限检测通过：%s readonly=%v", info.Agent.Version, info.ReadOnlyPaths)
 }
 
 func TestInstalledCLINonInteractiveBootstrap(t *testing.T) {
