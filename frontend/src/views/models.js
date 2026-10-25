@@ -1,5 +1,6 @@
 /**
  * PAGE-DESIGN §5.7 模型：自由添加 OpenAPI（名 + 地址 + Key）
+ * Live 自定义 origin / ListAccounts 依赖 B（FULL-GATE）；本页以 mock 验收 UI。
  */
 import * as api from "../api.js";
 
@@ -90,14 +91,18 @@ export function mountModels(root, ctx) {
       editing === "new"
         ? { name: "", host: "", profileId: "custom" }
         : (ctx.state.modelAccounts || []).find((a) => a.id === editing) || {};
+    // 占位符勿写成真实 URL，否则深色主题下易被当成已填写
+    const originValue =
+      acc.origin || (acc.host ? "https://" + acc.host : "");
     form.classList.remove("hidden");
     form.innerHTML = `
       <section class="card">
         <h3>${editing === "new" ? "添加模型" : "编辑模型"}</h3>
         <label class="field">名称<input id="m-name" value="${acc.name || ""}" maxlength="100"/></label>
-        <label class="field">API 地址<input id="m-origin" value="${acc.origin || (acc.host ? `https://${acc.host}` : "")}" placeholder="https://api.example.com"/></label>
-        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="粘贴 Key"/></label>
-        <p class="meta">快捷填入默认地址：
+        <label class="field">API 地址<input id="m-origin" value="${originValue}" placeholder="手输 https://主机 或点下方快捷填入"/></label>
+        <p class="meta">须有实际内容（灰色提示不算）。浏览器 mock 可验 UI；桌面 live 的自定义 origin / 列表持久化由 B 接线。</p>
+        <label class="field">API Key（提交后清空）<input id="m-key" type="password" autocomplete="off" placeholder="在此粘贴 Key"/></label>
+        <p class="meta">快捷填入默认地址（可选）：
           ${PRESETS.map((p) => `<button type="button" class="btn" data-preset="${p.origin}" data-pname="${p.name}">${p.name}</button>`).join(" ")}
         </p>
         <div class="actions">
@@ -106,42 +111,68 @@ export function mountModels(root, ctx) {
           <span class="meta" id="m-status"></span>
         </div>
       </section>`;
+    const nameEl = form.querySelector("#m-name");
+    const originEl = form.querySelector("#m-origin");
+    const keyEl = form.querySelector("#m-key");
+    const status = form.querySelector("#m-status");
+    const clearStatus = () => {
+      status.textContent = "";
+    };
     form.querySelectorAll("[data-preset]").forEach((btn) => {
       btn.onclick = () => {
-        form.querySelector("#m-origin").value = btn.getAttribute("data-preset");
-        if (!form.querySelector("#m-name").value) {
-          form.querySelector("#m-name").value = `我的 ${btn.getAttribute("data-pname")}`;
+        originEl.value = btn.getAttribute("data-preset") || "";
+        if (!nameEl.value.trim()) {
+          nameEl.value = "我的 " + (btn.getAttribute("data-pname") || "");
         }
+        clearStatus();
+        keyEl.focus();
       };
     });
     form.querySelector("#m-cancel").onclick = () => {
       editing = null;
       paint();
     };
+    nameEl.addEventListener("input", clearStatus);
+    originEl.addEventListener("input", clearStatus);
+    keyEl.addEventListener("input", clearStatus);
     form.querySelector("#m-save").onclick = async () => {
-      const name = form.querySelector("#m-name").value.trim();
-      const origin = form.querySelector("#m-origin").value.trim();
-      const key = form.querySelector("#m-key").value;
-      const status = form.querySelector("#m-status");
-      if (!name || !origin || !key) {
-        status.innerHTML = `<span class="bad">请填写名称、地址与 Key</span>`;
+      const name = nameEl.value.trim();
+      const origin = originEl.value.trim();
+      const key = keyEl.value.trim();
+      const missing = [];
+      if (!name) missing.push("名称");
+      if (!origin) missing.push("API 地址");
+      if (!key) missing.push("API Key");
+      if (missing.length) {
+        status.innerHTML = `<span class="bad">请填写：${missing.join("、")}（灰色提示不是已填内容）</span>`;
+        if (!origin) originEl.focus();
+        else if (!key) keyEl.focus();
+        else nameEl.focus();
         return;
       }
-      if (editing !== "new") await api.removeAccount(editing);
-      const res = await api.connectModel({
-        profileId: "custom",
-        name,
-        apiKey: key,
-        origin,
-      });
-      form.querySelector("#m-key").value = "";
-      if (res.error) {
-        status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
-        return;
+      status.innerHTML = `<span class="meta">正在保存…</span>`;
+      const saveBtn = form.querySelector("#m-save");
+      saveBtn.disabled = true;
+      try {
+        if (editing !== "new") await api.removeAccount(editing);
+        const res = await api.connectModel({
+          profileId: "custom",
+          name,
+          apiKey: key,
+          origin,
+        });
+        if (res.error) {
+          // 失败保留 Key，便于改地址后重试
+          status.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>`;
+          return;
+        }
+        keyEl.value = "";
+        editing = null;
+        ctx.onAccountsChanged?.();
+        await load();
+      } finally {
+        saveBtn.disabled = false;
       }
-      editing = null;
-      ctx.onAccountsChanged?.();
-      await load();
     };
   }
 

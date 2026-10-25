@@ -14,9 +14,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# Homebrew Go + `go install` 产物常见路径
+# Homebrew Go + `go install` 产物常见路径（裸跑 `wails3` 常缺这个）
 export PATH="/opt/homebrew/bin:${HOME}/go/bin:${PATH}"
 WAILS3_BIN="${WAILS3:-wails3}"
+VITE_PORT="${WAILS_VITE_PORT:-9245}"
 
 echo "→ 仓库: $ROOT"
 echo "→ 分支: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
@@ -45,7 +46,35 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 echo "→ go: $(go version)"
-echo "→ wails3: $("$WAILS3_BIN" version 2>/dev/null || echo "$WAILS3_BIN")"
+echo "→ wails3: $WAILS3_BIN ($("$WAILS3_BIN" version 2>/dev/null | head -1 || echo ok))"
+
+# 清掉上次残留的桌面/Vite，避免 listen tcp :9245 address already in use
+free_dev_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+  echo "→ 端口 $port 占用中，结束上次 Agent Harbor / Vite…"
+  pkill -f 'bin/AgentHarbor.dev.app/Contents/MacOS/AgentHarbor' 2>/dev/null || true
+  pkill -f 'wails3 task' 2>/dev/null || true
+  pkill -f 'wails3 dev' 2>/dev/null || true
+  # 仅杀本仓库 frontend 的 vite
+  pkill -f "${ROOT}/frontend/node_modules/.bin/vite" 2>/dev/null || true
+  sleep 0.5
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 0.5
+  fi
+  if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "✗ 端口 $port 仍被占用，请手动: lsof -nP -iTCP:$port -sTCP:LISTEN"
+    exit 1
+  fi
+  echo "→ 端口 $port 已空闲"
+}
 
 if [[ "${SKIP_GENERATE:-0}" != "1" ]]; then
   echo "→ wails3 generate bindings ./..."
@@ -65,6 +94,9 @@ else
   echo "→ 跳过 npm（SKIP_NPM=1）"
 fi
 
-echo "→ wails3 dev（顶栏应为「真实绑定」；新方法未接线可能 UNIMPLEMENTED）"
+free_dev_port "$VITE_PORT"
+
+echo "→ wails3 task dev (Vite http://127.0.0.1:${VITE_PORT}) — 顶栏应为「真实绑定」"
 echo "→ 配置账号：侧栏「模型」「工具」→ 再 HOME「新会话」"
-exec "$WAILS3_BIN" dev
+echo "→ 勿裸跑 wails3（PATH 常缺）；请用本脚本，或先: export PATH=\"\$HOME/go/bin:\$PATH\""
+exec "$WAILS3_BIN" task dev

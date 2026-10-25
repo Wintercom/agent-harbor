@@ -12,10 +12,10 @@ export function mountPermissionModal(root, { sessionLabel, target, action, onDec
   root.innerHTML = `
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="perm-title">
       <h2 id="perm-title">请求访问新地址</h2>
-      <p class="meta">会话「${sessionLabel || "—"}」</p>
+      <p class="meta">会话「${sessionLabel || "—"}」（须标明所属会话）</p>
       <p class="sub">${action || "请求访问"}</p>
       <p class="target-host">${target || ""}</p>
-      <p class="meta">选错可在权限一览或设置里撤销始终允许。没有「全部网站都允许」。</p>
+      <p class="meta">一句话：谁访问什么。选错可在权限一览或设置里撤销始终允许。没有「全网 / 全部网站都允许」。</p>
       <div class="actions">
         <button type="button" class="btn danger" data-d="deny">拒绝</button>
         <button type="button" class="btn" data-d="once">仅本次</button>

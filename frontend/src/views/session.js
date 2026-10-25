@@ -9,12 +9,14 @@ import {
 } from "./permission-modal.js";
 
 export function mountSession(root, ctx) {
+  const healthOk = ctx.state.health?.available !== false;
+
   root.innerHTML = `
     <div id="sess-empty" class="empty-state">
       <p>当前没有打开的会话。从 HOME 进入工作台，或创建新会话。</p>
       <div class="actions">
         <button type="button" class="btn" id="sess-empty-home">回 HOME</button>
-        <button type="button" class="btn primary" id="sess-empty-wizard">新会话</button>
+        <button type="button" class="btn primary" id="sess-empty-wizard" ${healthOk ? "" : "disabled"}>新会话</button>
       </div>
     </div>
     <div id="sess-workbench" class="hidden">
@@ -60,6 +62,7 @@ export function mountSession(root, ctx) {
   const els = {
     empty: root.querySelector("#sess-empty"),
     workbench: root.querySelector("#sess-workbench"),
+    boundary: root.querySelector("#boundary"),
     state: root.querySelector("#sess-state"),
     meta: root.querySelector("#sess-meta"),
     hintLine: root.querySelector("#sess-hint-line"),
@@ -99,7 +102,20 @@ export function mountSession(root, ctx) {
   }
   const emptyWizard = root.querySelector("#sess-empty-wizard");
   if (emptyWizard && typeof emptyWizard.addEventListener === "function") {
-    emptyWizard.addEventListener("click", () => ctx.navigate?.("wizard"));
+    emptyWizard.addEventListener("click", () => {
+      if (ctx.state.health?.available === false) {
+        ctx.showBlock?.(ctx.state.health.reason);
+        return;
+      }
+      ctx.navigate?.("wizard");
+    });
+  }
+
+  function setAwaiting(on) {
+    const list = els.boundary?.classList;
+    if (list && typeof list.toggle === "function") {
+      list.toggle("awaiting", !!on);
+    }
   }
 
   function notifyResize() {
@@ -109,15 +125,21 @@ export function mountSession(root, ctx) {
     api.resizePty({ sessionId: ctx.state.sessionId, cols, rows }).catch(() => {});
   }
 
-  async function fillModels() {
+  async function fillModels(selectedId) {
     if (!els.model) return;
     if (typeof document === "undefined" || !document.createElement) return;
     const res = await api.listAccounts("model");
     const accounts = res.accounts || [];
+    const want =
+      selectedId ||
+      ctx.state.lastSnapshot?.modelAccountId ||
+      ctx.state.modelAccount?.id ||
+      "";
     const options = accounts.map((a) => {
       const o = document.createElement("option");
       o.value = a.id;
       o.textContent = `${a.name} · ${a.host || ""}`;
+      if (a.id === want) o.selected = true;
       return o;
     });
     if (typeof els.model.replaceChildren === "function") {
@@ -131,6 +153,7 @@ export function mountSession(root, ctx) {
   function renderSnapshot(s) {
     if (!s) {
       showEmpty();
+      setAwaiting(false);
       if (els.state) {
         els.state.textContent = "无会话";
         els.state.className = "status-pill";
@@ -142,8 +165,9 @@ export function mountSession(root, ctx) {
     showWorkbench();
     els.state.textContent = s.state;
     els.state.className = `status-pill ${s.state}`;
-    els.meta.textContent = `${s.agentId || ""} · ${s.workspace || ""} · 挂载:${s.mountMode || "direct"} · ${s.sessionId}`;
-    els.hintLine.textContent = "● 隔离运行中（边界以权限一览为准）";
+    const toolN = (s.mcpIds || []).length;
+    els.meta.textContent = `${s.agentId || ""} · ${s.workspace || ""} · 文件:${s.mountMode === "clone" ? "安全副本" : "直接编辑"} · 工具:${toolN}`;
+    els.hintLine.textContent = `● 隔离运行中 · ${s.sessionId || ""}`;
     const active =
       ["provisioning", "running", "stopping"].includes(s.state) ||
       (s.state === "failed" && !s.cleanupComplete);
@@ -159,6 +183,7 @@ export function mountSession(root, ctx) {
     } else {
       els.hint.classList.add("hidden");
     }
+    if (s.modelAccountId) fillModels(s.modelAccountId);
   }
 
   function appendPty(text) {
@@ -191,17 +216,26 @@ export function mountSession(root, ctx) {
       els.error.textContent = `${ev.error.code}: ${ev.error.message}`;
     } else if (ev.type === "permission_needed" && ev.permission) {
       const snap = ctx.state.lastSnapshot;
+      const sid = ctx.state.sessionId || snap?.sessionId || "";
+      setAwaiting(true);
       mountPermissionModal(modalRoot, {
-        sessionLabel: `${snap?.agentId || ""} · ${snap?.workspace || ""}`,
+        sessionLabel: `${snap?.agentId || "—"} · ${snap?.workspace || "—"} · ${sid}`,
         target: ev.permission.target,
         action: ev.permission.action,
         async onDecide(decision) {
-          await api.resolvePermission({
-            sessionId: ctx.state.sessionId,
+          const res = await api.resolvePermission({
+            sessionId: sid,
             target: ev.permission.target,
             decision,
           });
+          if (res?.error) {
+            throw new Error(`${res.error.code}: ${res.error.message}`);
+          }
           hidePermissionModal(modalRoot);
+          setAwaiting(false);
+          const li = document.createElement("li");
+          li.textContent = `扩权 ${decision} · ${ev.permission.target} · ${sid}`;
+          els.audit?.prepend(li);
         },
       });
     }
@@ -226,11 +260,25 @@ export function mountSession(root, ctx) {
   if (els.stop) {
     els.stop.onclick = async () => {
       if (!ctx.state.sessionId) return;
+      const prefs = ctx.state.uiPrefs || {};
+      if (!window.confirm("停止此会话？")) return;
+      let destroyAfter = false;
+      if (prefs.askClearOnStop !== false) {
+        destroyAfter = window.confirm(
+          "清除隔离环境数据？本机密钥保留。\n确定 = 清除并停止；取消 = 仅停止。",
+        );
+      } else {
+        destroyAfter = prefs.clearOnStopDefault === "clear";
+      }
       els.stop.disabled = true;
       const res = await api.stopSession(ctx.state.sessionId);
       if (res.error) {
         els.error.textContent = `${res.error.code}: ${res.error.message}`;
         els.stop.disabled = false;
+        return;
+      }
+      if (destroyAfter && ctx.state.sessionId) {
+        await ctx.destroySession?.(ctx.state.sessionId);
       }
     };
   }
@@ -241,8 +289,11 @@ export function mountSession(root, ctx) {
   const permBtn = root.querySelector("#btn-perm");
   if (permBtn) permBtn.onclick = async () => {
     if (!els.drawer) return;
-    const res = await api.getPermissionOverview(ctx.state.sessionId || "");
+    const sid = ctx.state.sessionId || "";
+    const res = await api.getPermissionOverview(sid);
+    const hostsRes = await api.listRememberedHosts(sid);
     const o = res.overview;
+    const remembered = hostsRes.hosts || [];
     els.drawer.classList.remove("hidden");
     els.drawer.innerHTML = `
       <div class="card">
@@ -254,13 +305,29 @@ export function mountSession(root, ctx) {
           res.error
             ? `<p class="bad">${res.error.code}: ${res.error.message}</p>`
             : `
-          <p class="meta">工作区：${o?.workspace || "—"}</p>
-          <h4>网络白名单</h4>
-          <ul class="audit-list">${(o?.allowedHosts || []).map((h) => `<li>${h}</li>`).join("") || "<li class='meta'>无</li>"}</ul>
+          <p class="meta">会话 ${sid || "—"} · 工作区：${o?.workspace || "—"}</p>
+          <h4>文件</h4>
+          <ul class="audit-list">
+            <li>可读写：${o?.workspace || "—"}（${ctx.state.lastSnapshot?.mountMode === "clone" ? "安全副本" : "直接编辑"}）</li>
+            ${(o?.deniedPathCategories || []).map((m) => `<li>默认不可见：${m}</li>`).join("")}
+          </ul>
+          <h4>网络（白名单）</h4>
+          <ul class="audit-list" id="perm-hosts">
+            ${(o?.allowedHosts || [])
+              .map((h) => `<li>${h} · 模型/系统</li>`)
+              .join("") || "<li class='meta'>无</li>"}
+            ${remembered
+              .map(
+                (h) =>
+                  `<li class="row" style="justify-content:space-between">
+                    <span>${h.host} · ${h.scope === "project" ? "本项目始终允许" : "本会话"}</span>
+                    <button type="button" class="btn" data-rev="${h.host}" data-ws="${h.workspace || o?.workspace || ""}">撤销</button>
+                  </li>`,
+              )
+              .join("")}
+          </ul>
           <h4>工具</h4>
           <ul class="audit-list">${(o?.mcpSummary || []).map((m) => `<li>${m}</li>`).join("") || "<li class='meta'>无</li>"}</ul>
-          <h4>不可见类别</h4>
-          <ul class="audit-list">${(o?.deniedPathCategories || []).map((m) => `<li>${m}</li>`).join("") || "<li class='meta'>—</li>"}</ul>
         `
         }
       </div>`;
@@ -268,6 +335,15 @@ export function mountSession(root, ctx) {
       els.drawer.classList.add("hidden");
       els.drawer.innerHTML = "";
     };
+    els.drawer.querySelectorAll("[data-rev]").forEach((btn) => {
+      btn.onclick = async () => {
+        await api.revokeRememberedHost({
+          host: btn.getAttribute("data-rev"),
+          workspace: btn.getAttribute("data-ws"),
+        });
+        permBtn.click();
+      };
+    });
   };
 
   if (els.ptyInput?.addEventListener) {
@@ -291,6 +367,10 @@ export function mountSession(root, ctx) {
     demo.style.marginTop = "8px";
     side.appendChild(demo);
     demo.onclick = () => {
+      if (!ctx.state.sessionId) {
+        els.error.textContent = "请先打开会话再演示扩权";
+        return;
+      }
       onEvent({
         sessionId: ctx.state.sessionId,
         seq: Date.now(),
@@ -319,6 +399,7 @@ export function mountSession(root, ctx) {
       if (els.error) els.error.textContent = "";
       els.hint?.classList.add("hidden");
       hidePermissionModal(modalRoot);
+      setAwaiting(false);
       if (snapshot) {
         ctx.state.lastSnapshot = snapshot;
         api.activateSession(snapshot);
@@ -327,12 +408,13 @@ export function mountSession(root, ctx) {
       } else {
         renderSnapshot(null);
       }
-      fillModels();
+      fillModels(snapshot?.modelAccountId);
     },
     showEmpty,
     destroy() {
       unsub();
       hidePermissionModal(modalRoot);
+      setAwaiting(false);
       if (typeof window !== "undefined") {
         window.removeEventListener("resize", notifyResize);
       }

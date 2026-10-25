@@ -228,13 +228,20 @@ export function mountWizard(root, ctx) {
           mountMode: draft.mountMode,
         });
         if (res.error) {
-          const hint =
-            res.error.code === "SESSION_LIMIT"
-              ? "请先在 HOME 停止一个会话。"
-              : res.error.code === "WORKSPACE_BUSY"
-                ? "请换「演示路径 B」或打开已有会话。"
-                : "";
-          msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<p class="meta">${hint}</p>` : ""}`;
+          let hint = "";
+          let cta = "";
+          if (res.error.code === "SESSION_LIMIT") {
+            hint = "运行中已满 2 个。回 HOME 停止其中一个后再试。";
+            cta = `<button type="button" class="btn" id="wz-to-home">回 HOME</button>`;
+          } else if (res.error.code === "WORKSPACE_BUSY") {
+            hint =
+              "该文件夹已有会话在跑。打开已有工作台，或上一步改选「演示路径 B」。";
+            cta = `<button type="button" class="btn" id="wz-to-home">回 HOME 打开会话</button>`;
+          }
+          msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<p class="meta">${hint}</p>` : ""}${cta ? `<div class="actions">${cta}</div>` : ""}`;
+          msg.querySelector("#wz-to-home")?.addEventListener("click", () =>
+            ctx.navigate("home"),
+          );
           return;
         }
         ctx.state.lastTask = draft.task;

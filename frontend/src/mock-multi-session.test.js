@@ -73,6 +73,47 @@ test("mock 双会话：同工作区 WORKSPACE_BUSY，不同路径可开两条，
   }
 });
 
+test("mock 多模型/多 MCP 账号可并存，auth 场景列表标无效", async () => {
+  mock.resetMock();
+  try {
+    const a = await mock.connectModel({
+      profileId: "custom",
+      name: "模型甲",
+      apiKey: "k1",
+      origin: "https://a.example.com",
+    });
+    const b = await mock.connectModel({
+      profileId: "custom",
+      name: "模型乙",
+      apiKey: "k2",
+      origin: "https://b.example.com",
+    });
+    assert.equal(a.account.id, "mock-model");
+    assert.notEqual(a.account.id, b.account.id);
+    let models = await mock.listAccounts("model");
+    assert.equal(models.accounts.length, 2);
+
+    await mock.connectMcp({
+      profileId: "demo-mcp",
+      name: "MCP甲",
+      apiKey: "t1",
+    });
+    await mock.connectMcp({
+      profileId: "demo-mcp",
+      name: "MCP乙",
+      apiKey: "t2",
+    });
+    const mcps = await mock.listAccounts("mcp");
+    assert.equal(mcps.accounts.length, 2);
+
+    mock.setScenario("auth");
+    models = await mock.listAccounts("model");
+    assert.ok(models.accounts.every((x) => x.invalid));
+  } finally {
+    mock.resetMock();
+  }
+});
+
 test("mock OAuth pending 完成后出现 MCP 账号，可取消", async () => {
   mock.resetMock();
   try {

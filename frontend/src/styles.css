@@ -306,6 +306,38 @@ body { padding: 0; }
   font-size: 14px;
   line-height: 1.6;
 }
+.block-checks {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.block-checks li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+.block-checks li strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.block-checks li.ok { border-color: rgba(61, 205, 192, 0.35); }
+.block-checks li.bad { border-color: rgba(232, 109, 109, 0.35); }
+.block-check-mark { margin-top: 2px; }
+.block-checks li.ok .block-check-mark { color: var(--ok, #3dcdc0); }
+.block-checks li.bad .block-check-mark { color: var(--bad, #e86d6d); }
+.boundary.awaiting {
+  border-color: rgba(224, 177, 90, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(224, 177, 90, 0.25);
+}
+.health { cursor: default; }
+.health.clickable { cursor: pointer; }
 @media (max-width: 720px) {
   .shell { flex-direction: column; border: 0; }
   .sidebar {
@@ -373,13 +405,16 @@ body { padding: 0; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .warn-banner {
-  margin: 0;
-  padding: 10px 18px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
   font-size: 12px;
   color: var(--warn);
   background: rgba(224, 177, 90, 0.08);
-  border-bottom: 1px solid var(--line);
+  border: 1px solid rgba(224, 177, 90, 0.28);
+  border-radius: var(--radius);
 }
+.warn-banner strong { display: block; margin-bottom: 4px; }
+.warn-banner .meta { margin: 0; color: inherit; opacity: 0.9; }
 .view { padding: 18px; }
 h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
 .sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
@@ -420,6 +455,11 @@ label.field select {
   color: var(--text);
   font: inherit;
   font-size: 13px;
+}
+label.field input::placeholder,
+label.field textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.55;
 }
 label.field textarea { min-height: 88px; resize: vertical; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -467,6 +507,13 @@ label.field textarea { min-height: 88px; resize: vertical; }
 .actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
 
 .radio, .check-row { display: block; margin: 8px 0; font-size: 13px; color: var(--muted); }
+.radio-set {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.radio-set.disabled { opacity: 0.45; }
 .agent-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

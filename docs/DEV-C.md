@@ -153,12 +153,33 @@ python3 -m http.server 5173
 | 工作台无会话空态；resizePty | **已做** |
 | UIPrefs：设置页 + boot/侧栏经 Get/SetUIPrefs | **已做**（mock；live 待 B 真落盘） |
 
+### 2026-10-25 晚：C 不越界续作
+
+| 项 | 状态 |
+|---|---|
+| 撤回误改 `internal/`（Health/origin/OpenAI 桥） | **已撤回**；C 只动 frontend/scripts/vite |
+| mock 多模型/多 MCP 账号 | **已做**；`auth` 场景列表标 ▲ |
+| HOME 上限横幅；向导 SESSION_LIMIT / WORKSPACE_BUSY CTA | **已做** |
+| 模型页表单 UX（占位≠已填、失败保留 Key） | **已做** |
+| 桌面启动：Vite `127.0.0.1` + `dev-desktop.sh` | **已做**（不改 Gate） |
+| demos 三分钟话术对齐全量导航 | **已做** |
+
+### 2026-10-25 续：P1-C-10 + 工作台细抠
+
+| 项 | 状态 |
+|---|---|
+| 隔离阻断页（检测项 / 重新检测 / 无「仍要继续」） | **已做**；红灯可点；HOME CTA |
+| 设置「结束与清理」askClearOnStop | **已做**（UIPrefs mock） |
+| 工作台：边界 awaiting、扩权标 sessionId、权限一览可撤销 | **已做** |
+| 停止确认（询问清除 / 仅停止） | **已做** |
+| `npm test` | **19+**（含 block / prefs） |
+
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| 本分支 | 细抠文案/动效；demos 话术跟上全量导航 | — |
-| 联调 | A/B 去 UNIMPLEMENTED；OAuth/PTY/clone 真实现 | generate bindings |
+| 本分支 | 视觉对照 prototype 再扫一遍（P1-C-11） | — |
+| 联调 | **等 B** Accounts/origin/Health；**等 A** 真 clone/PTY | 不代写 `internal/` |
 | P0 | 仍可跟 I 证据，但不挡本分支 UI | ENV |
 
 ### 明确不做（仍禁止）

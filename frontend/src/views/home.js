@@ -21,12 +21,22 @@ export function mountHome(root, ctx) {
     </div>
     ${
       !healthOk
-        ? `<p class="meta bad">隔离不可用，已禁用新会话。</p>`
+        ? `<div class="banner warn-banner">
+            <strong>隔离不可用</strong>
+            <p class="meta">已禁用新会话；与侧栏红灯一致，没有「仍要继续」。</p>
+            <div class="actions">
+              <button type="button" class="btn" id="btn-home-block">查看阻断说明</button>
+              <button type="button" class="btn" id="btn-home-rehealth">重新检测</button>
+            </div>
+          </div>`
         : ""
     }
     ${
       atLimit
-        ? `<p class="meta warn">已有 2 个会话在运行。可进向导，开始时会提示先停止其中一个；同工作区不能双开。</p>`
+        ? `<div class="banner warn-banner">
+            <strong>已达上限（2/2）</strong>
+            <p class="meta">请先停止一个会话再开新的。同工作区不能双开——若提示 WORKSPACE_BUSY，请打开已有会话或换「演示路径 B」。</p>
+          </div>`
         : ""
     }
     <div id="home-list" class="session-list"></div>
@@ -47,7 +57,13 @@ export function mountHome(root, ctx) {
   const listEl = root.querySelector("#home-list");
   root.querySelector("#empty-models")?.addEventListener("click", () => ctx.navigate("models"));
   root.querySelector("#empty-tools")?.addEventListener("click", () => ctx.navigate("tools"));
-  root.querySelector("#empty-wizard")?.addEventListener("click", () => ctx.navigate("wizard"));
+  root.querySelector("#empty-wizard")?.addEventListener("click", () => {
+    if (ctx.state.health?.available === false) {
+      ctx.showBlock?.(ctx.state.health.reason);
+      return;
+    }
+    ctx.navigate("wizard");
+  });
   list.forEach((s) => {
     const terminal = ["stopped", "failed"].includes(s.state) && s.cleanupComplete;
     const card = document.createElement("article");
@@ -73,7 +89,19 @@ export function mountHome(root, ctx) {
     listEl.appendChild(card);
   });
 
-  root.querySelector("#btn-new-session").onclick = () => ctx.navigate("wizard");
+  root.querySelector("#btn-new-session").onclick = () => {
+    if (ctx.state.health?.available === false) {
+      ctx.showBlock?.(ctx.state.health.reason);
+      return;
+    }
+    ctx.navigate("wizard");
+  };
+  root.querySelector("#btn-home-block")?.addEventListener("click", () => {
+    ctx.showBlock?.(ctx.state.health?.reason);
+  });
+  root.querySelector("#btn-home-rehealth")?.addEventListener("click", async () => {
+    await ctx.refreshHealth?.();
+  });
   listEl.querySelectorAll("[data-open]").forEach((btn) => {
     btn.onclick = () => ctx.openSession?.(btn.getAttribute("data-open"));
   });

@@ -26,6 +26,20 @@ export function mountSettings(root, ctx) {
     </section>
 
     <section class="card" style="margin-top:12px">
+      <h3>结束与清理</h3>
+      <label class="check-row">
+        <input type="checkbox" id="set-ask-clear" />
+        停止会话时询问是否清除隔离环境数据
+      </label>
+      <fieldset id="set-clear-default-wrap" class="radio-set">
+        <legend class="meta">关闭询问后的默认动作</legend>
+        <label class="radio"><input type="radio" name="clear-default" value="keep" /> 停止时总是保留（可稍后在 HOME 销毁）</label>
+        <label class="radio"><input type="radio" name="clear-default" value="clear" /> 停止时总是清除</label>
+      </fieldset>
+      <p class="meta">「销毁」在 HOME 始终二次确认，不受此开关影响。</p>
+    </section>
+
+    <section class="card" style="margin-top:12px">
       <h3>外观与侧栏</h3>
       <label class="check-row">
         <input type="checkbox" id="set-sidebar-collapsed" />
@@ -125,18 +139,36 @@ export function mountSettings(root, ctx) {
     localStorage.setItem("harbor-default-mount", e.target.value);
   };
 
+  function syncClearDefaultEnabled() {
+    const ask = root.querySelector("#set-ask-clear").checked;
+    const wrap = root.querySelector("#set-clear-default-wrap");
+    wrap?.querySelectorAll("input").forEach((el) => {
+      el.disabled = ask;
+    });
+    wrap?.classList.toggle("disabled", ask);
+  }
+
   async function loadPrefs() {
     const res = await api.getUIPrefs();
     const prefs = res.prefs || ctx.state.uiPrefs || {};
     root.querySelector("#set-sidebar-collapsed").checked = !!prefs.sidebarCollapsed;
     root.querySelector("#set-auto-collapse").checked =
       prefs.autoCollapseWorkbench !== false;
+    root.querySelector("#set-ask-clear").checked = prefs.askClearOnStop !== false;
+    const clearDef = prefs.clearOnStopDefault === "clear" ? "clear" : "keep";
+    root.querySelectorAll('input[name="clear-default"]').forEach((el) => {
+      el.checked = el.value === clearDef;
+    });
+    syncClearDefaultEnabled();
   }
 
   async function savePrefs() {
+    const clearRadio = root.querySelector('input[name="clear-default"]:checked');
     const prefs = {
       sidebarCollapsed: root.querySelector("#set-sidebar-collapsed").checked,
       autoCollapseWorkbench: root.querySelector("#set-auto-collapse").checked,
+      askClearOnStop: root.querySelector("#set-ask-clear").checked,
+      clearOnStopDefault: clearRadio?.value === "clear" ? "clear" : "keep",
     };
     const res = await api.setUIPrefs(prefs);
     const st = root.querySelector("#set-prefs-status");
@@ -146,11 +178,16 @@ export function mountSettings(root, ctx) {
     }
     ctx.state.uiPrefs = res.prefs || prefs;
     ctx.applyUIPrefs?.(ctx.state.uiPrefs);
+    syncClearDefaultEnabled();
     st.innerHTML = `<span class="ok">已保存</span>`;
   }
 
   root.querySelector("#set-sidebar-collapsed").onchange = savePrefs;
   root.querySelector("#set-auto-collapse").onchange = savePrefs;
+  root.querySelector("#set-ask-clear").onchange = savePrefs;
+  root.querySelectorAll('input[name="clear-default"]').forEach((el) => {
+    el.onchange = savePrefs;
+  });
   loadPrefs();
   const sel = root.querySelector("#scenario");
   if (sel) {

@@ -22,16 +22,32 @@ const FIXED = {
 let scenario = "normal";
 let seq = 0;
 let sessionNumber = 0;
+let accountNumber = 0;
 /** @type {Map<string, object>} */
 const sessions = new Map();
 /** @type {Map<string, number[]>} sessionId → timer ids */
 const sessionTimers = new Map();
-let modelAccount = null;
-let mcpAccount = null;
+/** @type {Map<string, object>} id → model account */
+const modelAccounts = new Map();
+/** @type {Map<string, object>} id → mcp account */
+const mcpAccounts = new Map();
 /** @type {Map<string, object>} pending OAuth */
 const oauthPending = new Map();
-let uiPrefs = { sidebarCollapsed: false, autoCollapseWorkbench: true };
+let uiPrefs = {
+  sidebarCollapsed: false,
+  autoCollapseWorkbench: true,
+  askClearOnStop: true,
+  clearOnStopDefault: "keep",
+};
 const listeners = new Set();
+
+function getModel(id) {
+  return modelAccounts.get(id) || null;
+}
+
+function getMcp(id) {
+  return mcpAccounts.get(id) || null;
+}
 
 function err(code, message, retryable = false) {
   return { code, message, retryable };
@@ -200,24 +216,33 @@ export async function destroySession(sessionId) {
 
 export async function listAccounts(kind) {
   const accounts = [];
-  if ((!kind || kind === "model") && modelAccount) accounts.push({ ...modelAccount });
-  if ((!kind || kind === "mcp") && mcpAccount) accounts.push({ ...mcpAccount });
+  if (!kind || kind === "model") {
+    for (const a of modelAccounts.values()) {
+      const row = { ...a };
+      // auth 场景：列表标 ▲ 无效，便于模型页演示（不删账号）
+      if (scenario === "auth") row.invalid = true;
+      accounts.push(row);
+    }
+  }
+  if (!kind || kind === "mcp") {
+    for (const a of mcpAccounts.values()) accounts.push({ ...a });
+  }
   return { accounts, error: null };
 }
 
 export async function removeAccount(accountId) {
-  if (modelAccount?.id === accountId) {
+  if (modelAccounts.has(accountId)) {
     if (activeSessions().length) {
       return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
     }
-    modelAccount = null;
+    modelAccounts.delete(accountId);
     return { error: null };
   }
-  if (mcpAccount?.id === accountId) {
+  if (mcpAccounts.has(accountId)) {
     if (activeSessions().length) {
       return { error: err("SESSION_BUSY", "会话仍引用该账号（模拟）") };
     }
-    mcpAccount = null;
+    mcpAccounts.delete(accountId);
     return { error: null };
   }
   return { error: err("ACCOUNT_NOT_FOUND", "账号不存在（模拟）") };
@@ -230,7 +255,7 @@ export async function getPermissionOverview(sessionId) {
       sessionId: sessionId || s?.sessionId || "",
       workspace: s?.workspace || FIXED.workspace,
       allowedHosts: ["api.example.com"],
-      mcpSummary: mcpAccount ? [mcpAccount.name] : [],
+      mcpSummary: [...mcpAccounts.values()].map((a) => a.name),
       deniedPathCategories: ["系统目录"],
     },
     error: null,
@@ -282,10 +307,22 @@ export async function getUIPrefs() {
 }
 
 export async function setUIPrefs(prefs) {
-  uiPrefs = {
-    sidebarCollapsed: !!prefs?.sidebarCollapsed,
-    autoCollapseWorkbench: prefs?.autoCollapseWorkbench !== false,
-  };
+  loadPrefsFromStorage();
+  const next = { ...uiPrefs };
+  if (prefs?.sidebarCollapsed !== undefined) {
+    next.sidebarCollapsed = !!prefs.sidebarCollapsed;
+  }
+  if (prefs?.autoCollapseWorkbench !== undefined) {
+    next.autoCollapseWorkbench = prefs.autoCollapseWorkbench !== false;
+  }
+  if (prefs?.askClearOnStop !== undefined) {
+    next.askClearOnStop = !!prefs.askClearOnStop;
+  }
+  if (prefs?.clearOnStopDefault !== undefined) {
+    next.clearOnStopDefault =
+      prefs.clearOnStopDefault === "clear" ? "clear" : "keep";
+  }
+  uiPrefs = next;
   try {
     localStorage.setItem("harbor-ui-prefs", JSON.stringify(uiPrefs));
   } catch (_) {
@@ -342,15 +379,19 @@ export async function connectModel(input) {
       };
     }
   }
-  modelAccount = {
-    id: "mock-model",
+  // 首个账号固定 id，兼容既有测试与 setup 流
+  const id =
+    modelAccounts.size === 0 ? "mock-model" : `mock-model-${++accountNumber}`;
+  const account = {
+    id,
     kind: "model",
     name: input.name,
     profileId,
     host,
     origin: input.origin || "",
   };
-  return { account: { ...modelAccount }, error: null };
+  modelAccounts.set(id, account);
+  return { account: { ...account }, error: null };
 }
 
 export async function startMcpOAuth(input) {
@@ -366,14 +407,16 @@ export async function startMcpOAuth(input) {
     () => {
       const p = oauthPending.get(pendingId);
       if (!p) return;
-      mcpAccount = {
-        id: "mock-mcp",
+      const id =
+        mcpAccounts.size === 0 ? "mock-mcp" : `mock-mcp-${++accountNumber}`;
+      mcpAccounts.set(id, {
+        id,
         kind: "mcp",
         name: p.name,
         profileId: p.profileId,
         host: "oauth.mcp.local",
         authMode: "oauth",
-      };
+      });
       oauthPending.delete(pendingId);
     },
   );
@@ -405,13 +448,18 @@ export async function switchModel(input) {
       error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
     };
   }
-  if (!modelAccount || modelAccount.id !== input.modelAccountId) {
+  if (!getModel(input.modelAccountId)) {
     return {
       session: null,
       error: err("ACCOUNT_NOT_FOUND", "模型账号不存在（模拟）"),
     };
   }
-  return { session: snapshotOf(input.sessionId), error: null };
+  return {
+    session: snapshotOf(input.sessionId, {
+      modelAccountId: input.modelAccountId,
+    }),
+    error: null,
+  };
 }
 
 export async function writePty(input) {
@@ -453,15 +501,18 @@ export async function connectMcp(input) {
       error: err("INVALID_ARGUMENT", "仅支持固定 profileId=demo-mcp"),
     };
   }
-  mcpAccount = {
-    id: "mock-mcp",
+  const id =
+    mcpAccounts.size === 0 ? "mock-mcp" : `mock-mcp-${++accountNumber}`;
+  const account = {
+    id,
     kind: "mcp",
     name: input.name,
     profileId: input.profileId,
     host: "demo-mcp.local",
     authMode: "token",
   };
-  return { account: { ...mcpAccount }, error: null };
+  mcpAccounts.set(id, account);
+  return { account: { ...account }, error: null };
 }
 
 export async function createSession(spec) {
@@ -497,24 +548,22 @@ export async function createSession(spec) {
       error: err("INVALID_ARGUMENT", "mcpIds 长度须为 0..8"),
     };
   }
-  if (!modelAccount || spec.modelAccountId !== modelAccount.id) {
+  const modelAcc = getModel(spec.modelAccountId);
+  if (!modelAcc) {
     return {
       session: null,
       error: err("INVALID_ARGUMENT", "请先连接模型账号"),
     };
   }
   const expected = spec.agentId === "dsh" ? "dsh-model" : "demo-model";
-  if (
-    modelAccount.profileId !== "custom" &&
-    modelAccount.profileId !== expected
-  ) {
+  if (modelAcc.profileId !== "custom" && modelAcc.profileId !== expected) {
     return {
       session: null,
       error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配"),
     };
   }
   if (spec.mcpIds.length > 0) {
-    if (!mcpAccount || !spec.mcpIds.every((id) => id === mcpAccount.id)) {
+    if (!spec.mcpIds.every((id) => getMcp(id))) {
       return {
         session: null,
         error: err("INVALID_ARGUMENT", "请先连接 MCP 账号，且 mcpIds 须匹配"),
@@ -555,6 +604,7 @@ export async function createSession(spec) {
     state: "provisioning",
     mountMode: spec.mountMode === "direct" ? "direct" : "clone",
     mcpIds: [...(spec.mcpIds || [])],
+    modelAccountId: spec.modelAccountId,
     seq: 0,
     workspace: spec.workspace,
     agentId: spec.agentId,
@@ -702,10 +752,16 @@ export function resetMock() {
   listeners.clear();
   seq = 0;
   sessionNumber = 0;
+  accountNumber = 0;
   sessions.clear();
   oauthPending.clear();
-  modelAccount = null;
-  mcpAccount = null;
+  modelAccounts.clear();
+  mcpAccounts.clear();
   scenario = "normal";
-  uiPrefs = { sidebarCollapsed: false, autoCollapseWorkbench: true };
+  uiPrefs = {
+    sidebarCollapsed: false,
+    autoCollapseWorkbench: true,
+    askClearOnStop: true,
+    clearOnStopDefault: "keep",
+  };
 }

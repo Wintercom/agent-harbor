@@ -48,10 +48,18 @@ const ctx = {
     lastSnapshot: null,
     sessionHistory: [],
     health: null,
-    uiPrefs: { sidebarCollapsed: false, autoCollapseWorkbench: true },
+    uiPrefs: {
+      sidebarCollapsed: false,
+      autoCollapseWorkbench: true,
+      askClearOnStop: true,
+      clearOnStopDefault: "keep",
+    },
   },
   navigate(name) {
     navigate(name);
+  },
+  showBlock(reason) {
+    showBlock(reason || ctx.state.health?.reason);
   },
   applyUIPrefs(prefs) {
     applyUIPrefs(prefs);
@@ -212,8 +220,12 @@ function setSidebarCollapsed(collapsed, { persist = true } = {}) {
 function applyUIPrefs(prefs) {
   if (!prefs) return;
   ctx.state.uiPrefs = {
+    ...(ctx.state.uiPrefs || {}),
     sidebarCollapsed: !!prefs.sidebarCollapsed,
     autoCollapseWorkbench: prefs.autoCollapseWorkbench !== false,
+    askClearOnStop: prefs.askClearOnStop !== false,
+    clearOnStopDefault:
+      prefs.clearOnStopDefault === "clear" ? "clear" : "keep",
   };
   setSidebarCollapsed(!!prefs.sidebarCollapsed, { persist: false });
 }
@@ -253,6 +265,34 @@ function navigate(name, opts = {}) {
   }
 }
 
+function healthChecks(health) {
+  if (!health) return [];
+  if (health.available) {
+    return [
+      {
+        ok: true,
+        name: "隔离环境",
+        detail: health.isolationLevel
+          ? `可用 · ${health.isolationLevel}`
+          : "可用",
+      },
+      { ok: true, name: "安全闸口", detail: "可创建新会话" },
+    ];
+  }
+  return [
+    {
+      ok: false,
+      name: "隔离环境",
+      detail: health.reason || "当前无法建立隔离环境",
+    },
+    {
+      ok: false,
+      name: "安全闸口",
+      detail: "依赖隔离就绪；不会无隔离启动 Agent",
+    },
+  ];
+}
+
 async function refreshHealth() {
   const health = await api.getRuntimeHealth();
   ctx.state.health = health;
@@ -263,14 +303,30 @@ async function refreshHealth() {
       ? "隔离就绪（占位）"
       : "隔离就绪"
     : "隔离不可用";
-  if (!ok) healthText.title = health.reason || "";
+  if (!ok) healthText.title = health.reason || "点击查看说明";
+  else healthText.title = "";
+  const healthEl = document.getElementById("health-light");
+  healthEl?.classList.toggle("clickable", !ok);
+  if (currentRoute === "home") mountHome(views.home, ctx);
   return health;
 }
 
 function showBlock(reason) {
+  const health = ctx.state.health;
   blockRoot.classList.remove("hidden");
   mountBlock(blockRoot, {
-    reason,
+    reason: reason || health?.reason || "ISOLATION_UNAVAILABLE",
+    checks: healthChecks(health),
+    async onRecheck() {
+      const h = await refreshHealth();
+      if (h?.available) {
+        hideBlock();
+        if (currentRoute === "wizard") navigate("wizard");
+        else navigate(currentRoute || "home");
+        return;
+      }
+      showBlock(h?.reason);
+    },
     onSettings: () => {
       hideBlock();
       navigate("settings");
@@ -338,6 +394,10 @@ async function boot() {
     btn.addEventListener("click", () =>
       navigate(btn.getAttribute("data-route")),
     );
+  });
+
+  document.getElementById("health-light")?.addEventListener("click", () => {
+    if (ctx.state.health?.available === false) showBlock(ctx.state.health.reason);
   });
 
   sessionSwitch.onchange = () => {

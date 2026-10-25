@@ -78,14 +78,18 @@ export function mountTools(root, ctx) {
 
   function startPendingWatch() {
     clearPendingWatch();
+    const baseline = (ctx.state.mcpAccounts || []).length;
     pendingTimer = setInterval(async () => {
       if (!pendingId) {
         clearPendingWatch();
         return;
       }
       const res = await api.listAccounts("mcp");
-      const found = (res.accounts || []).some((a) => a.authMode === "oauth" || a.id === "mock-mcp");
-      if (found && (res.accounts || []).length) {
+      const now = res.accounts || [];
+      // pending 完成后账号数增加，或出现 oauth 轨
+      const found =
+        now.length > baseline || now.some((a) => a.authMode === "oauth");
+      if (found && now.length) {
         clearPendingWatch();
         pendingId = "";
         showForm = false;

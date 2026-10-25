@@ -2,12 +2,71 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Harbor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/assets/index-jcE4W5Vn.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CJcE6vRz.css">
   </head>
   <body>
-    <p>
-      占位前端资源，保证 <code>go:embed</code> 与 CI 可编译。正式 UI 请在
-      <code>frontend/</code> 执行 <code>npm run build</code> 覆盖本目录。
-    </p>
+    <div id="onboarding-root" class="onboarding-layer hidden"></div>
+    <div class="shell" id="app-shell">
+      <header class="titlebar" id="titlebar">
+        <strong class="titlebar-brand">Agent Harbor</strong>
+        <span id="mode-badge" class="badge mock">模拟模式</span>
+        <span class="spacer"></span>
+        <label class="session-switch hidden" id="session-switch-wrap">
+          <span class="meta">当前会话</span>
+          <select id="session-switch" aria-label="切换会话"></select>
+        </label>
+      </header>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <strong>Agent Harbor</strong>
+          <p class="sidebar-tagline">密钥留在本机 · Agent 隔离运行</p>
+        </div>
+        <nav class="sidebar-nav" id="sidebar-nav">
+          <button type="button" class="nav-item on" data-route="home" title="HOME">
+            <span class="nav-ico" aria-hidden="true">⌂</span>
+            <span class="nav-label">HOME</span>
+          </button>
+          <button type="button" class="nav-item" data-route="models" title="模型">
+            <span class="nav-ico" aria-hidden="true">◇</span>
+            <span class="nav-label">模型</span>
+          </button>
+          <button type="button" class="nav-item" data-route="tools" title="工具">
+            <span class="nav-ico" aria-hidden="true">⚒</span>
+            <span class="nav-label">工具</span>
+          </button>
+          <button type="button" class="nav-item" data-route="settings" title="设置">
+            <span class="nav-ico" aria-hidden="true">⚙</span>
+            <span class="nav-label">设置</span>
+          </button>
+        </nav>
+        <div class="sidebar-foot">
+          <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" title="收缩侧栏">«</button>
+          <div class="health" id="health-light" title="隔离状态">
+            <span class="health-dot" id="health-dot"></span>
+            <span class="health-text" id="health-text">检测中…</span>
+          </div>
+        </div>
+      </aside>
+      <div class="main-col">
+        <p class="warn-banner" id="mode-banner">
+          分支 feat/page-design-full：按 PAGE-DESIGN 全量实现（含 OAuth / clone / PTY）。mock ≠ I 验收。
+        </p>
+        <main id="view-home" class="view"></main>
+        <main id="view-wizard" class="view hidden"></main>
+        <main id="view-models" class="view hidden"></main>
+        <main id="view-tools" class="view hidden"></main>
+        <main id="view-settings" class="view hidden"></main>
+        <main id="view-session" class="view hidden"></main>
+        <main id="view-setup" class="view hidden" aria-hidden="true"></main>
+      </div>
+    </div>
+    <div id="block-root" class="block-layer hidden"></div>
+    <div id="modal-root" class="modal-layer hidden"></div>
   </body>
 </html>
