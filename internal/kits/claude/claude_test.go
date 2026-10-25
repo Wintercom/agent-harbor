@@ -55,7 +55,7 @@ func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
 	if strings.Contains(args, input().Task) || strings.Contains(args, sentinel) {
 		t.Fatal("任务或令牌进入命令行")
 	}
-	for _, flag := range []string{"--bare", "--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--permission-mode dontAsk", "--tools Read,Write,Edit"} {
+	for _, flag := range []string{"--print", "--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--permission-mode dontAsk", "--tools Read,Write,Edit"} {
 		if !strings.Contains(args, flag) {
 			t.Fatalf("缺少限制参数 %s", flag)
 		}
@@ -208,7 +208,7 @@ func TestInstalledCLIInStrictRuntime(t *testing.T) {
 		launch, lerr := k.resolveLaunch()
 		t.Logf("resolveLaunch=%+v err=%v", launch, lerr)
 		if lerr == nil {
-			help, helpErr := k.inspect(context.Background(), launch.Command, append(append([]string{}, launch.Args...), "--bare", "--help"), launch.ReadOnly)
+			help, helpErr := k.inspect(context.Background(), launch.Command, append(append([]string{}, launch.Args...), "--help"), launch.ReadOnly)
 			t.Logf("受限帮助检测：字节=%d 错误=%v", len(help), helpErr)
 			for _, flag := range requiredHelpFlags {
 				if !strings.Contains(help, flag) {
