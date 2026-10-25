@@ -45,7 +45,7 @@ func (p *modelProxy) serve(ctx context.Context) {
 }
 
 func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
-	rt, ok := p.h.acquireSession(p.sid)
+	rt, modelAccountID, ok := p.h.acquireModelSession(p.sid)
 	if !ok {
 		http.Error(w, "session gone", http.StatusServiceUnavailable)
 		return
@@ -84,7 +84,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	copyHeaders(outReq.Header, r.Header)
 	outReq.Header.Set("Accept-Encoding", "identity")
-	key, err := p.h.secrets.Resolve(r.Context(), rt.spec.ModelAccountID)
+	key, err := p.h.secrets.Resolve(r.Context(), modelAccountID)
 	if err != nil {
 		http.Error(w, "credential missing", http.StatusBadGateway)
 		return
@@ -109,8 +109,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		resp = followed
 		host = locHost
-		// 跨主机跟随不得携带原账号凭据；脱敏仍抹 Sentinel。
-		key = nil
+		// 不向重定向目标注入凭据，但响应脱敏仍覆盖原账号和 Sentinel。
 	}
 	p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "allowed"})
 	idle, total := p.h.streamTimeouts()

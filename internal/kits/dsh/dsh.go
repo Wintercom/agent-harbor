@@ -21,7 +21,10 @@ import (
 const SupportedVersion = "0.2.1-rc.2"
 const SupportedNodeVersion = "v26.12.1"
 
-type Kit struct{ node, installation, model string }
+type Kit struct {
+	node, installation, model string
+	conversation              bool
+}
 
 var _ kits.Kit = (*Kit)(nil)
 
@@ -124,7 +127,11 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 	if ctx.Err() != nil {
 		return runtime.LaunchSpec{}, kitError("CANCELLED")
 	}
-	if !utf8.ValidString(input.Task) || strings.TrimSpace(input.Task) == "" || len(input.Task) > 32768 || !filepath.IsAbs(input.PrivateHome) || filepath.Clean(input.PrivateHome) != input.PrivateHome || !gateURL(input.ModelBaseURL) || !gateURL(input.MCPURL) || len(input.Sentinel) < 32 || len(input.Sentinel) > 512 {
+	if !utf8.ValidString(input.Task) || strings.TrimSpace(input.Task) == "" || len(input.Task) > 32768 || !filepath.IsAbs(input.PrivateHome) || filepath.Clean(input.PrivateHome) != input.PrivateHome || !gateURL(input.ModelBaseURL) || len(input.Sentinel) < 32 || len(input.Sentinel) > 512 {
+		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
+	}
+	_, urlErr := kits.MCPGateURLs(input)
+	if urlErr != nil {
 		return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 	}
 	for _, r := range input.Sentinel {
@@ -132,13 +139,20 @@ func (k *Kit) Build(ctx context.Context, input kits.KitInput) (runtime.LaunchSpe
 			return runtime.LaunchSpec{}, kitError("INVALID_ARGUMENT")
 		}
 	}
-	node, _, script, err := k.paths()
+	node, root, script, err := k.paths()
 	if err != nil {
 		return runtime.LaunchSpec{}, err
 	}
-	files, err := profile(input, k.model)
+	files, err := buildProfile(input, k.model, k.conversation)
 	if err != nil {
 		return runtime.LaunchSpec{}, err
 	}
-	return runtime.LaunchSpec{Command: node, Args: []string{script, "--profile", "harbor", "--json", "-"}, Env: map[string]string{"DSH_HOME": filepath.Join(input.PrivateHome, "dsh"), "DSH_TELEMETRY_DISABLED": "1", "DEEPSEEK_API_KEY": input.Sentinel}, Stdin: []byte(input.Task), Interactive: false, ConfigFiles: files}, nil
+	launch := runtime.LaunchSpec{Command: node, Args: []string{script, "--profile", "harbor", "--json", "-"}, Env: map[string]string{"DSH_HOME": filepath.Join(input.PrivateHome, "dsh"), "DSH_TELEMETRY_DISABLED": "1", "DEEPSEEK_API_KEY": input.Sentinel}, Stdin: []byte(input.Task), ConfigFiles: files}
+	if k.conversation {
+		launch.Args = []string{script, "--profile", "harbor"}
+		launch.Interactive = true
+		launch.EncodeInput = encodeConversationMessage
+		launch.ConfigFiles = append(launch.ConfigFiles, conversationFile(root))
+	}
+	return launch, nil
 }

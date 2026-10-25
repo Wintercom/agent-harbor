@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ func newMCPGateway(h *Harbor, sessionID string, ln net.Listener) *mcpGateway {
 	gw := &mcpGateway{h: h, sid: sessionID, ln: ln}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", gw.handleMCP)
+	mux.HandleFunc("/mcp/", gw.handleMCP)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -57,7 +59,12 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rt.active.Done()
-	host := hostOfOrigin(rt.spec.Policy.MCP.Origin)
+	mount, found := g.mountForPath(rt, r.URL.Path)
+	if !found {
+		http.Error(w, "mount not allowed", http.StatusForbidden)
+		return
+	}
+	host := hostOfOrigin(mount.Endpoint.Origin)
 	switch r.Method {
 	case http.MethodGet, http.MethodPost, http.MethodDelete:
 	default:
@@ -71,7 +78,7 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid sentinel", http.StatusUnauthorized)
 		return
 	}
-	if !policy.PathAllowed(rt.spec.Policy.MCP, r.URL.Path) {
+	if !policy.PathAllowed(mount.Endpoint, "/mcp") {
 		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolMCP, Result: "denied"})
 		http.Error(w, "path not allowed", http.StatusForbidden)
 		return
@@ -92,20 +99,20 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json-rpc", http.StatusBadRequest)
 		return
 	}
-	if method == "tools/call" && !toolAllowed(rt.spec.Policy.Tools, tool) {
+	if method == "tools/call" && !toolAllowed(mount.Tools, tool) {
 		g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "denied"})
 		http.Error(w, "tool not allowed", http.StatusForbidden)
 		return
 	}
 
-	key, err := g.h.secrets.Resolve(r.Context(), rt.spec.MCPAccountID)
+	key, err := g.h.secrets.Resolve(r.Context(), mount.AccountID)
 	if err != nil {
 		http.Error(w, "credential missing", http.StatusBadGateway)
 		return
 	}
 	ctx, cancel := g.h.upstreamContext(r.Context())
 	defer cancel()
-	upstreamURL := strings.TrimRight(rt.spec.Policy.MCP.Origin, "/") + "/mcp"
+	upstreamURL := strings.TrimRight(mount.Endpoint.Origin, "/") + "/mcp"
 	upstream, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "bad upstream", http.StatusBadGateway)
@@ -121,7 +128,7 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
-	originAuth := authorityOfOrigin(rt.spec.Policy.MCP.Origin)
+	originAuth := authorityOfOrigin(mount.Endpoint.Origin)
 	if blockedRedirect(resp, originAuth) {
 		followed, locHost, ferr := g.h.followCrossHostRedirect(r.Context(), g.sid, rt, resp, originAuth)
 		if ferr != nil || followed == nil {
@@ -134,7 +141,7 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 		resp = followed
 		host = locHost
-		key = nil // 跨主机不携带 MCP 凭据
+		// 重定向不携带凭据；保留原密钥用于过滤响应，避免回显泄漏。
 	}
 	g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "allowed"})
 	secrets := []string{rt.sentinel}
@@ -142,7 +149,7 @@ func (g *mcpGateway) handleMCP(w http.ResponseWriter, r *http.Request) {
 		secrets = append(secrets, string(key))
 	}
 	if method == "tools/list" {
-		if err := g.writeFilteredList(w, resp, rt.spec.Policy.Tools, secrets); err != nil {
+		if err := g.writeFilteredList(w, resp, mount.Tools, secrets); err != nil {
 			if streamTimeoutStatus(err) == http.StatusGatewayTimeout {
 				g.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditTool, Result: "failed"})
 			}
@@ -354,4 +361,20 @@ func copyMCPHeaders(dst, src http.Header) {
 	if dst.Get("Accept") == "" {
 		dst.Set("Accept", "application/json, text/event-stream")
 	}
+}
+
+// 多挂载使用固定序号路径，不能用未知路径或账号 ID 越过授权表。
+func (g *mcpGateway) mountForPath(rt *sessionRuntime, path string) (policy.MCPMount, bool) {
+	mounts := rt.spec.Policy.MCPMounts
+	if len(mounts) == 1 && path == "/mcp" {
+		return mounts[0], true
+	}
+	if len(mounts) > 1 {
+		for i, mount := range mounts {
+			if path == "/mcp/"+strconv.Itoa(i) {
+				return mount, true
+			}
+		}
+	}
+	return policy.MCPMount{}, false
 }

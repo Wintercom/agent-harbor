@@ -209,12 +209,18 @@ func (d *DesktopAPI) GetPermissionOverview(sessionID string) contracts.Permissio
 	workspace := ""
 	if sessionID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		snap, err := d.app.sessionRef().Get(ctx, sessionID)
-		cancel()
+		defer cancel()
+		reader, ok := d.app.sessionRef().(interface {
+			Boundary(context.Context, string) (contracts.PermissionOverview, error)
+		})
+		if !ok {
+			return contracts.PermissionOverviewResponse{Error: unimplemented()}
+		}
+		overview, err := reader.Boundary(ctx, sessionID)
 		if err != nil {
 			return contracts.PermissionOverviewResponse{Error: mapError(err)}
 		}
-		workspace = snap.Workspace
+		return contracts.PermissionOverviewResponse{Overview: &overview}
 	}
 	hosts := map[string]struct{}{}
 	var allowed []string
@@ -284,18 +290,17 @@ func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) cont
 	}
 	if (in.Decision == "project" || in.Decision == "once") && in.Target != "" {
 		ws := ""
-		if snap, err := d.app.sessionRef().Get(ctx, in.SessionID); err == nil {
-			ws = snap.Workspace
+		if project, ok := d.app.sessionRef().(interface {
+			ProjectWorkspace(context.Context, string) (string, error)
+		}); ok {
+			ws, _ = project.ProjectWorkspace(ctx, in.SessionID)
 		}
-		if in.Decision == "project" {
+		if in.Decision == "project" && ws != "" {
 			d.app.rememberHost(contracts.RememberedHost{
 				Host:      in.Target,
 				Workspace: ws,
 				Scope:     "project",
 			})
-		}
-		if d.app.gate != nil {
-			_ = d.app.gate.AllowExtraHost(in.SessionID, in.Target, in.Decision)
 		}
 	}
 	return contracts.EmptyResponse{}

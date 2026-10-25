@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"os/exec"
@@ -47,6 +48,29 @@ func helper(args []string) int {
 		return 14
 	}
 	switch args[0] {
+	case "terminal":
+		report := func() bool {
+			size, err := unix.IoctlGetWinsize(0, unix.TIOCGWINSZ)
+			if err != nil {
+				fmt.Println("not-tty")
+				return false
+			}
+			fmt.Printf("tty:%dx%d\n", size.Col, size.Row)
+			return true
+		}
+		if !report() {
+			return 2
+		}
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			if scanner.Text() == "size" {
+				if !report() {
+					return 2
+				}
+			} else {
+				fmt.Println("received:" + scanner.Text())
+			}
+		}
 	case "input-lines":
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {

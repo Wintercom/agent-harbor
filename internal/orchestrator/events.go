@@ -42,18 +42,23 @@ func (q *eventQueue) push(e contracts.Event) {
 		return
 	}
 	q.items = append(q.items, e)
-	if e.Output != nil {
-		q.bytes += len(e.Output.Text)
+	if data := eventOutput(e); data != nil {
+		q.bytes += len(data.Text)
 		for q.bytes > outputLimit {
 			for i, old := range q.items {
 				key := old.SessionID + "#" + fmt.Sprint(old.Seq)
-				if old.Output != nil && key != q.marker {
-					q.bytes -= len(old.Output.Text)
+				if data := eventOutput(old); data != nil && key != q.marker {
+					q.bytes -= len(data.Text)
 					// 提示沿用被截断事件的水位，保持严格递增。
 					if q.marker == "" {
-						old.Output = &contracts.OutputData{Stream: "stderr", Text: "[输出已截断]\n"}
+						marker := &contracts.OutputData{Stream: "stderr", Text: "[输出已截断]\n"}
+						if old.Pty != nil {
+							old.Pty = marker
+						} else {
+							old.Output = marker
+						}
 						q.items[i] = old
-						q.bytes += len(old.Output.Text)
+						q.bytes += len(marker.Text)
 						q.marker = key
 					} else {
 						copy(q.items[i:], q.items[i+1:])
@@ -98,8 +103,8 @@ func (q *eventQueue) run() {
 			e := q.items[0]
 			q.items[0] = contracts.Event{}
 			q.items = q.items[1:]
-			if e.Output != nil {
-				q.bytes -= len(e.Output.Text)
+			if data := eventOutput(e); data != nil {
+				q.bytes -= len(data.Text)
 				if e.SessionID+"#"+fmt.Sprint(e.Seq) == q.marker {
 					q.marker = ""
 				}
@@ -137,4 +142,12 @@ func chunks(text string, emit func(string)) {
 		emit(text[:n])
 		text = text[n:]
 	}
+}
+
+// 普通输出和交互流共享同一预算，避免慢 UI 累积终端数据。
+func eventOutput(e contracts.Event) *contracts.OutputData {
+	if e.Pty != nil {
+		return e.Pty
+	}
+	return e.Output
 }

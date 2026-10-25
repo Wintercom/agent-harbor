@@ -159,6 +159,27 @@ func TestResolvePermissionForwardsToSessionService(t *testing.T) {
 	}
 }
 
+type modelSession struct {
+	recordingSession
+	input contracts.SwitchModelInput
+}
+
+func (s *modelSession) SwitchModel(_ context.Context, input contracts.SwitchModelInput) (contracts.SessionSnapshot, error) {
+	s.input = input
+	return contracts.SessionSnapshot{SessionID: input.SessionID, State: contracts.StateRunning}, nil
+}
+
+func TestSwitchModelForwardsToSessionService(t *testing.T) {
+	app := NewApp()
+	svc := &modelSession{}
+	app.SetSessionService(svc)
+	input := contracts.SwitchModelInput{SessionID: "session", ModelAccountID: "new-model"}
+	response := NewDesktopAPI(app).SwitchModel(input)
+	if svc.input != input || response.Error != nil || response.Session == nil || response.Session.SessionID != input.SessionID {
+		t.Fatalf("切换未转交：%+v", response)
+	}
+}
+
 func (r *recordingSession) Create(_ context.Context, spec contracts.SessionSpec) (contracts.SessionSnapshot, error) {
 	r.last = spec
 	return contracts.SessionSnapshot{

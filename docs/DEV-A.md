@@ -1,5 +1,13 @@
 # 研发 A 开发记录
 
+## 运行中切换模型账号
+
+Orchestrator.SwitchModel 校验会话仍 running、账号存在且为 model，并要求新旧账号 ProfileID/Host 一致。Gate.SwitchModel 只在宿主内存中原子更新模型账号引用，不调用上游或回调编排；每个请求先捕获自己的账号，因此在途请求继续使用旧账号，后续请求使用新账号。工作区、Agent、Sentinel、隔离进程和固定模型路由均不变。失败不会改写编排中的当前账号。桌面 SwitchModel 已转发编排。
+
+目前是兼容 profile 内的账号切换，不支持跨协议、跨 profile 或修改 CLI 固定模型名。后续若支持不同模型名，需增加明确的 Kit/Gate 消息重写契约，不能仅替换 Key 冒充模型切换。
+
+测试验证正常切换、错误账号/种类、非 running 拒绝、Gate 更新失败保留原账号、桌面转发；内存 HTTP transport 验证在途旧请求与后续新请求的凭据不混用、撤销后拒绝切换。此验证不调用真实模型服务。
+
 ## 扩权等待与决策生命周期
 
 A 已实现 `RequestPermission`/`ResolvePermission`，等待期间保持 running；用 `permission_needed` 告知 UI，允许 deny/once/project，重复决策和无挂起请求返回 INVALID_ARGUMENT。按会话及精确主机隔离等待，最多 8 个，同一目标不重复挂起；请求取消、超时、Stop、Shutdown 均通过 context 解除等待。Sentinel、URL、通配符、本机地址不能进入扩权载荷。
@@ -169,3 +177,17 @@ Policy 将挂载模式传给 Runtime；macOS Runtime 在应用数据目录 `Agen
 复制使用 `os.Root` 限定源目录范围；拒绝符号链接、特殊文件，单文件上限 64 MiB、总内容 1 GiB、节点数 10 万，逐块检查取消。复制得到独立文件并保留用户执行位；不继承 setuid/setgid 或组/其他用户权限。复制期间原目录仍可能被外部程序修改，副本不承诺文件系统原子快照。
 
 验证覆盖副本修改不影响原文件、链接拒绝、取消、Policy 挂载模式校验、快照副本路径及原目录锁。真实 macOS Runtime 的副本创建与 Destroy 删除测试通过；远程 Agent/模型联调仍待执行。
+
+## 2026-10-25：全量收尾批次（持续验证）
+
+- 输出与 PTY 事件共同计入 1 MiB 队列上限；修复慢 UI 下交互输出绕过预算的问题。Shutdown 先停止全部活动会话，再分别等待清理，不让一个慢会话延迟另一个会话的取消。
+- 会话工具选择支持 0–8 个不重复账号；Policy、Gate、Kit 按顺序交接独立挂载。多挂载分别使用 `/mcp/0` 等路径，持证访问各自固定 `/mcp` 上游，工具白名单互不混用。0 工具只开放模型端口；Claude 空 MCP 配置与 dsh 不装载 MCP 插件。
+- Runtime 新增互斥的 `LaunchSpec.Terminal` 模式，可信宿主分配独立 PTY、绑定控制终端、支持窗口 ioctl 和可取消写入。仍拒绝 fork、未授权执行和提权；Claude 的 JSONL 消息流继续使用管道，不冒充真实终端。真实受限 helper 已验证回显、中文第二轮、resize、终态关闭；尚不能把 helper 证据视为真实 Agent TUI 验收。
+- `dsh.NewConversation` 使用本仓库固定的 `conversation.mjs` 驱动，通过固定版本官方 Agent API 保留同一实例和 Session。驱动随启动配置写入私有 HOME，只导入受信安装目录的官方模块，不装载任务指定代码、不启用动态插件或 shell。桌面装配采用此模式；`dsh.New` 仍保留官方 headless 单任务路径用于回归。输入采用有界 JSONL，正文不进入参数或插件源代码，执行失败退出并由编排清理。
+- 新增真实 dsh + Seatbelt + Gate + 受控 HTTP 上游的两轮验证：第二轮上游请求包含第一轮用户消息及 assistant 回复，且没有新建 Agent 进程；无 MCP 可正常运行。此测试证明受控协议和上下文传递，不代表远程模型回答质量或真实认证 MCP 已验收。
+
+当前未关闭项：Codex Kit 在全量分支的安全移植及受控子进程方案、真实 Agent TUI 与 C 工作台联调、真实远程模型/认证 MCP、扩权 Gate/Policy 与页面完整联调、对外安全证据索引。microVM 仍为 backlog。上述缺口未完成前，不将 A 总体标为完成。
+
+同步 B 最新提交后，删除了另一份未经 Gate 原子校验的 SwitchModel 实现，旧 `SetModelAccount` 入口也统一转交受校验方法。Gate 重定向触发的 `Action` 已改为 `connect`，真实 HTTP→Gate→Orchestrator 测试确认挂起、决策及拒绝恢复；重定向仍不可因批准而自动携带凭据。会话权限一览由编排中的实际 Policy 构建，clone 项目规则标识仍为原工作区。证据索引见 [研发 A 交付状态](A-DELIVERY-STATUS.md)。
+
+再次同步 B 的重定向/DNS 与 Homebrew Claude 修复：多 MCP 跟随判断使用各自挂载的 Origin；跨域响应仍过滤原密钥与 Sentinel。新增失败测试复现“先校验 DNS、再按主机名拨号”的重绑定窗口，现改为仅连接本次校验的公网 IP，禁代理和额外端口，保留 TLS 主机名校验。Homebrew 检测所需配置只开放 OpenSSL/CA 目录，拒绝给 Agent 授权整个 `/opt/homebrew/etc` 或 `/usr/local/etc`。

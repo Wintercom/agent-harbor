@@ -15,26 +15,35 @@ var lookupIP = net.LookupIP
 // ValidatePublicHostname 要求主机名可解析且全部地址为公网全局单播。
 // 拒绝字面量/解析结果中的回环、私网、链路本地、组播、未指定与 CGNAT。
 func ValidatePublicHostname(host string) error {
+	_, err := resolvePublicHostname(host)
+	return err
+}
+
+func resolvePublicHostname(host string) ([]net.IP, error) {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" || strings.ContainsAny(host, "/:#?@") {
-		return fmt.Errorf("gate: invalid egress host")
+		return nil, fmt.Errorf("gate: invalid egress host")
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if isBlockedEgressIP(ip) {
-			return fmt.Errorf("gate: blocked egress address")
+			return nil, fmt.Errorf("gate: blocked egress address")
 		}
-		return nil
+		return []net.IP{append(net.IP{}, ip...)}, nil
 	}
 	ips, err := lookupIP(host)
 	if err != nil || len(ips) == 0 {
-		return fmt.Errorf("gate: dns lookup failed")
+		return nil, fmt.Errorf("gate: dns lookup failed")
 	}
 	for _, ip := range ips {
 		if isBlockedEgressIP(ip) {
-			return fmt.Errorf("gate: host resolves to blocked address")
+			return nil, fmt.Errorf("gate: host resolves to blocked address")
 		}
 	}
-	return nil
+	result := make([]net.IP, 0, len(ips))
+	for _, ip := range ips {
+		result = append(result, append(net.IP{}, ip...))
+	}
+	return result, nil
 }
 
 func isBlockedEgressIP(ip net.IP) bool {
