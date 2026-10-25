@@ -7,7 +7,7 @@
 | 基线代码 | 分支 `feat/page-design-full`；拉取后以 `git rev-parse HEAD` 为准 |
 | 对照 | [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) **v1.2**、[PAGE-API-MAP](PAGE-API-MAP.md)、[PAGE-DESIGN](PAGE-DESIGN.md)、[MODULE-DESIGN](MODULE-DESIGN.md)、[MVP-2D3P](MVP-2D3P.md)、[ACCEPTANCE](ACCEPTANCE.md)、[DECISIONS](DECISIONS.md)、[ARCHITECTURE](ARCHITECTURE.md) |
 
-**读法**：本分支产品真源是 **PAGE-DESIGN 全文**。先读 SYSTEM-DESIGN v2 + CONTRACT v1.2 → §3 全量并行实现 → §4 任务卡（**含** OAuth/clone/PTY）。P0 I 证据可并行，但**不得**再以排期裁掉首版能力。mock ≠ I 通过。
+**读法**：开工前先过 [GO-CHECKLIST](GO-CHECKLIST.md)（遗漏/未拍板收口）。产品真源是 **PAGE-DESIGN 全文**。再读 SYSTEM-DESIGN v2 + CONTRACT v1.2 → §3 全量并行实现 → §4 任务卡（**含** OAuth/clone/PTY）。P0 I 证据可并行，但**不得**再以排期裁掉首版能力。mock ≠ I 通过。
 
 **文档分工**
 
@@ -697,5 +697,6 @@ P1-B-03 OAuth ──► P1-C-06
 | [ACCEPTANCE.md](ACCEPTANCE.md) | 编号与证据格式 |
 | [MANUAL-INTEGRATION-TEST.md](MANUAL-INTEGRATION-TEST.md) | 逐步人工用例 |
 | [DECISIONS.md](DECISIONS.md) | 上游与版本登记 |
+| [GO-CHECKLIST.md](GO-CHECKLIST.md) | **开工检查与未拍板收口** |
 | [DEV-A.md](DEV-A.md) / [DEV-B.md](DEV-B.md) / [DEV-C.md](DEV-C.md) | 角色笔记 |
 | [demos/README.md](../demos/README.md) | 演示与工作区 |

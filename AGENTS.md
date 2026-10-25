@@ -57,6 +57,7 @@ Agent Harbor 是安全优先的桌面 Agent 沙箱：在隔离环境中运行 Cl
 | 文档 | 阅读场景 |
 |---|---|
 | [模块设计与并行开发](docs/MODULE-DESIGN.md) | 当前模块边界、依赖、所有权、替身、共享文件和检查点 |
+| [开工检查](docs/GO-CHECKLIST.md) | **本分支开工**：遗漏/未拍板收口、本周 ABC、禁止项 |
 | [V1 总纲](docs/SYSTEM-DESIGN.md) | **本分支**：架构分层、模块所有权、ABC 分工；易混主责见 §6.1 |
 | [接口契约](docs/CONTRACT.md) | **唯一方法/DTO 来源（v1.2 全量）**；含 OAuth/PTY/clone/SwitchModel |
 | [任务拆分](docs/TASK-SPLIT-ABC.md) | A/B/C 任务卡（**v2.0 全量 PAGE**；分支 `feat/page-design-full`） |

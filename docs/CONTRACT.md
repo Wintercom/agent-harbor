@@ -11,6 +11,19 @@ A/B 将声明落成 Go 类型与绑定，C 按本文 + [PAGE-DESIGN](PAGE-DESIGN
 
 **本分支包含（不再延后）**：MCP OAuth、工作区 `clone`、内嵌 PTY、`SwitchModel`。
 
+### 1.0 全量能力最小约定（开工补注 · 2026-10-25）
+
+与 [GO-CHECKLIST](GO-CHECKLIST.md) §3 一致；实现不得弱于下表。
+
+| 能力 | 约定 |
+|---|---|
+| OAuth | `StartMcpOAuth` → 系统浏览器打开 `authUrl`；桌面在 **127.0.0.1** 收回环回调（具体端口写入 DECISIONS）；成功后账号出现在 `ListAccounts`，pending 清除；UI **轮询**列表或「我已完成登录」再刷；**暂不**新增 `account_changed` 事件；`CancelMcpOAuth` 清 pending |
+| clone | `mountMode=clone` 时 Runtime 在应用数据目录建副本并挂载；快照 `workspace` 为副本路径；清理/Destroy 删副本；**V1 无自动导回合并 API**（可 Finder 打开副本） |
+| PTY | `WritePty`/`ResizePty` + 事件 `pty`；不支持时 `UNIMPLEMENTED` 或 `INVALID_ARGUMENT`，**不得缺方法名** |
+| 默认挂载 | 向导默认推荐 **clone**；用户可选 direct（须强警告） |
+| 扩权 | 快照 state **不**增加 `awaiting_permission`；仅 `permission_needed` + `ResolvePermission` |
+| stdio MCP | **不在**本契约支持面；仅远程 HTTP MCP（Token 或 OAuth） |
+
 ## 1. 前端方法、返回与校验
 
 Wails 绑定对象只导出下列业务方法；Go 为 PascalCase，`frontend/src/api.js` 为 camelCase。页面不得直接使用内部服务。下列为可独立编译的接口规格；类型按 §4 拆入实际包。

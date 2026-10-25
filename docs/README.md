@@ -5,10 +5,13 @@
 | **`feat/page-design-full`（当前）** | 产品真源 = **PAGE-DESIGN 全量**；接口 = **CONTRACT v1.2**；分工 = **TASK-SPLIT v2.0** + **SYSTEM-DESIGN v2**。与 MVP「两天裁剪」冲突时 **以全量为准**。 |
 | `main` / 两天演示 | [MVP-2D3P.md](MVP-2D3P.md) 仍描述历史两天缩减范围；**不要**在本分支上按「延后 OAuth/clone/PTY」开工。 |
 
+**下一步按分工开发**：先读 [GO-CHECKLIST.md](GO-CHECKLIST.md)（遗漏检查 + 未拍板收口 + 本周开工项），再按角色拆 TASK-SPLIT。
+
 当前目录结构按 [Go/Wails 目录设计](DIRECTORY-STRUCTURE.md) 组织。完整长期产品文档保留目标，未实现能力勿当成已交付。
 
 | 文档 | 用途 |
 |---|---|
+| [GO-CHECKLIST.md](GO-CHECKLIST.md) | **开工检查：文档齐备、DESIGN§13 收口、OAuth/clone/PTY 最小约定、本周 ABC 项** |
 | [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) | **V1 总纲：架构分层、模块拆分、ABC 分工、范围裁定（v2 全量）**；易混主责见 §6.1 |
 | [MODULE-DESIGN.md](MODULE-DESIGN.md) | 包边界、替身、资源所有权、并行检查点 |
 | [CONTRACT.md](CONTRACT.md) | **接口唯一来源**（**v1.2 全量**：含 OAuth/PTY/clone/SwitchModel） |
