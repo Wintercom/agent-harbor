@@ -14,7 +14,7 @@
 | 0:50 | 工作区 → 确认默认任务文案 → 开始 | 任务为固定非敏感脚本；切到工作台 provisioning→running |
 | 1:20 | 指输出与审计列表 | 有文本输出；MCP `allowed` 审计 |
 | 1:50 | 等自动 stopped，或点停止 | 终态 stopped；可回配置再开 |
-| 2:10 | 场景切「认证失败」再连模型 | 明确 `AUTH_FAILED`，不进入会话 |
+| 2:10 | 场景切「认证失败」再连模型 | 明确 `UPSTREAM_AUTH_FAILED`，不进入会话 |
 | 2:30 | 场景「隔离不可用」点开始 | `ISOLATION_UNAVAILABLE`；不假装已隔离 |
 | 2:45 | 场景 cleanup：开始后马上停止两次 | 首次 failed+未清理提示；再停后 stopped |
 
