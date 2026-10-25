@@ -19,8 +19,7 @@ import (
 	"github.com/liyufei916/agent-harbor/internal/contracts"
 )
 
-// MacOS 当前只开放严格单进程模式，内核拒绝 fork/posix_spawn。
-// 没有未经验证的“允许子进程”开关；此限制可能使部分 Agent 工具不可用。
+// MacOS 默认严格禁止 fork；只有 Kit 明确声明时才使用受控子进程 profile。
 type MacOS struct {
 	mu      sync.Mutex
 	entries map[string]*entry
@@ -40,6 +39,11 @@ var _ Runtime = (*MacOS)(nil)
 func NewMacOS() *MacOS { return &MacOS{entries: make(map[string]*entry)} }
 
 func (r *MacOS) Health(ctx context.Context) error {
+	return r.HealthFor(ctx, false)
+}
+
+// HealthFor 验证指定的 Runtime 能力。允许子进程时仍只开放固定工具路径。
+func (r *MacOS) HealthFor(ctx context.Context, allowChildren bool) error {
 	if ctx.Err() != nil {
 		return runtimeError("CANCELLED")
 	}
@@ -65,16 +69,20 @@ func (r *MacOS) Health(ctx context.Context) error {
 	if err := os.WriteFile(inside, []byte("harbor-health-fixture"), 0600); err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil)
+	profile, err := makeProfile(allowed, allowed, []string{"/bin/cat"}, nil, allowChildren)
 	if err != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	if strings.Contains(profile, "(allow default)") || !strings.Contains(profile, "(deny default)") || !strings.Contains(profile, "(deny process-fork)") || strings.Contains(profile, "(allow process-fork)") {
+	if strings.Contains(profile, "(allow default)") || !strings.Contains(profile, "(deny default)") || strings.Contains(profile, "(allow process-fork)") != allowChildren || strings.Contains(profile, "(deny process-fork)") == allowChildren {
 		return runtimeError("ISOLATION_UNAVAILABLE")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", "-p", profile, "/usr/bin/true")
+	probeCommand, probeArgs := "/usr/bin/true", []string{}
+	if allowChildren {
+		probeCommand, probeArgs = "/bin/sh", []string{"-c", "/usr/bin/true"}
+	}
+	cmd := exec.CommandContext(probeCtx, "/usr/bin/sandbox-exec", append([]string{"-p", profile, probeCommand}, probeArgs...)...)
 	cmd.Dir, cmd.Env = allowed, []string{"HOME=" + allowed, "PATH=/usr/bin:/bin"}
 	if cmd.Run() != nil {
 		return runtimeError("ISOLATION_UNAVAILABLE")
@@ -101,7 +109,7 @@ func (r *MacOS) Create(ctx context.Context, spec RuntimeSpec) (Handle, error) {
 }
 
 func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Handle, error) {
-	if err := r.Health(ctx); err != nil {
+	if err := r.HealthFor(ctx, spec.AllowChildProcesses); err != nil {
 		return Handle{}, err
 	}
 	if spec.SessionID == "" || spec.MountMode != "direct" || (!offline && len(spec.AllowedTCP) == 0) || len(spec.ReadOnlyPaths) == 0 {
@@ -144,7 +152,7 @@ func (r *MacOS) create(ctx context.Context, spec RuntimeSpec, offline bool) (Han
 	if err := os.Mkdir(filepath.Join(home, "tmp"), 0700); err != nil {
 		return Handle{}, runtimeError("ISOLATION_UNAVAILABLE")
 	}
-	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP)
+	profile, err := makeProfile(workspace, home, readOnly, spec.AllowedTCP, spec.AllowChildProcesses)
 	if err != nil {
 		return Handle{}, err
 	}
@@ -278,6 +286,7 @@ func (r *MacOS) Exec(ctx context.Context, handle Handle, launch LaunchSpec, outp
 	}
 	args := append([]string{"-f", e.profile, command}, launch.Args...)
 	cmd := exec.Command("/usr/bin/sandbox-exec", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Dir, cmd.Env, cmd.Stdin = e.workspace, env, bytes.NewReader(launch.Stdin)
 	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
@@ -389,7 +398,10 @@ func (p *macProcess) kill(cancelled bool) {
 		return
 	default:
 	}
-	if err := p.cmd.Process.Kill(); err == nil {
+	pid := p.cmd.Process.Pid
+	groupErr := syscall.Kill(-pid, syscall.SIGKILL)
+	processErr := p.cmd.Process.Kill()
+	if groupErr == nil || processErr == nil {
 		p.cancelled = cancelled
 	}
 }

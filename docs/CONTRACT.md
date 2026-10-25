@@ -213,7 +213,7 @@ type Runtime interface {
 
 ### dsh 契约增量（2026-10-25）
 
-`ListAgents` 返回已注册 Claude 与 dsh，未安装或隔离/版本检测失败时 `available=false`。`modelProfileId` 为可选兼容字段：Claude 使用 `demo-model`，dsh 使用 `dsh-model`。页面切换 Agent 后清空当前模型账号引用和未提交 Key，保留工作区/MCP；Policy 仍在后端拒绝跨 Agent 模型账号，不能依赖页面校验。dsh 配置及验证见 [DSH-INTEGRATION.md](DSH-INTEGRATION.md)。
+`ListAgents` 返回已注册 Claude、Codex 与 dsh，未安装或隔离/版本检测失败时 `available=false`。`modelProfileId` 为可选兼容字段：Claude 使用 `demo-model`，Codex 使用 `codex-model`，dsh 使用 `dsh-model`。页面切换 Agent 后清空当前模型账号引用和未提交 Key，保留工作区/MCP；Policy 仍在后端拒绝跨 Agent 模型账号，不能依赖页面校验。Codex 使用 OpenAI Responses provider，配置只写入私有 `CODEX_HOME`，真实 Key 仍由 Gate 代理替换。dsh 配置及验证见 [DSH-INTEGRATION.md](DSH-INTEGRATION.md)。
 
 `FixedProfile` / `EndpointRule` 新增宿主受信 `BasePath` 字段，仅用于模型路由前缀（如 `/anthropic`），不来自 DTO、任务或沙箱。Gate 先对执行面 `/v1/messages` 做原白名单和 Sentinel 检查，再拼接前缀访问固定 origin；Connections 探测使用同一前缀。前缀拒绝穿越、编码、查询串和片段，origin 继续仅允许主机级 URL。
 
@@ -313,7 +313,7 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 
 ## 5. 演进与版本
 
-当前实现注记（不改变 v1 方法/字段）：A 已实现的 macOS Runtime 是严格单进程子集，由操作系统拒绝 fork/posix_spawn，尚不支持 Bash、外部 git 等子进程工具。Claude 固定版本离线初始化通过不代表真实模型/MCP 任务通过；不得将该子集标为完整执行能力交付。实现证据与剩余工作见 [研发 A 开发记录](DEV-A.md)。
+当前实现注记（不改变 v1 方法/字段）：A 已实现的 macOS Runtime 默认是严格单进程子集，由操作系统拒绝 fork/posix_spawn；Codex Kit 可显式请求受控子进程 profile，该 profile 仅允许固定工具路径并按进程组清理。Claude/dsh 仍保持严格模式。Codex 固定版本离线检测和受控 Runtime 通过不代表真实模型/MCP 任务通过；不得将其标为完整执行能力交付。实现证据与剩余工作见 [研发 A 开发记录](DEV-A.md)。
 
 公开 Event 在进入事件传输前必须满足 `contracts.Event.Validate` 的纯数据形状校验；该校验不替代策略、凭据或操作系统边界检查。
 

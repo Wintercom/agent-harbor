@@ -18,7 +18,7 @@ test("配置页切换 dsh 使用对应 profile 并清空旧模型，刷新保留
     const view=mountSetup(root,ctx);
     await view.refreshAgents();
     const select=nodes.get("#agent-select");
-    assert.equal(select.children.length,2);
+    assert.equal(select.children.length,3);
     select.value="dsh";select.onchange();
     assert.equal(ctx.state.agentId,"dsh");
     assert.equal(ctx.state.modelAccount,null);

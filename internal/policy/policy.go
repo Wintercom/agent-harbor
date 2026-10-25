@@ -84,7 +84,7 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if req.Model.Kind != "model" {
 		return PolicySnapshot{}, ErrKindMismatch
 	}
-	if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel {
+	if req.AgentID == "dsh" && req.Model.ProfileID != ProfileDSHModel || req.AgentID == "claude" && req.Model.ProfileID != ProfileDemoModel || req.AgentID == "codex" && req.Model.ProfileID != ProfileCodexModel {
 		return PolicySnapshot{}, ErrKindMismatch
 	}
 	if !ValidBasePath(modelProf.BasePath) {

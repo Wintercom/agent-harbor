@@ -2,12 +2,30 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Agent Harbor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Harbor — 配置与工作台</title>
+    <script type="module" crossorigin src="/assets/index-BAVJCiks.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BjRtlH2d.css">
   </head>
   <body>
-    <p>
-      占位前端资源，保证 <code>go:embed</code> 与 CI 可编译。正式 UI 请在
-      <code>frontend/</code> 执行 <code>npm run build</code> 覆盖本目录。
-    </p>
+    <div class="app">
+      <header class="top">
+        <div>
+          <strong class="brand">Agent Harbor</strong>
+          <span id="mode-badge" class="badge mock">模拟模式</span>
+        </div>
+        <nav class="tabs">
+          <button type="button" class="tab on" data-tab="setup">配置</button>
+          <button type="button" class="tab" data-tab="session">工作台</button>
+        </nav>
+      </header>
+
+      <p class="warn-banner">
+        两天版：direct 工作区会直接改原文件；凭据仅在宿主机内存，重启需重填。浏览器默认 mock，不能代替真实验收。
+      </p>
+
+      <main id="view-setup" class="view"></main>
+      <main id="view-session" class="view hidden"></main>
+    </div>
   </body>
 </html>

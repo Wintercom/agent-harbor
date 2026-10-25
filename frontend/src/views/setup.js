@@ -137,7 +137,7 @@ export function mountSetup(root, ctx) {
     const changed = ctx.state.agentId !== id;
     ctx.state.agentId = id;
     ctx.state.agentAvailable = !!a?.available;
-    els.modelProfile.value = a?.modelProfileId || (id === "dsh" ? "dsh-model" : "demo-model");
+    els.modelProfile.value = a?.modelProfileId || (id === "dsh" ? "dsh-model" : id === "codex" ? "codex-model" : "demo-model");
     if (changed) {
       ctx.state.modelAccount = null;
       els.modelKey.value = "";

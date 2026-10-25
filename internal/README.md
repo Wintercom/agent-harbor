@@ -15,7 +15,7 @@
 
 ## 入口与依赖
 
-根目录 `main.go` 只负责 Wails v3 启动、资源嵌入和窗口。`internal/desktop` 负责 DesktopAPI、错误转换，并在 `AttachOrchestrator` 中注入 A 的 Runtime、Claude Kit 与 Orchestrator。只绑定 DesktopAPI，不直接绑定 Runtime、Secrets 或 Gate。
+根目录 `main.go` 只负责 Wails v3 启动、资源嵌入和窗口。`internal/desktop` 负责 DesktopAPI、错误转换，并在 `AttachOrchestrator` 中注入 A 的 Runtime、Claude/Codex/dsh Kit 与 Orchestrator。只绑定 DesktopAPI，不直接绑定 Runtime、Secrets 或 Gate。
 
 Orchestrator 调用 Policy、Gate、Kit、Runtime；Gate 经授权后解析 Secrets，连接测试也由 Gate 完成。Kit 不读取 Secrets，Runtime 不解释账号与 MCP 授权。Gate/Runtime 通过注入回调报告事件，不反向导入 orchestrator。contracts 不依赖业务层或 Wails。
 

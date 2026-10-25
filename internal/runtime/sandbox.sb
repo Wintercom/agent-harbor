@@ -3,7 +3,7 @@
 (deny default)
 (allow syscall* mach-bootstrap)
 (import "dyld-support.sb")
-(deny process-fork)
+{{if .AllowChildren}}(allow process-fork){{else}}(deny process-fork){{end}}
 (deny system-privilege)
 (allow sysctl-read)
 (allow file-read* file-map-executable

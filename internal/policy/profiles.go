@@ -9,9 +9,10 @@ import (
 
 // 固定 profileId：首小时确认后不得由前端随意改写 origin。
 const (
-	ProfileDemoModel = "demo-model"
-	ProfileDemoMCP   = "demo-mcp"
-	ProfileDSHModel  = "dsh-model"
+	ProfileDemoModel  = "demo-model"
+	ProfileDemoMCP    = "demo-mcp"
+	ProfileDSHModel   = "dsh-model"
+	ProfileCodexModel = "codex-model"
 )
 
 // FixedProfile 描述受信后端配置中的固定上游。
@@ -23,7 +24,7 @@ type FixedProfile struct {
 	Paths                 []string
 	Tools                 []string // MCP 工具白名单；模型侧可为空
 	Host                  string   // origin 主机名
-	Protocol              string   // anthropic 或 streamable-http
+	Protocol              string   // anthropic、openai-responses 或 streamable-http
 	Model                 string   // 固定模型名，与 Kit 一致
 	AllowInsecureLoopback bool     // 仅受控测试可显式启用
 	TestPath              string   // 连接测试使用的路径
@@ -41,9 +42,10 @@ func DefaultProfiles() map[string]FixedProfile {
 		}
 	}
 	return map[string]FixedProfile{
-		ProfileDSHModel:  {ID: ProfileDSHModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL")), Origin: envOr("HARBOR_DSH_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_DSH_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
-		ProfileDemoModel: {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
-		ProfileDemoMCP:   {ID: ProfileDemoMCP, Kind: "mcp", Protocol: "streamable-http", Origin: mcpOrigin, Host: hostOfOrigin(mcpOrigin), Paths: []string{"/mcp"}, TestPath: "/mcp", Tools: tools},
+		ProfileDSHModel:   {ID: ProfileDSHModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL")), Origin: envOr("HARBOR_DSH_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_DSH_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_DSH_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
+		ProfileCodexModel: {ID: ProfileCodexModel, Kind: "model", Protocol: "openai-responses", Model: strings.TrimSpace(os.Getenv("HARBOR_CODEX_MODEL")), Origin: envOr("HARBOR_CODEX_MODEL_ORIGIN", ""), Host: hostOfOrigin(envOr("HARBOR_CODEX_MODEL_ORIGIN", "")), BasePath: strings.TrimRight(strings.TrimSpace(os.Getenv("HARBOR_CODEX_MODEL_BASE_PATH")), "/"), Paths: []string{"/v1/responses"}, TestPath: "/v1/responses"},
+		ProfileDemoModel:  {ID: ProfileDemoModel, Kind: "model", Protocol: "anthropic", Model: strings.TrimSpace(os.Getenv("HARBOR_CLAUDE_MODEL")), Origin: modelOrigin, Host: hostOfOrigin(modelOrigin), Paths: []string{"/v1/messages"}, TestPath: "/v1/messages"},
+		ProfileDemoMCP:    {ID: ProfileDemoMCP, Kind: "mcp", Protocol: "streamable-http", Origin: mcpOrigin, Host: hostOfOrigin(mcpOrigin), Paths: []string{"/mcp"}, TestPath: "/mcp", Tools: tools},
 	}
 }
 
@@ -66,7 +68,7 @@ func (p FixedProfile) ValidConnection() bool {
 		return false
 	}
 	if p.Kind == "model" {
-		return p.Protocol == "anthropic" && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
+		return (p.Protocol == "anthropic" || p.Protocol == "openai-responses") && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
 	}
 	return p.Kind == "mcp" && p.Protocol == "streamable-http" && len(p.Tools) > 0
 }
@@ -85,6 +87,15 @@ func ValidBasePath(path string) bool {
 		}
 	}
 	return true
+}
+
+// JoinBasePath 将受信路径前缀与请求路径拼接一次，避免 provider 已把 /v1 放在请求路径中时重复拼接。
+func JoinBasePath(base, path string) string {
+	base = strings.TrimRight(base, "/")
+	if base == "" || path == base || strings.HasPrefix(path, base+"/") {
+		return path
+	}
+	return base + "/" + strings.TrimLeft(path, "/")
 }
 
 func envOr(key, fallback string) string {

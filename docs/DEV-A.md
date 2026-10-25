@@ -131,3 +131,8 @@ git diff --check
 以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
 
 2026-10-25 最新接线与修复状态见 [ABC 架构及联调审查](ABC-INTEGRATION-REVIEW.md#修复进展)。上文按日期保留的“待 Wails/真实组件装配”是历史记录；当前已完成装配，但真实上游任务与完整业务验收仍待执行。
+## 2026-10-25 Codex 受控子进程 Runtime
+
+在严格单进程 Runtime 基础上增加显式 `RuntimeSpec.AllowChildProcesses`。只有 Codex Kit 的 `KitInfo.NeedsChildProcesses=true` 时，编排层才调用 `HealthFor(..., true)` 并创建受控 profile；Claude/dsh 保持 `deny process-fork`。
+
+受控 profile 仍使用默认拒绝、禁止提权、Gate-only 网络和私有 HOME，仅允许固定 shell/工具路径。执行入口设置独立进程组，Destroy/取消时同时终止根进程组并等待确认。`go test -tags harbor_platform ./internal/runtime` 已验证严格模式拒绝 fork、受控模式可运行白名单工具。真实 Codex 模型任务和工具链仍待人工联调。
