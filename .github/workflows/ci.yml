@@ -63,6 +63,7 @@ jobs:
         run: |
           export GOBIN="$RUNNER_TEMP/harbor-bin"
           mkdir -p "$GOBIN"
+          export PATH="$GOBIN:$PATH"
           echo "$GOBIN" >> "$GITHUB_PATH"
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.34
           npm ci --prefix frontend
