@@ -35,3 +35,11 @@ func TestReadToolsListReadsJSONToEOF(t *testing.T) {
 		t.Fatalf("JSON tools/list 未读取: %q, %v", got, err)
 	}
 }
+
+func TestToolsSSEToJSON(t *testing.T) {
+	body := []byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[]}}\n\n")
+	got, ok := toolsSSEToJSON(body)
+	if !ok || string(got) != `{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}` {
+		t.Fatalf("SSE 未转换为 JSON: %q", got)
+	}
+}
