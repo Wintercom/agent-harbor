@@ -52,6 +52,8 @@ function emit(partial) {
     output: partial.output || null,
     audit: partial.audit || null,
     error: partial.error || null,
+    permission: partial.permission || null,
+    pty: partial.pty || null,
   };
   if (session && event.sessionId === session.sessionId) session.seq = event.seq;
   if (event.state) event.state = { ...event.state, seq: event.seq };
@@ -241,16 +243,24 @@ export async function connectModel(input) {
       error: err("UPSTREAM_AUTH_FAILED", "模型认证失败（模拟）", false),
     };
   }
-  if (!input?.profileId || !input?.name || !input?.apiKey) {
+  if (!input?.name || !input?.apiKey) {
     return {
       account: null,
-      error: err("INVALID_ARGUMENT", "profileId、name、apiKey 均必填"),
+      error: err("INVALID_ARGUMENT", "name、apiKey 均必填"),
     };
   }
-  if (![FIXED.modelProfileId, "dsh-model"].includes(input.profileId)) {
+  const profileId = input.profileId || "custom";
+  const allowed = [FIXED.modelProfileId, "dsh-model", "custom"];
+  if (!allowed.includes(profileId)) {
     return {
       account: null,
       error: err("INVALID_ARGUMENT", "模型 profile 不受支持"),
+    };
+  }
+  if (profileId === "custom" && !input.origin) {
+    return {
+      account: null,
+      error: err("INVALID_ARGUMENT", "自定义模型须提供 origin"),
     };
   }
   if (busy || (session && !["stopped", "failed"].includes(session.state))) {
@@ -259,14 +269,81 @@ export async function connectModel(input) {
       error: err("SESSION_BUSY", "会话进行中，拒绝重新连接"),
     };
   }
+  let host = "demo-model.local";
+  if (input.origin) {
+    try {
+      host = new URL(input.origin).host;
+    } catch {
+      return {
+        account: null,
+        error: err("INVALID_ARGUMENT", "origin 非法"),
+      };
+    }
+  }
   modelAccount = {
     id: "mock-model",
     kind: "model",
     name: input.name,
-    profileId: input.profileId,
-    host: "demo-model.local",
+    profileId,
+    host,
+    origin: input.origin || "",
   };
   return { account: { ...modelAccount }, error: null };
+}
+
+export async function startMcpOAuth(input) {
+  const pendingId = `oauth-${Date.now()}`;
+  schedule(400, () => {
+    mcpAccount = {
+      id: "mock-mcp",
+      kind: "mcp",
+      name: input?.name || "OAuth MCP",
+      profileId: input?.profileId || FIXED.mcpProfileId,
+      host: "oauth.mcp.local",
+      authMode: "oauth",
+    };
+  });
+  return {
+    authUrl: "https://example.com/oauth/mock",
+    pendingId,
+    error: null,
+  };
+}
+
+export async function cancelMcpOAuth() {
+  return { error: null };
+}
+
+export async function switchModel(input) {
+  if (!session || session.sessionId !== input?.sessionId) {
+    return {
+      session: null,
+      error: err("SESSION_NOT_FOUND", "会话不存在（模拟）"),
+    };
+  }
+  if (!modelAccount || modelAccount.id !== input.modelAccountId) {
+    return {
+      session: null,
+      error: err("ACCOUNT_NOT_FOUND", "模型账号不存在（模拟）"),
+    };
+  }
+  return { session: snapshot(), error: null };
+}
+
+export async function writePty(input) {
+  if (!session || session.sessionId !== input?.sessionId) {
+    return { error: err("INVALID_ARGUMENT", "无可用 PTY（模拟）") };
+  }
+  emit({
+    type: "pty",
+    sessionId: session.sessionId,
+    pty: { stream: "stdout", text: `[pty echo] ${input.data || ""}` },
+  });
+  return { error: null };
+}
+
+export async function resizePty() {
+  return { error: null };
 }
 
 export async function connectMcp(input) {
@@ -343,8 +420,16 @@ export async function createSession(spec) {
       error: err("INVALID_ARGUMENT", "请先连接模型账号"),
     };
   }
-  if (modelAccount.profileId !== (spec.agentId === "dsh" ? "dsh-model" : "demo-model")) {
-    return {session: null, error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配")};
+  const expected =
+    spec.agentId === "dsh" ? "dsh-model" : "demo-model";
+  if (
+    modelAccount.profileId !== "custom" &&
+    modelAccount.profileId !== expected
+  ) {
+    return {
+      session: null,
+      error: err("INVALID_ARGUMENT", "Agent 与模型 profile 不匹配"),
+    };
   }
   if (spec.mcpIds.length > 0) {
     if (!mcpAccount || !spec.mcpIds.every((id) => id === mcpAccount.id)) {
@@ -368,6 +453,8 @@ export async function createSession(spec) {
   session = {
     sessionId,
     state: "provisioning",
+    mountMode: spec.mountMode === "clone" ? "clone" : "direct",
+    mcpIds: [...(spec.mcpIds || [])],
     seq: 0,
     workspace: spec.workspace,
     agentId: spec.agentId,

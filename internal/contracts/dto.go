@@ -191,4 +191,37 @@ type DesktopAPI interface {
 	ResolvePermission(ResolvePermissionInput) EmptyResponse
 	GetUIPrefs() UIPrefsResponse
 	SetUIPrefs(UIPrefs) UIPrefsResponse
+	SwitchModel(SwitchModelInput) SessionResponse
+	StartMcpOAuth(StartMcpOAuthInput) McpOAuthResponse
+	CancelMcpOAuth(pendingID string) EmptyResponse
+	WritePty(PtyInput) EmptyResponse
+	ResizePty(PtyInput) EmptyResponse
+}
+
+// SwitchModelInput 切换会话当前模型（影响之后出站）。
+type SwitchModelInput struct {
+	SessionID      string `json:"sessionId"`
+	ModelAccountID string `json:"modelAccountId"`
+}
+
+// StartMcpOAuthInput 启动 MCP OAuth。
+type StartMcpOAuthInput struct {
+	Name      string `json:"name"`
+	ProfileID string `json:"profileId"`
+	Origin    string `json:"origin,omitempty"`
+}
+
+// McpOAuthResponse OAuth 启动结果。
+type McpOAuthResponse struct {
+	AuthURL   string    `json:"authUrl"`
+	PendingID string    `json:"pendingId"`
+	Error     *AppError `json:"error"`
+}
+
+// PtyInput PTY 写入或改尺寸。
+type PtyInput struct {
+	SessionID string `json:"sessionId"`
+	Data      string `json:"data,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
 }

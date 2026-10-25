@@ -196,3 +196,33 @@ func (d *DesktopAPI) GetUIPrefs() contracts.UIPrefsResponse {
 func (d *DesktopAPI) SetUIPrefs(prefs contracts.UIPrefs) contracts.UIPrefsResponse {
 	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
 }
+
+// SwitchModel 切换会话模型（全量 PAGE 占位）。
+func (d *DesktopAPI) SwitchModel(in contracts.SwitchModelInput) contracts.SessionResponse {
+	_ = in
+	return contracts.SessionResponse{Error: unimplemented()}
+}
+
+// StartMcpOAuth 启动 MCP OAuth（占位）。
+func (d *DesktopAPI) StartMcpOAuth(in contracts.StartMcpOAuthInput) contracts.McpOAuthResponse {
+	_ = in
+	return contracts.McpOAuthResponse{Error: unimplemented()}
+}
+
+// CancelMcpOAuth 取消 OAuth（占位）。
+func (d *DesktopAPI) CancelMcpOAuth(pendingID string) contracts.EmptyResponse {
+	_ = pendingID
+	return contracts.EmptyResponse{Error: unimplemented()}
+}
+
+// WritePty 写入 PTY（占位）。
+func (d *DesktopAPI) WritePty(in contracts.PtyInput) contracts.EmptyResponse {
+	_ = in
+	return contracts.EmptyResponse{Error: unimplemented()}
+}
+
+// ResizePty 调整 PTY（占位）。
+func (d *DesktopAPI) ResizePty(in contracts.PtyInput) contracts.EmptyResponse {
+	_ = in
+	return contracts.EmptyResponse{Error: unimplemented()}
+}

@@ -44,6 +44,11 @@ export function createLiveTransport() {
     resolvePermission: bind("ResolvePermission"),
     getUIPrefs: bind("GetUIPrefs"),
     setUIPrefs: bind("SetUIPrefs"),
+    switchModel: bind("SwitchModel"),
+    startMcpOAuth: bind("StartMcpOAuth"),
+    cancelMcpOAuth: bind("CancelMcpOAuth"),
+    writePty: bind("WritePty"),
+    resizePty: bind("ResizePty"),
     onEvent(callback) {
       return Events.On("harbor:event", (ev) => callback(unwrapEvent(ev)));
     },

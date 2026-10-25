@@ -2,14 +2,14 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | **已定案**（2026-10-25）。无需冻结会；实现以本文 + `internal/contracts` 为准 |
-| 架构总纲 | [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) |
+| 状态 | **v1.2 本分支全量 PAGE**（`feat/page-design-full`）；实现以本文 + `internal/contracts` 为准 |
+| 架构总纲 | [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) v2 |
 | 屏级映射 | [PAGE-API-MAP.md](PAGE-API-MAP.md) |
 | 进度 | 共享类型与编排已落地；真实隔离/上游兼容性仍见 [DEV-A](DEV-A.md) |
 
-A/B 将声明落成 Go 类型与绑定，C 按本文开发页面与 mock；不能各自重命名或猜测字段。与旧文档冲突时以本文为准；范围及安全要求以根 AGENTS.md 与 SYSTEM-DESIGN §4 为准。
+A/B 将声明落成 Go 类型与绑定，C 按本文 + [PAGE-DESIGN](PAGE-DESIGN.md) 开发页面与 mock。与旧「裁剪版」冲突时：**本分支以 PAGE-DESIGN 全量为准**。
 
-**V1 明确延后（本文不提供方法）**：MCP OAuth、工作区 clone、内嵌 PTY。
+**本分支包含（不再延后）**：MCP OAuth、工作区 `clone`、内嵌 PTY、`SwitchModel`。
 
 ## 1. 前端方法、返回与校验
 
@@ -49,7 +49,7 @@ type AccountInfo struct {
     ProfileID string `json:"profileId"`
     Host string `json:"host"`
 }
-// SessionSpec.MountMode 仅允许 "direct"（缺省）；"clone" → INVALID_ARGUMENT（V1 延后）。
+// SessionSpec.MountMode："direct"（缺省）| "clone"。
 // MCPIDs 长度 0..8；0 表示本会话不挂 MCP。
 type SessionSpec struct {
     Workspace string `json:"workspace"`
@@ -58,6 +58,26 @@ type SessionSpec struct {
     MCPIDs []string `json:"mcpIds"`
     Task string `json:"task"`
     MountMode string `json:"mountMode,omitempty"`
+}
+type SwitchModelInput struct {
+    SessionID string `json:"sessionId"`
+    ModelAccountID string `json:"modelAccountId"`
+}
+type StartMcpOAuthInput struct {
+    Name string `json:"name"`
+    ProfileID string `json:"profileId"` // 可空；自定义时填 Origin
+    Origin string `json:"origin,omitempty"`
+}
+type McpOAuthResponse struct {
+    AuthURL string `json:"authUrl"` // 打开系统浏览器
+    PendingID string `json:"pendingId"`
+    Error *AppError `json:"error"`
+}
+type PtyInput struct {
+    SessionID string `json:"sessionId"`
+    Data string `json:"data,omitempty"` // 用户键盘输入（UTF-8）
+    Cols int `json:"cols,omitempty"`
+    Rows int `json:"rows,omitempty"`
 }
 type SessionSnapshot struct {
     SessionID string `json:"sessionId"`
@@ -168,6 +188,11 @@ type DesktopAPI interface {
     ResolvePermission(ResolvePermissionInput) EmptyResponse
     GetUIPrefs() UIPrefsResponse
     SetUIPrefs(UIPrefs) UIPrefsResponse
+    SwitchModel(SwitchModelInput) SessionResponse
+    StartMcpOAuth(StartMcpOAuthInput) McpOAuthResponse
+    CancelMcpOAuth(pendingID string) EmptyResponse
+    WritePty(PtyInput) EmptyResponse
+    ResizePty(PtyInput) EmptyResponse
 }
 
 // Event 经 harbor:event；下列载荷恰有一项非 nil。
@@ -187,12 +212,13 @@ type PermissionNeeded struct {
 type Event struct {
     SessionID string `json:"sessionId"`
     Seq uint64 `json:"seq"`
-    Type string `json:"type"` // state_changed|output|audit|error|permission_needed
+    Type string `json:"type"` // state_changed|output|audit|error|permission_needed|pty
     State *SessionSnapshot `json:"state"`
     Output *OutputData `json:"output"`
     Audit *AuditData `json:"audit"`
     Error *AppError `json:"error"`
     Permission *PermissionNeeded `json:"permission"`
+    Pty *OutputData `json:"pty"` // 与 output 同形；专供 PTY 流
 }
 
 // 下列为后端接口规格，不属于 UI DTO，也不得绑定到 Wails。
@@ -324,10 +350,13 @@ type Runtime interface {
 | ListAgents | 返回实际检测的列表；不依赖 Gate 可用 | CLI 未装属于 available=false；检测内部故障才返回 error |
 | SelectWorkspace | 系统目录面板，绝对路径 | 取消：cancelled=true、path=""、error=null |
 | ConnectModel | 10s 内测上游，成功才存账号 | **固定 profile**：Origin 空，ProfileID∈已登记；**自定义**：Origin 必填 HTTPS host，ProfileID 空或 `custom`；禁止任意 path/query；失败清候选，account=null |
-| ConnectMcp | 同左，固定 MCP profile + Token | V1 **无 OAuth**；Origin 字段忽略；失败同上 |
+| ConnectMcp | Token 轨测试并保存 | OAuth 轨走 StartMcpOAuth；失败同上 |
 | ListAccounts | 返回已保存账号元信息（无 Key） | kind 过滤；空列表 `[]` |
 | RemoveAccount | 删除账号与密钥 | 会话仍引用该账号 → `SESSION_BUSY`；未知 → `ACCOUNT_NOT_FOUND` |
-| CreateSession | 占会话槽，返回 provisioning | running+preparing 总数 **≤2**，否则 `SESSION_LIMIT`；同规范化工作区已有非终态 → `WORKSPACE_BUSY`；mountMode≠direct → `INVALID_ARGUMENT`；mcpIds 0..8 |
+| CreateSession | 占会话槽，返回 provisioning | running+preparing 总数 **≤2**，否则 `SESSION_LIMIT`；同规范化工作区已有非终态 → `WORKSPACE_BUSY`；mountMode∈direct\|clone；mcpIds 0..8 |
+| SwitchModel | 仅影响之后模型出站 | 未知会话/账号 → 对应错误；不改工作区/Agent |
+| StartMcpOAuth / CancelMcpOAuth | 打开浏览器完成 MCP 登录 | 回调成功后出现在 ListAccounts；取消清 pending |
+| WritePty / ResizePty | 向焦点会话 PTY 写输入/改尺寸 | 无 PTY 或未 running → `INVALID_ARGUMENT` |
 | GetSession | 最新快照与 seq | 未知 → `SESSION_NOT_FOUND`；无任务正文/凭据 |
 | StopSession | 返回 stopping，事件报清理 | 终态幂等；未知 → `SESSION_NOT_FOUND` |
 | ListSessions | 本应用生命周期内会话摘要 | 含终态直至 Destroy；空 `[]` |
@@ -347,7 +376,7 @@ Go 绑定统一 `error` 字段；未实现的新方法返回 `UNIMPLEMENTED`。�
 
 ## 2. 事件、快照与错误
 
-- 全部会话事件只用 `harbor:event`。type 为 `state_changed`、`output`、`audit`、`error` 或 **`permission_needed`**，且只有对应载荷非 null（`permission` 对应后者）。error 事件是操作失败通知，最终状态由 state_changed 表达；普通未授权请求的 denied 审计不必终止会话；需用户决策时发 `permission_needed` 并等待 `ResolvePermission`。
+- 全部会话事件只用 `harbor:event`。type 为 `state_changed`、`output`、`audit`、`error`、`permission_needed` 或 **`pty`**，且只有对应载荷非 null。`pty` 用 `Pty` 字段。error 为操作失败通知；需用户决策时发 `permission_needed` 并等待 `ResolvePermission`。
 - sessionId 在当前应用中唯一；seq 从 1 开始，由 Orchestrator 串行分配，覆盖全部事件。状态载荷的 seq 与外层相同。GetSession 返回最新水位 seq；snapshot.state 只表示实际状态，不由页面推断。
 - api.js 先订阅再创建，暂存尚未拿到 sessionId 的事件，响应后合并；晚到的旧快照不能覆盖更大 seq 的状态。重复事件去重，但输出先按 seq 处理再推进水位，不能仅因快照较新就丢弃未展示的输出。事件接入中断可 GetSession 恢复状态，历史输出不承诺重放。
 - 本版只保证当前窗口连续连接的事件交付。状态和错误不可静默丢弃；前端文本使用 textContent。输出流按 UTF-8 解码并限每块 16 KiB；后端与前端各保留最多 1 MiB 输出尾部，截断时显示提示，不改变 Agent 实际 stdout 消费。Runtime 读取不得被慢 UI 无限阻塞。
@@ -426,11 +455,11 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 ## 5. 演进与版本
 
 - **v1**：七方法 + 四类事件；单会话；mcpIds 长度 1；固定 profile。
-- **v1.1（本文）**：上表 DesktopAPI 扩展；`permission_needed`；多会话上限 2；自定义模型 Origin；mcpIds 0..8。实现可分阶段：新方法允许暂返 `UNIMPLEMENTED`，但 **形状与错误码不得偏离本文**。
-- **明确不进 v1.1**：OAuth MCP、clone、PTY 事件流。
+- **v1.1**：健康/列表/扩权/多账号/Prefs 等。
+- **v1.2（本分支）**：恢复并定义 OAuth、`clone`、`SwitchModel`、PTY（`WritePty`/`ResizePty` + 事件 `pty`）。形状未实现时可 `UNIMPLEMENTED`，**不得缺方法名**。
 
-当前实现注记：macOS Runtime 仍为严格单进程子集；不得标为完整执行能力。证据见 [DEV-A](DEV-A.md)。
+当前实现注记：macOS Runtime 仍为严格单进程子集；PTY/clone 真实现由 A 排期，UI/mock 本分支先通。证据见 [DEV-A](DEV-A.md)。
 
 公开 Event 须满足 `contracts.Event.Validate`。本文是并行实现的唯一方法/字段来源；变更先改本文与 `internal/contracts`，再 sync mock/bindings。
 
-既有约定仍有效：WithConnection 准入锁；ConnectModel/ConnectMcp 探测语义；未配置上游失败关闭。自定义 Origin 的 ConnectModel 须 HTTPS、无 path/query，并纳入 Policy 出站白名单（或首次确认写入记住主机，产品文案见 PAGE-DESIGN）。
+既有约定仍有效：WithConnection 准入锁；Connect 探测语义。自定义 Origin 须 HTTPS；OAuth 仅工具页。

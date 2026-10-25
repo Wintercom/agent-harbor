@@ -127,7 +127,7 @@ python3 -m http.server 5173
 
 ## 2026-10-25：按 PAGE-DESIGN 落地壳（C）
 
-对照 [PAGE-DESIGN.md](PAGE-DESIGN.md) 与 [TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) P1-C-01～05（契约未冻处用 stub）。
+对照 [PAGE-DESIGN.md](PAGE-DESIGN.md)。随后在分支 `feat/page-design-full` **改为全量设计**（含 OAuth/clone/PTY），见下节。
 
 ### 已落地
 
@@ -148,13 +148,27 @@ python3 -m http.server 5173
 - 健康与列表 **非正式契约字段**，待 P0.5-API-01/02；勿记入 I1–I11。
 - 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；接口：[CONTRACT.md](CONTRACT.md) v1.1；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
 
+---
+
+## 2026-10-25：分支 feat/page-design-full（全量 PAGE-DESIGN）
+
+**目标**：不按交付裁剪；导航与各屏对齐 [PAGE-DESIGN](PAGE-DESIGN.md)。总纲 [SYSTEM-DESIGN v2](SYSTEM-DESIGN.md)；契约 [CONTRACT v1.2](CONTRACT.md)。
+
+### 本分支已推进（C / mock）
+
+- 顶栏会话切换；侧栏仅 HOME/模型/工具/设置（工作台不强占）
+- Wizard **四步**（含 clone/direct）
+- 模型自由 OpenAPI；工具 **OAuth | Token** 双轨 UI
+- 工作台：边界条、模型切换、权限一览、扩权 Modal、PTY 区
+- 设置：检测、默认挂载、记住主机、关于
+
 ### C 下一步
 
 | 优先级 | 项 | 依赖 |
 |---|---|---|
-| P0 | 跟 B 跑 I1/I2 与脱敏证据 | ENV、Detect、Claude 2.1.292 |
-| V1 | mock/页面对齐 CONTRACT v1.1；扩权 Modal、权限一览、HOME x/2 | A/B 真实现 |
-| P1 | Wizard 真四步拆页（仍无 PTY/OAuth/clone） | 已定契约 |
+| 本分支 | 打磨交互/空态与原型视觉；mock 多会话并发 | — |
+| 联调 | A/B 去 UNIMPLEMENTED；OAuth/PTY/clone 真实现 | generate bindings |
+| P0 | 仍可跟 I 证据，但不挡本分支 UI | ENV |
 
 ### 明确不做（仍禁止）
 

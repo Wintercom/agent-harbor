@@ -2,8 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v1.1（复核：与 TASK-SPLIT v1.5 对齐） |
+| 文档版本 | v2.0（**分支 feat/page-design-full：全量 PAGE-DESIGN**） |
 | 日期 | 2026-10-25 |
+| 分支目标 | 按 [PAGE-DESIGN](PAGE-DESIGN.md) **完整**实现导航与各屏；**不裁** OAuth / clone / PTY；**不按交付排期砍范围** |
 | 产品屏 | [PAGE-DESIGN](PAGE-DESIGN.md) |
 | **接口唯一来源** | [CONTRACT](CONTRACT.md) v1.1 |
 | 屏级绑定表 | [PAGE-API-MAP](PAGE-API-MAP.md) |
@@ -108,24 +109,23 @@ flowchart LR
 
 ---
 
-## 4. V1 范围裁定（已定）
+## 4. 本分支范围（全量 PAGE-DESIGN）
 
-| 能力 | V1 | 说明 |
+对照 PAGE-DESIGN §2–§5：**全部做**；实现可先 mock，再换 live。
+
+| 能力 | 本分支 | 说明 |
 |---|---|---|
-| PAGE 壳 + Onboarding + 阻断 | **做** | C；健康走 `GetRuntimeHealth` |
-| HOME 多会话列表 | **做** | running 上限 **2**；同工作区禁双开 |
-| 新会话向导 | **做** | 可先合并配置流；`mcpIds` 允许 0..N（N≤8） |
-| 模型自由 OpenAPI | **做** | `ConnectInput.origin` 可选；固定 profile 仍支持 |
-| 工具 Token MCP | **做** | 多账号列表/删除 |
-| 工具 OAuth | **不做（延后）** | CONTRACT 不暴露 OAuth 方法 |
-| 权限一览 + 记住主机撤销 | **做** | 与设置同源 |
-| 扩权三键 | **做** | `deny` / `once` / `project`；无「全网允许」 |
-| 工作区 clone | **不做（延后）** | `mountMode` 仅接受 `direct` |
-| 内嵌 PTY | **不做（延后）** | 工作台继续 `output` 文本事件 |
-| UI 偏好 | **做** | 侧栏收缩等；B 落盘；禁止存 Key |
-| 设置页 | **做** | 重检 Agent、健康、记住主机入口、关于；无后端的开关不进页 |
+| 壳导航 HOME/模型/工具/设置；工作台不强占主入口 | **做** | 有 running 时顶栏会话切换 + 可进工作台 |
+| Onboarding / 阻断 | **做** | 失败不可跳过 |
+| HOME 多会话 | **做** | running≤2；同工作区禁双开；销毁确认；再次开始 |
+| Wizard 真四步 | **做** | 工作区(含 clone/direct)→Agent→模型→工具(可跳过) |
+| 模型自由 OpenAPI | **做** | 名+地址+Key；列表无未配置占位；编辑/删除 |
+| 工具双轨 | **做** | OAuth/SSO **或** Token |
+| 工作台 | **做** | 边界条、当前模型切换、权限一览、扩权 Modal、**PTY 区**、右侧摘要 |
+| 设置全项 | **做** | 按 PAGE §5.8；无「关闭隔离」 |
+| UIPrefs | **做** | 侧栏收缩等 |
 
-P0 闭环（I1–I11）**不因 V1 扩展而废除**：七个原方法语义保持；多会话落地前 Create 仍可按单锁行为，但契约已定义上限=2 与错误码，A 实现时切换。
+`main` 上的「裁 OAuth/clone/PTY」**不适用于本分支**。P0 I 证据仍可并行，但不作为砍 UI 的理由。
 
 ---
 
@@ -156,9 +156,9 @@ P0 闭环（I1–I11）**不因 V1 扩展而废除**：七个原方法语义保�
 |---|---|---|
 | **A** | 扩展 `SessionService`：`List`/`Destroy`/`ResolvePermission`；多会话锁；Runtime.Health 语义供桌面 | Gate 扩权回调真触发（B） |
 | **B** | `wails3 generate`；DesktopAPI 去 `UNIMPLEMENTED`；Catalog 列表/删除；Overview；Prefs；origin；Gate→permission 事件 | Orch 多会话（A）联调 HOME/上限 |
-| **C** | mock 全方法；HOME x/2；模型 origin UI；工具仅 Token；扩权 Modal；权限一览 | live 真多会话、真扩权 |
+| **C** | **按 PAGE-DESIGN 全屏实现**（可 mock）；四步向导、双轨工具、PTY UI、扩权/一览 | live 真 OAuth/PTY/多会话由 A/B 接线 |
 
-**冲突时优先级**：P0 I1–I11 > 上表 V1。
+**本分支优先级**：**PAGE-DESIGN 完整体验 > 排期**；live 未就绪用 mock，不删屏。
 
 ---
 
@@ -166,9 +166,9 @@ P0 闭环（I1–I11）**不因 V1 扩展而废除**：七个原方法语义保�
 
 | 文档 | 角色 |
 |---|---|
-| ARCHITECTURE | 长期命题；V1 **不实现**其中的 PTY/OAuth/clone/二期隔离除非上表列为「做」 |
-| DESIGN / PAGE-DESIGN | 产品与交互；实现以本文裁定裁剪 |
-| MVP-2D3P | 两天 P0 优先；V1 在 P0 真机证据并行推进时不得冲掉 I1–I11 |
+| **PAGE-DESIGN** | **本分支产品真源**；逐屏对照实现 |
+| ARCHITECTURE | 控制/执行面；本分支 UI 所需能力都要有契约入口 |
+| DESIGN / MVP-2D3P | 参考；本分支不因两天裁剪删功能 |
 
 ---
 
@@ -178,3 +178,4 @@ P0 闭环（I1–I11）**不因 V1 扩展而废除**：七个原方法语义保�
 |---|---|
 | 2026-10-25 | 初版定案：取消冻结会依赖；V1 范围与模块所有权一次写死 |
 | 2026-10-25 | 复核：明确 Health/Accounts/扩权三段所有权；P0 优先于 V1 |
+| 2026-10-25 | **v2.0**：分支 `feat/page-design-full` 改为全量 PAGE-DESIGN（含 OAuth/clone/PTY） |

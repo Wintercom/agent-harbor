@@ -1,6 +1,5 @@
 /**
- * 页面装配：按 PAGE-DESIGN 侧栏壳 + 路由。
- * 桌面 live / 浏览器 mock；bindings 由 B 生成勿手改。
+ * PAGE-DESIGN 全量壳：顶栏会话切换 + 侧栏 HOME/模型/工具/设置
  */
 import * as api from "./api.js";
 import { initializeTransport } from "./startup.js";
@@ -15,12 +14,13 @@ import { mountBlock } from "./views/block.js";
 
 const badge = document.getElementById("mode-badge");
 const sidebar = document.getElementById("sidebar");
-const navSession = document.getElementById("nav-session");
 const healthDot = document.getElementById("health-dot");
 const healthText = document.getElementById("health-text");
 const onboardRoot = document.getElementById("onboarding-root");
 const blockRoot = document.getElementById("block-root");
 const shell = document.getElementById("app-shell");
+const sessionSwitchWrap = document.getElementById("session-switch-wrap");
+const sessionSwitch = document.getElementById("session-switch");
 
 const views = {
   home: document.getElementById("view-home"),
@@ -42,6 +42,7 @@ const ctx = {
     agents: [],
     modelAccount: null,
     mcpAccount: null,
+    accounts: [],
     workspace: "",
     sessionId: "",
     lastSnapshot: null,
@@ -54,11 +55,27 @@ const ctx = {
   async stopSession(id) {
     const res = await api.stopSession(id);
     if (res.session) upsertHistory(res.session);
+    syncSessionSwitch();
+    return res;
+  },
+  async destroySession(id) {
+    const res = await api.destroySession(id);
+    if (!res.error) {
+      ctx.state.sessionHistory = (ctx.state.sessionHistory || []).filter(
+        (s) => s.sessionId !== id,
+      );
+      if (ctx.state.sessionId === id) {
+        ctx.state.sessionId = "";
+        ctx.state.lastSnapshot = null;
+      }
+    }
+    syncSessionSwitch();
     return res;
   },
   onAccountsChanged() {},
   refreshHome() {
     if (currentRoute === "home") mountHome(views.home, ctx);
+    syncSessionSwitch();
   },
   refreshHealth() {
     return refreshHealth();
@@ -72,7 +89,7 @@ const ctx = {
       sessionStorage.setItem("harbor-session-id", snapshot.sessionId);
     } catch {}
     sessionView.resetForNewSession(snapshot);
-    navSession.classList.remove("hidden");
+    syncSessionSwitch();
     navigate("session", { autoCollapse: true });
   },
   async openSession(sessionId) {
@@ -85,11 +102,10 @@ const ctx = {
       sessionStorage.setItem("harbor-session-id", res.session.sessionId);
     } catch {}
     sessionView.resetForNewSession(res.session);
-    navSession.classList.remove("hidden");
+    syncSessionSwitch();
     navigate("session");
   },
   showTab(name) {
-    // session 回配置 → 新会话向导
     if (name === "session") navigate("session");
     else if (name === "setup") navigate("wizard");
   },
@@ -105,10 +121,32 @@ function upsertHistory(snapshot) {
     workspace: snapshot.workspace,
     agentId: snapshot.agentId,
     cleanupComplete: snapshot.cleanupComplete,
+    mountMode: snapshot.mountMode,
+    mcpIds: snapshot.mcpIds,
   };
   if (i >= 0) list[i] = { ...list[i], ...row };
   else list.unshift(row);
   ctx.state.sessionHistory = list.slice(0, 20);
+}
+
+function syncSessionSwitch() {
+  const running = (ctx.state.sessionHistory || []).filter((s) =>
+    ["provisioning", "running", "stopping"].includes(s.state),
+  );
+  if (!running.length) {
+    sessionSwitchWrap.classList.add("hidden");
+    return;
+  }
+  sessionSwitchWrap.classList.remove("hidden");
+  sessionSwitch.replaceChildren(
+    ...running.map((s) => {
+      const o = document.createElement("option");
+      o.value = s.sessionId;
+      o.textContent = `${s.agentId} · ${s.workspace}`;
+      if (s.sessionId === ctx.state.sessionId) o.selected = true;
+      return o;
+    }),
+  );
 }
 
 function syncBadge() {
@@ -118,14 +156,14 @@ function syncBadge() {
     badge.className = "badge mock";
     if (banner) {
       banner.textContent =
-        "PAGE-DESIGN 壳 + 模拟数据。不能记入 I1–I11。多会话/扩权等接口见 TASK-SPLIT P0.5。";
+        "feat/page-design-full · PAGE-DESIGN 全量（含 OAuth/clone/PTY）。mock 不能记入 I1–I11。";
     }
   } else {
     badge.textContent = "真实绑定";
     badge.className = "badge live";
     if (banner) {
       banner.textContent =
-        "真实绑定：任务去掉 mock/search；工作区用 demos/workspace。";
+        "真实绑定：按 PAGE-DESIGN 全量；未接线方法可能返回 UNIMPLEMENTED。";
     }
   }
 }
@@ -165,12 +203,9 @@ function navigate(name, opts = {}) {
   if (name === "models") mountModels(views.models, ctx);
   if (name === "tools") mountTools(views.tools, ctx);
   if (name === "settings") mountSettings(views.settings, ctx);
-  if (name === "session") {
-    navSession.classList.remove("hidden");
-    if (opts.autoCollapse) {
-      const pref = localStorage.getItem("harbor-sidebar-user-expanded");
-      if (pref !== "1") setSidebarCollapsed(true);
-    }
+  if (name === "session" && opts.autoCollapse) {
+    const pref = localStorage.getItem("harbor-sidebar-user-expanded");
+    if (pref !== "1") setSidebarCollapsed(true);
   }
   if (ctx.state.health && ctx.state.health.available === false && name === "wizard") {
     showBlock(ctx.state.health.reason);
@@ -258,6 +293,10 @@ async function boot() {
     );
   });
 
+  sessionSwitch.onchange = () => {
+    if (sessionSwitch.value) ctx.openSession(sessionSwitch.value);
+  };
+
   window.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
       e.preventDefault();
@@ -267,13 +306,14 @@ async function boot() {
 
   sessionView = mountSession(views.session, ctx);
   api.onEvent((ev) => {
-    if (ev.type === "state_changed" && ev.state) upsertHistory(ev.state);
+    if (ev.type === "state_changed" && ev.state) {
+      upsertHistory(ev.state);
+      syncSessionSwitch();
+    }
   });
 
   const health = await refreshHealth();
-  if (maybeOnboarding(health)) {
-    /* 引导中 */
-  } else {
+  if (!maybeOnboarding(health)) {
     navigate(ctx.state.sessionId ? "session" : "home");
   }
 
@@ -289,6 +329,7 @@ async function boot() {
         const res = await api.getSession(id);
         if (res.session) upsertHistory(res.session);
       }
+      syncSessionSwitch();
     } finally {
       recovering = false;
     }
@@ -322,7 +363,4 @@ boot().catch(() => {
   shell.classList.remove("hidden");
   views.home.classList.remove("hidden");
   views.home.textContent = "桌面连接初始化失败，请重新启动应用。";
-  document.querySelectorAll(".nav-item").forEach((button) => {
-    button.disabled = true;
-  });
 });
