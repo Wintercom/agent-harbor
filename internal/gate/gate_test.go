@@ -239,10 +239,20 @@ func TestAuthProbeErrorLiteLLMSKHint(t *testing.T) {
 	if strings.Contains(ae.Message, "Received=") {
 		t.Fatalf("leaked upstream detail: %s", ae.Message)
 	}
+	err = authProbeError("llmapi.qiniu.io", []byte(`{"error":{"message":"Authentication Error, Invalid proxy server token passed. Unable to find token in cache or LiteLLM_VerificationTokenTable","type":"token_not_found_in_db"}}`))
+	ae, ok = err.(*contracts.AppError)
+	if !ok || !strings.Contains(ae.Message, "LiteLLM") {
+		t.Fatalf("%v", err)
+	}
 	err = authProbeError("api.qnaigc.com", []byte(`{"error":{"message":"Invalid API key","type":"authentication_error"}}`))
 	ae, ok = err.(*contracts.AppError)
 	if !ok || !strings.Contains(ae.Message, "不是同一套") {
 		t.Fatalf("%v", err)
+	}
+	wrapped := annotateAuthKeyMeta(err, "sk-abc")
+	ae, ok = wrapped.(*contracts.AppError)
+	if !ok || !strings.Contains(ae.Message, "已提交 6 字节") || !strings.Contains(ae.Message, "前缀 sk-") {
+		t.Fatalf("%v", wrapped)
 	}
 }
 
