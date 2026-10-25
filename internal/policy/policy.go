@@ -32,6 +32,7 @@ type EndpointRule struct {
 type PolicyRequest struct {
 	Workspace string
 	AgentID   string
+	MountMode string
 	Model     contracts.AccountInfo
 	MCP       contracts.AccountInfo
 }
@@ -100,9 +101,16 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 	if !sameHost(req.Model.Host, modelProf.Host) || !sameHost(req.MCP.Host, mcpProf.Host) {
 		return PolicySnapshot{}, ErrHostMismatch
 	}
+	mountMode := strings.TrimSpace(req.MountMode)
+	if mountMode == "" {
+		mountMode = "direct"
+	}
+	if mountMode != "direct" && mountMode != "clone" {
+		return PolicySnapshot{}, ErrInvalidWorkspace
+	}
 	return PolicySnapshot{
 		Workspace: ws,
-		MountMode: "direct",
+		MountMode: mountMode,
 		Model: EndpointRule{
 			Origin:   modelProf.Origin,
 			BasePath: modelProf.BasePath,

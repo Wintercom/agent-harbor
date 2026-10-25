@@ -45,7 +45,7 @@ type SessionSpec struct {
 	ModelAccountID string   `json:"modelAccountId"`
 	MCPIDs         []string `json:"mcpIds"`
 	Task           string   `json:"task"`
-	MountMode      string   `json:"mountMode,omitempty"` // 仅 direct；缺省=direct
+	MountMode      string   `json:"mountMode,omitempty"` // direct 或 clone；缺省=direct
 }
 
 // SessionSnapshot 是会话对外快照。

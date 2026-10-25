@@ -95,6 +95,12 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 	if _, ok := o.deps.Kits[spec.AgentID]; !ok {
 		return contracts.SessionSnapshot{}, publicError("AGENT_UNSUPPORTED")
 	}
+	if spec.MountMode == "" {
+		spec.MountMode = "direct"
+	}
+	if spec.MountMode != "direct" && spec.MountMode != "clone" {
+		return contracts.SessionSnapshot{}, publicError("INVALID_ARGUMENT")
+	}
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return contracts.SessionSnapshot{}, publicError("INTERNAL_ERROR")
@@ -117,15 +123,14 @@ func (o *Service) Create(ctx context.Context, spec contracts.SessionSpec) (contr
 			continue
 		}
 		activeCount++
-		if existing.snapshot.Workspace != "" && sameWorkspace(existing.snapshot.Workspace, workspace) {
-			// 保持既有连接/会话准入的兼容错误码；桌面层可据此展示
-			// 工作区冲突，新增 WORKSPACE_BUSY 供后续绑定细分。
-			return contracts.SessionSnapshot{}, publicError("SESSION_BUSY")
+		if existing.snapshot.Workspace != "" && sameWorkspace(existing.spec.Workspace, workspace) {
+			return contracts.SessionSnapshot{}, publicError("WORKSPACE_BUSY")
 		}
 	}
 	if activeCount >= 2 {
 		return contracts.SessionSnapshot{}, publicError("SESSION_LIMIT")
 	}
+	spec.Workspace = workspace
 	spec.MCPIDs = append([]string(nil), spec.MCPIDs...)
 	sessionCtx, cancel := context.WithCancel(o.app)
 	s := &session{spec: spec, ctx: sessionCtx, cancel: cancel, retry: make(chan struct{}, 1), cleanupDone: make(chan struct{}), finished: make(chan struct{})}
@@ -505,11 +510,11 @@ func (o *Service) provision(s *session) error {
 	if model.ID != s.spec.ModelAccountID || mcp.ID != s.spec.MCPIDs[0] || model.Kind != "model" || mcp.Kind != "mcp" {
 		return publicError("INVALID_ARGUMENT")
 	}
-	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, Model: model, MCP: mcp})
+	p, err := o.deps.Policy.Build(ctx, policy.PolicyRequest{Workspace: s.spec.Workspace, AgentID: s.spec.AgentID, MountMode: s.spec.MountMode, Model: model, MCP: mcp})
 	if err != nil {
 		return safeError(err, "WORKSPACE_DENIED")
 	}
-	if !filepath.IsAbs(p.Workspace) || p.MountMode != "direct" || p.MCPID != mcp.ID {
+	if !filepath.IsAbs(p.Workspace) || (p.MountMode != "direct" && p.MountMode != "clone") || p.MCPID != mcp.ID {
 		return publicError("WORKSPACE_DENIED")
 	}
 	o.mu.Lock()
@@ -543,6 +548,14 @@ func (o *Service) provision(s *session) error {
 	}
 	if handle.ID == "" || !filepath.IsAbs(handle.PrivateHome) {
 		return publicError("ISOLATION_UNAVAILABLE")
+	}
+	if p.MountMode == "clone" {
+		if !filepath.IsAbs(handle.Workspace) || handle.Workspace == p.Workspace {
+			return publicError("ISOLATION_UNAVAILABLE")
+		}
+		o.mu.Lock()
+		s.snapshot.Workspace = handle.Workspace
+		o.mu.Unlock()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
