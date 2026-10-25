@@ -195,11 +195,7 @@ export function mountModels(root, ctx, opts = {}) {
         keyLenEl.textContent = "";
         return;
       }
-      if (n < 32) {
-        keyLenEl.innerHTML = `<span class="bad">当前 Key ${n} 字节，偏短（完整七牛/LiteLLM Key 通常更长）。请重新完整复制，勿只贴前缀。</span>`;
-      } else {
-        keyLenEl.innerHTML = `<span class="meta">已输入 ${n} 字节${keyEl.value.trim().startsWith("sk-") ? "，前缀 sk-" : ""}</span>`;
-      }
+      keyLenEl.innerHTML = `<span class="meta">已输入 ${n} 字节${keyEl.value.trim().startsWith("sk-") ? "，前缀 sk-" : ""}（LiteLLM 短 Key 也常见）</span>`;
     };
     const clearStatus = () => {
       status.textContent = "";
@@ -248,11 +244,6 @@ export function mountModels(root, ctx, opts = {}) {
         if (!origin) originEl.focus();
         else if (!key) keyEl.focus();
         else nameEl.focus();
-        return;
-      }
-      if (key.length < 32) {
-        status.innerHTML = `<span class="bad">Key 只有 ${key.length} 字节，很可能复制不全。请从控制台重新复制完整 Key 后再保存。</span>`;
-        keyEl.focus();
         return;
       }
       status.innerHTML = `<span class="meta">正在保存…</span>`;

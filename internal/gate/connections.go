@@ -345,9 +345,6 @@ func annotateAuthKeyMeta(err error, key string) error {
 	} else {
 		meta += "，前缀非 sk-"
 	}
-	if len(key) < 32 {
-		meta += "；长度偏短，疑似复制不全"
-	}
 	var ae *contracts.AppError
 	if errors.As(err, &ae) && ae != nil {
 		msg := ae.Message
