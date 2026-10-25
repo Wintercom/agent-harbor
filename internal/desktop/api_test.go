@@ -72,6 +72,19 @@ func TestAttachOrchestratorWiresRealService(t *testing.T) {
 	}
 }
 
+func TestGetRuntimeHealthUsesRuntimeProbe(t *testing.T) {
+	app := NewApp()
+	app.runtime = fakeRuntimeHealth{}
+	resp := NewDesktopAPI(app).GetRuntimeHealth()
+	if !resp.Available || resp.IsolationLevel != "macos-seatbelt" || resp.Error != nil {
+		t.Fatalf("健康检查未通过: %+v", resp)
+	}
+}
+
+type fakeRuntimeHealth struct{}
+
+func (fakeRuntimeHealth) Health(context.Context) error { return nil }
+
 type recordingSession struct {
 	last          contracts.SessionSpec
 	connectionErr error
