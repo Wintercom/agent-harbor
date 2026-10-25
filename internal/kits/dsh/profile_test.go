@@ -43,6 +43,9 @@ func TestBuildIsolatedDSHProfile(t *testing.T) {
 	if string(launch.Stdin) != input.Task || strings.Contains(strings.Join(launch.Args, " "), input.Task) {
 		t.Fatal("任务必须只通过 stdin")
 	}
+	if launch.Interactive {
+		t.Fatal("headless 单任务模式必须关闭 stdin，不能宣称支持多轮")
+	}
 	if launch.Env["DSH_HOME"] != filepath.Join(input.PrivateHome, "dsh") || launch.Env["DEEPSEEK_API_KEY"] != input.Sentinel || launch.Env["DSH_TELEMETRY_DISABLED"] != "1" {
 		t.Fatal("环境不符合隔离要求")
 	}

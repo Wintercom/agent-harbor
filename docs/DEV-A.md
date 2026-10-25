@@ -106,7 +106,15 @@ B 可将 `runtime.NewMacOS()` 和 `claude.New(固定CLI路径, 固定模型名)`
 
 Runtime 新增 `InteractiveProcess` 和 `LaunchSpec.Interactive`。交互 Kit 启动时保持受控 stdin，不再在首轮任务后关闭；Orchestrator 暴露 `WritePty`/`ResizePty`，校验会话仍处于 running 且确实由交互 Kit 启动，再把后续轮次写入同一进程。交互输出通过既有 `harbor:event` 以 `pty` 载荷回传，停止/销毁时由 Runtime 关闭 stdin 并清理进程。
 
-Claude 与 dsh 的启动规格已声明交互模式；Codex 仍需按其 app-server 协议单独接入，不能把普通一次性 CLI stdin 当作多轮协议。当前 macOS `Resize` 只校验尺寸并返回 `UNIMPLEMENTED`，因为严格 sandbox 尚未接入真实 PTY/窗口大小控制；写入和事件边界已经接通。
+此批曾将 Claude 与 dsh 都声明交互模式，但仅保持 stdin 打开不足以支持多轮；下节协议修复替代该声明。Codex 仍需按其 app-server 协议单独接入。当前 macOS `Resize` 只校验尺寸并返回 `UNIMPLEMENTED`，尚未接入真实 PTY/窗口大小控制。
+
+### 多轮协议及输入取消修复
+
+Claude 改为 `--input-format stream-json`，由 Kit 的 EncodeInput 将首轮和后续轮次编码为独立 user JSONL 消息，正文换行不会成为额外协议记录。同一进程保留对话上下文，但真实模型上下文连续性仍须联调验收。dsh headless `-` 是 EOF 单任务输入，已恢复关闭 stdin 并拒绝多轮，防止首轮等待输入而卡住；dsh 多轮仍待实现。
+
+Runtime 输入串行化，阻塞写入响应 context 取消/超时；写入中断可能产生半条消息，编排会取消并清理会话。进程能力发布改为在编排锁内完成，避免输出/输入回调与初始化竞争。真实终端 resize 仍为 UNIMPLEMENTED，JSONL 通道不冒充真实 PTY。
+
+验证：先用失败测试重现旧 text/headless 配置，再验证消息转义、并发写入不交错、阻塞写入取消；真实 macOS 受限进程两轮输入和停止后拒绝输入通过，本机 Claude 固定版本离线检测及无上游初始化通过。这些均不等于远程模型多轮验收。
 
 ## 2026-10-24：Runtime 资源墓碑
 

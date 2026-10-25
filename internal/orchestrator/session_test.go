@@ -107,7 +107,7 @@ func (p *fakeProcess) Wait() runtime.Exit {
 	return p.result
 }
 
-func (p *fakeProcess) Write(data []byte) error {
+func (p *fakeProcess) Write(_ context.Context, data []byte) error {
 	p.fixture.mu.Lock()
 	output := p.fixture.onOutput
 	p.fixture.mu.Unlock()
@@ -383,6 +383,19 @@ func TestInteractiveSessionAcceptsAdditionalRounds(t *testing.T) {
 	}
 	_, _ = o.Stop(context.Background(), s.SessionID)
 	await(t, o, s.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
+}
+
+func TestNonInteractiveSessionRejectsAdditionalRound(t *testing.T) {
+	f := newFixture()
+	o := setup(t, f, Timeouts{}, nil)
+	s := create(t, o)
+	awaitState(t, o, s.SessionID, contracts.StateRunning)
+	err := o.WritePty(context.Background(), contracts.PtyInput{SessionID: s.SessionID, Data: "下一轮"})
+	assertCode(t, err, "UNIMPLEMENTED")
+	current, err := o.Get(context.Background(), s.SessionID)
+	if err != nil || current.State != contracts.StateRunning {
+		t.Fatalf("能力拒绝不应停止任务：%+v %v", current, err)
+	}
 }
 
 func TestAllowsTwoDifferentWorkspacesAndCapsThird(t *testing.T) {

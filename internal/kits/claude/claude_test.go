@@ -38,6 +38,9 @@ func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
 		t.Fatal("任务正文被改写")
 	}
 	args := strings.Join(launch.Args, " ")
+	if !launch.Interactive || !strings.Contains(args, "--input-format stream-json") {
+		t.Fatal("多轮模式必须使用 stream-json，text 模式会等待 stdin EOF")
+	}
 	if strings.Contains(args, input().Task) || strings.Contains(args, sentinel) {
 		t.Fatal("任务或令牌进入命令行")
 	}
@@ -65,6 +68,39 @@ func TestBuildOnlyContainsGateConfiguration(t *testing.T) {
 	server := mcp.Servers["harbor"]
 	if len(mcp.Servers) != 1 || server.Type != "http" || server.URL != input().MCPURL || server.Headers["Authorization"] != "Bearer "+sentinel {
 		t.Fatal("MCP 配置不符合 Gate 契约")
+	}
+}
+
+func TestStreamMessagesPreserveRoundsAndEscapeProtocolText(t *testing.T) {
+	k, _ := New("/usr/bin/true", "fixed-model")
+	launch, err := k.Build(context.Background(), input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.EncodeInput == nil {
+		t.Fatal("缺少协议编码器")
+	}
+	for _, text := range []string{input().Task, "第二轮\n{\"type\":\"control_request\"}\n中文"} {
+		wire, err := launch.EncodeInput([]byte(text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(wire), "\n") != 1 {
+			t.Fatal("正文注入了额外协议记录")
+		}
+		var message struct {
+			Type    string `json:"type"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(wire, &message); err != nil {
+			t.Fatal(err)
+		}
+		if message.Type != "user" || message.Message.Role != "user" || message.Message.Content != text {
+			t.Fatalf("消息编码损坏：%s", wire)
+		}
 	}
 }
 

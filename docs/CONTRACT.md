@@ -244,6 +244,8 @@ type SessionService interface {
     List(context.Context) ([]SessionSummary, error)
     Destroy(context.Context, string) (SessionSnapshot, error)
     ResolvePermission(context.Context, ResolvePermissionInput) error
+    WritePty(context.Context, PtyInput) error
+    ResizePty(context.Context, PtyInput) error
     Shutdown(context.Context) error
 }
 type AccountCatalog interface {
@@ -309,6 +311,8 @@ type LaunchSpec struct {
     Args []string
     Env map[string]string
     Stdin []byte
+    Interactive bool
+    EncodeInput func([]byte) ([]byte, error) // Kit 负责协议编码，仅用于内部接口
     ConfigFiles []ConfigFile
 }
 type KitInput struct {
@@ -341,6 +345,11 @@ type Exit struct {
 }
 type Process interface {
     Wait() Exit // 返回前完成 stdout/stderr 读取与最终输出回调
+}
+type InteractiveProcess interface {
+    Process
+    Write(context.Context, []byte) error // 完整消息串行写入；支持取消
+    Resize(cols, rows int) error
 }
 type Runtime interface {
     Health(context.Context) error
