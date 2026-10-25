@@ -1,6 +1,6 @@
 # 两天版模块设计与并行开发
 
-本文件定义当前 Go/Wails 版的模块边界、依赖、装配、负责人和交付顺序。方法与数据以 [CONTRACT.md](CONTRACT.md) 为唯一来源，目录见 [DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)，范围见根 AGENTS.md。长期 ARCHITECTURE.md 不作为本版额外功能清单。
+本文件定义 Go/Wails 包边界、替身与文件归属。V1 **架构总纲与 ABC 分工**见 [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；方法与数据以 [CONTRACT.md](CONTRACT.md) v1.1 为唯一来源；屏级绑定见 [PAGE-API-MAP.md](PAGE-API-MAP.md)。目录见 [DIRECTORY-STRUCTURE.md](DIRECTORY-STRUCTURE.md)。长期 ARCHITECTURE.md 不把未裁定能力算进交付。
 
 ## 1. 检查结论与补齐范围
 
@@ -15,7 +15,7 @@
 ```mermaid
 flowchart TB
     subgraph UI[产品 C：桌面视图]
-        V[配置页 / 工作台]
+        V[PAGE 壳：HOME / 模型 / 工具 / 设置 / 向导 / 工作台]
         F[api.js：统一前端接口]
         V --> F
     end

@@ -22,9 +22,191 @@ html, body {
     radial-gradient(800px 400px at 8% -10%, rgba(61, 205, 192, 0.14), transparent 55%),
     linear-gradient(165deg, #0a121c, #0f1c2c 50%, #0c1824);
 }
-body { padding: 20px; }
+body { padding: 0; }
 .hidden { display: none !important; }
 
+/* —— PAGE-DESIGN 壳：侧栏 + 主栏 —— */
+.shell {
+  display: flex;
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+  background: color-mix(in srgb, var(--panel) 92%, black);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+.sidebar {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  transition: flex-basis 0.18s ease, padding 0.18s ease;
+}
+.sidebar.collapsed {
+  flex-basis: 64px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .sidebar-tagline,
+.sidebar.collapsed .health-text,
+.sidebar.collapsed .sidebar-brand strong {
+  display: none;
+}
+.sidebar.collapsed .badge { display: none; }
+.sidebar-brand {
+  padding: 4px 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.sidebar-brand strong {
+  display: block;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.sidebar-tagline {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  padding-top: 8px;
+}
+.nav-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.nav-item.on {
+  color: var(--brand);
+  background: rgba(61, 205, 192, 0.12);
+  border-color: rgba(61, 205, 192, 0.28);
+  font-weight: 600;
+}
+.nav-ico { width: 1.2em; text-align: center; opacity: 0.9; }
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.sidebar-toggle { width: 100%; }
+.health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.health-dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(93, 206, 138, 0.2); }
+.health-dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(229, 115, 115, 0.2); }
+.main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.page-head { margin-bottom: 8px; }
+.session-list { display: flex; flex-direction: column; gap: 10px; }
+.session-card { margin: 0; }
+.wizard-steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.wizard-steps li {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.wizard-steps li.on {
+  color: var(--brand);
+  border-color: rgba(61, 205, 192, 0.4);
+  background: rgba(61, 205, 192, 0.1);
+}
+
+.onboarding-layer,
+.block-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(600px 320px at 50% 20%, rgba(61, 205, 192, 0.12), transparent 60%),
+    rgba(6, 12, 18, 0.92);
+}
+.onboarding-card,
+.block-card {
+  width: min(440px, 100%);
+  padding: 28px 24px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 95%, black);
+}
+.onboarding-card h1,
+.block-card h1 {
+  margin: 0 0 16px;
+  font-size: 22px;
+}
+.onboarding-points {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+@media (max-width: 720px) {
+  .shell { flex-direction: column; border: 0; }
+  .sidebar {
+    flex-basis: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar.collapsed { flex-basis: auto; }
+  .sidebar-nav { flex-direction: row; flex-wrap: wrap; flex: 1; }
+  .sidebar-foot { flex-direction: row; align-items: center; border-top: 0; }
+}
+
+/* 旧顶栏布局（测试/兼容保留） */
 .app {
   max-width: 960px;
   margin: 0 auto;

@@ -125,3 +125,74 @@ func (d *DesktopAPI) StopSession(id string) contracts.SessionResponse {
 	}
 	return contracts.SessionResponse{Session: &snap}
 }
+
+func unimplemented() *contracts.AppError {
+	return contracts.NewAppError(contracts.ErrUnimplemented, "该方法尚未实现，形状已按契约占位。", false)
+}
+
+// ListAccounts 列出已保存账号（V1.1；未接线时 UNIMPLEMENTED）。
+func (d *DesktopAPI) ListAccounts(kind string) contracts.AccountsResponse {
+	_ = kind
+	return contracts.AccountsResponse{Accounts: []contracts.AccountInfo{}, Error: unimplemented()}
+}
+
+// RemoveAccount 删除账号（V1.1 占位）。
+func (d *DesktopAPI) RemoveAccount(accountID string) contracts.EmptyResponse {
+	_ = accountID
+	return contracts.EmptyResponse{Error: unimplemented()}
+}
+
+// ListSessions 列出会话摘要（V1.1 占位）。
+func (d *DesktopAPI) ListSessions() contracts.SessionsResponse {
+	return contracts.SessionsResponse{Sessions: []contracts.SessionSummary{}, Error: unimplemented()}
+}
+
+// DestroySession 销毁终态会话记录（V1.1 占位）。
+func (d *DesktopAPI) DestroySession(sessionID string) contracts.SessionResponse {
+	_ = sessionID
+	return contracts.SessionResponse{Error: unimplemented()}
+}
+
+// GetRuntimeHealth 返回隔离探测（V1.1 占位；实现接 Runtime.Health）。
+func (d *DesktopAPI) GetRuntimeHealth() contracts.RuntimeHealthResponse {
+	return contracts.RuntimeHealthResponse{
+		Available: false,
+		Reason:    "健康检查尚未接线",
+		Error:     unimplemented(),
+	}
+}
+
+// GetPermissionOverview 权限一览（V1.1 占位）。
+func (d *DesktopAPI) GetPermissionOverview(sessionID string) contracts.PermissionOverviewResponse {
+	_ = sessionID
+	return contracts.PermissionOverviewResponse{Error: unimplemented()}
+}
+
+// ListRememberedHosts 已记住主机（V1.1 占位）。
+func (d *DesktopAPI) ListRememberedHosts(workspace string) contracts.RememberedHostsResponse {
+	_ = workspace
+	return contracts.RememberedHostsResponse{Hosts: []contracts.RememberedHost{}, Error: unimplemented()}
+}
+
+// RevokeRememberedHost 撤销记住主机（V1.1 占位）。
+func (d *DesktopAPI) RevokeRememberedHost(in contracts.RevokeHostInput) contracts.EmptyResponse {
+	_ = in
+	return contracts.EmptyResponse{Error: unimplemented()}
+}
+
+// ResolvePermission 扩权决策（V1.1 占位）。
+func (d *DesktopAPI) ResolvePermission(in contracts.ResolvePermissionInput) contracts.EmptyResponse {
+	_ = in
+	return contracts.EmptyResponse{Error: unimplemented()}
+}
+
+// GetUIPrefs 读取 UI 偏好（V1.1 占位，返回默认值形状）。
+func (d *DesktopAPI) GetUIPrefs() contracts.UIPrefsResponse {
+	prefs := contracts.UIPrefs{SidebarCollapsed: false, AutoCollapseWorkbench: true}
+	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
+}
+
+// SetUIPrefs 写入 UI 偏好（V1.1 占位）。
+func (d *DesktopAPI) SetUIPrefs(prefs contracts.UIPrefs) contracts.UIPrefsResponse {
+	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
+}

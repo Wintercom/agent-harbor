@@ -3,29 +3,63 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Harbor — 配置与工作台</title>
+    <title>Agent Harbor</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <div class="app">
-      <header class="top">
-        <div>
-          <strong class="brand">Agent Harbor</strong>
+    <div id="onboarding-root" class="onboarding-layer hidden"></div>
+    <div class="shell" id="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <strong>Agent Harbor</strong>
           <span id="mode-badge" class="badge mock">模拟模式</span>
+          <p class="sidebar-tagline">密钥留在本机 · Agent 隔离运行</p>
         </div>
-        <nav class="tabs">
-          <button type="button" class="tab on" data-tab="setup">配置</button>
-          <button type="button" class="tab" data-tab="session">工作台</button>
+        <nav class="sidebar-nav" id="sidebar-nav">
+          <button type="button" class="nav-item on" data-route="home" title="HOME">
+            <span class="nav-ico" aria-hidden="true">⌂</span>
+            <span class="nav-label">HOME</span>
+          </button>
+          <button type="button" class="nav-item" data-route="models" title="模型">
+            <span class="nav-ico" aria-hidden="true">◇</span>
+            <span class="nav-label">模型</span>
+          </button>
+          <button type="button" class="nav-item" data-route="tools" title="工具">
+            <span class="nav-ico" aria-hidden="true">⚒</span>
+            <span class="nav-label">工具</span>
+          </button>
+          <button type="button" class="nav-item" data-route="settings" title="设置">
+            <span class="nav-ico" aria-hidden="true">⚙</span>
+            <span class="nav-label">设置</span>
+          </button>
+          <button type="button" class="nav-item hidden" data-route="session" id="nav-session" title="工作台">
+            <span class="nav-ico" aria-hidden="true">▣</span>
+            <span class="nav-label">工作台</span>
+          </button>
         </nav>
-      </header>
-
-      <p class="warn-banner">
-        两天版：direct 工作区会直接改原文件；凭据仅在宿主机内存，重启需重填。浏览器默认 mock，不能代替真实验收。
-      </p>
-
-      <main id="view-setup" class="view"></main>
-      <main id="view-session" class="view hidden"></main>
+        <div class="sidebar-foot">
+          <button type="button" class="btn sidebar-toggle" id="sidebar-toggle" title="展开侧栏">«</button>
+          <div class="health" id="health-light" title="隔离状态">
+            <span class="health-dot" id="health-dot"></span>
+            <span class="health-text" id="health-text">检测中…</span>
+          </div>
+        </div>
+      </aside>
+      <div class="main-col">
+        <p class="warn-banner" id="mode-banner">
+          按 PAGE-DESIGN 壳层：HOME / 模型 / 工具 / 设置。两天契约方法仍可用；多会话等接口待 P0.5 冻结。
+        </p>
+        <main id="view-home" class="view"></main>
+        <main id="view-wizard" class="view hidden"></main>
+        <main id="view-models" class="view hidden"></main>
+        <main id="view-tools" class="view hidden"></main>
+        <main id="view-settings" class="view hidden"></main>
+        <main id="view-session" class="view hidden"></main>
+        <!-- 保留旧配置挂载点供单测 / 兼容；默认隐藏 -->
+        <main id="view-setup" class="view hidden" aria-hidden="true"></main>
+      </div>
     </div>
+    <div id="block-root" class="block-layer hidden"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

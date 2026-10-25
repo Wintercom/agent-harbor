@@ -97,14 +97,77 @@ python3 -m http.server 5173
 - 自检：`./demos/verify-workspace.sh`（可写、可覆盖、无敏感文件名）。
 - mock 选择工作区仍为 `/demo/project`；live 选本目录绝对路径。
 
+### 模型 / MCP 示例填写
+
+见 [demos/README.md](../demos/README.md)：mock 可用示例假 Key；live 用真凭据；Claude=`demo-model`，dsh=`dsh-model`，MCP=`demo-mcp`。上游 **无默认 origin**，须 `HARBOR_*` 登记。
+
+---
+
+## 2026-10-25：按 TASK-SPLIT 启动 C 分工
+
+任务源：[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md)。本轮 **先做 P0 文档与可独立项**；P1 页面等 P0.5 契约冻结。
+
+### 本轮已交付（C）
+
+| ID | 内容 |
+|---|---|
+| P0-C-DOC-1 | [demos/README.md](../demos/README.md)：live 启动命令、env、工作区、真实任务模板、I1/I2 检查表 |
+| P0-C-DOC-2 | 同文档「十分钟 live 话术」 |
+| P0-C-DOC-3 骨架 | [demos/evidence-template.md](../demos/evidence-template.md) 填空模板（真机后再写入 ACCEPTANCE） |
+| UI | live 下隐藏 mock 场景卡；任务提示；真机任务含 mock/search 时开始前警告；顶栏 banner 随模式切换 |
+| — | 纠正过时表述（live 无默认 DeepSeek/占位 MCP origin） |
+
+### 当前页面边界（跟 main）
+
+- ~~配置 / 工作台两页~~ → 见下节 **PAGE-DESIGN 壳**
+- 桌面强制 live；浏览器默认 mock
+- 无扩权 Modal / PTY / 真双会话；工作台仍为文本输出
+
+---
+
+## 2026-10-25：按 PAGE-DESIGN 落地壳（C）
+
+对照 [PAGE-DESIGN.md](PAGE-DESIGN.md) 与 [TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) P1-C-01～05（契约未冻处用 stub）。
+
+### 已落地
+
+| 路径 | 说明 |
+|---|---|
+| `frontend/index.html` | 侧栏：HOME / 模型 / 工具 / 设置 / 工作台；底栏隔离灯；引导/阻断层 |
+| `frontend/src/main.js` | 路由、`⌘B` 收缩记忆、进工作台可自动缩、健康刷新 |
+| `views/onboarding.js` | 三句引导；隔离失败不可进入 |
+| `views/home.js` | 会话中心（单会话历史摘要；上限文案先写 1） |
+| `views/wizard.js` | 新会话步进条 + 内嵌原 `setup` 配置流 |
+| `views/models.js` / `tools.js` / `settings.js` | 独立配置页；mock 场景进设置 |
+| `views/block.js` | 隔离不可用阻断层 |
+| `mock-api` / `api` | `getRuntimeHealth`、`listSessions` stub；live 缺方法时健康占位可用 |
+
+### 与两天契约关系
+
+- Connect / CreateSession / Stop / Event **不变**；向导仍走现有 setup。
+- 健康与列表 **非正式契约字段**，待 P0.5-API-01/02；勿记入 I1–I11。
+- 总纲：[SYSTEM-DESIGN.md](SYSTEM-DESIGN.md)；接口：[CONTRACT.md](CONTRACT.md) v1.1；屏映射：[PAGE-API-MAP.md](PAGE-API-MAP.md)。无冻结会，按已定契约实现。
+
+### C 下一步
+
+| 优先级 | 项 | 依赖 |
+|---|---|---|
+| P0 | 跟 B 跑 I1/I2 与脱敏证据 | ENV、Detect、Claude 2.1.292 |
+| V1 | mock/页面对齐 CONTRACT v1.1；扩权 Modal、权限一览、HOME x/2 | A/B 真实现 |
+| P1 | Wizard 真四步拆页（仍无 PTY/OAuth/clone） | 已定契约 |
+
+### 明确不做（仍禁止）
+
+手改 `bindings/`、改 `internal/`、把 mock 记为 I 通过、未冻接口当真实现。
+
 ---
 
 ## 分工备忘（C）
 
 | 负责 | 目录 |
 |---|---|
-| 配置页、工作台、样式与交互 | `frontend/index.html`、`frontend/src/**` |
-| 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js` |
-| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md) 中 C 相关项 |
+| 壳与页面、样式与交互 | `frontend/index.html`、`frontend/src/**` |
+| 接口封装与模拟数据 | `frontend/src/api.js`、`frontend/src/mock-api.js`、`live-api.js` |
+| 产品验收与演示说明 | `demos/`、[ACCEPTANCE.md](ACCEPTANCE.md)、[TASK-SPLIT-ABC.md](TASK-SPLIT-ABC.md) |
 
 不修改桌面 Go 入口与会话状态机；不手改 `frontend/bindings/`。

@@ -141,7 +141,11 @@ export function mountSession(root, ctx) {
       els.error.textContent = "";
       els.hint.classList.add("hidden");
       els.hint.textContent = "";
-      api.activateSession(snapshot);
+      if (snapshot) {
+        ctx.state.lastSnapshot = snapshot;
+        api.activateSession(snapshot);
+        renderSnapshot(snapshot);
+      }
     },
     destroy() {
       unsub();
