@@ -102,6 +102,12 @@ B 可将 `runtime.NewMacOS()` 和 `claude.New(固定CLI路径, 固定模型名)`
 
 最新验证：`go test -race ./...`、`go vet ./...`、`git diff --check` 通过；真实 Claude 离线测试需 `HARBOR_TEST_CLAUDE=1`，本机 2.1.292 版本/初始化检查通过。真实模型、MCP、完整子进程能力和 Wails 仍待 B 联调。
 
+## 2026-10-25：同会话多轮输入
+
+Runtime 新增 `InteractiveProcess` 和 `LaunchSpec.Interactive`。交互 Kit 启动时保持受控 stdin，不再在首轮任务后关闭；Orchestrator 暴露 `WritePty`/`ResizePty`，校验会话仍处于 running 且确实由交互 Kit 启动，再把后续轮次写入同一进程。交互输出通过既有 `harbor:event` 以 `pty` 载荷回传，停止/销毁时由 Runtime 关闭 stdin 并清理进程。
+
+Claude 与 dsh 的启动规格已声明交互模式；Codex 仍需按其 app-server 协议单独接入，不能把普通一次性 CLI stdin 当作多轮协议。当前 macOS `Resize` 只校验尺寸并返回 `UNIMPLEMENTED`，因为严格 sandbox 尚未接入真实 PTY/窗口大小控制；写入和事件边界已经接通。
+
 ## 2026-10-24：Runtime 资源墓碑
 
 Destroy 成功后保留最小句柄墓碑，使重复 Destroy 继续幂等；同时清空 profile、工作区、私有目录、只读路径和进程引用，避免长时间运行的桌面应用累计敏感元数据。新增测试检查这些字段释放，并确认重复 Destroy 与已销毁句柄执行均符合契约。
@@ -131,3 +137,11 @@ git diff --check
 以上检查均通过；其中 `harbor_platform` 系统测试要求支持的 Darwin 25/arm64 环境，普通 CI 的 macOS 14 不满足该安全基线，只运行可移植测试。A 当前仍可独立交付并验证的范围是契约/事件校验、会话生命周期与清理重试、严格单进程 macOS Runtime、Claude Kit 离线检测、Kit Registry 以及脱敏验收证据校验。真实 Gate/Policy/Secrets、模型与认证 MCP、Wails 装配、真实 Agent 文件任务和允许子进程后的可靠进程树清理仍需 B 或真实环境联调。
 
 2026-10-25 最新接线与修复状态见 [ABC 架构及联调审查](ABC-INTEGRATION-REVIEW.md#修复进展)。上文按日期保留的“待 Wails/真实组件装配”是历史记录；当前已完成装配，但真实上游任务与完整业务验收仍待执行。
+
+## 2026-10-25：feat/page-design-full 编排首批实现
+
+在 `feat/page-design-full` 分支按 `GO-CHECKLIST.md` 启动 FULL-ORCH。编排层已从全局单会话锁改为最多两个非终态会话：创建前规范化工作区路径并拒绝同目录并发，准备中、运行中和清理失败的会话都会占用槽位；不同工作区可并行运行。连接测试仍与任一活动会话互斥，避免账号目录与运行时资源并发变更。
+
+新增 `List` 和 `Destroy` 服务方法。`List` 保留终态摘要，`Destroy` 只删除已确认 `cleanupComplete=true` 的 stopped/failed 记录；运行中、准备中或清理未完成的会话必须先 Stop/重试清理。Shutdown 会遍历并等待所有活动会话完成清理。
+
+本批验证：`go test ./...`、`go vet ./...`、`git diff --check` 通过。clone、扩权和 PTY 仍按 FULL-ORCH 后续卡实现，当前不将占位绑定或 mock 视为真实能力通过。

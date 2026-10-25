@@ -30,6 +30,14 @@ type Process interface {
 	Wait() Exit // 返回前完成 stdout/stderr 读取与最终输出回调
 }
 
+// InteractiveProcess 是可在同一会话内继续接收输入的受控进程。
+// Runtime 实现必须把写入限制在该会话的 stdin，不得执行 shell 拼接。
+type InteractiveProcess interface {
+	Process
+	Write([]byte) error
+	Resize(cols, rows int) error
+}
+
 type Runtime interface {
 	Health(context.Context) error
 	Create(context.Context, RuntimeSpec) (Handle, error)
@@ -47,5 +55,6 @@ type LaunchSpec struct {
 	Args        []string
 	Env         map[string]string
 	Stdin       []byte
+	Interactive bool // 保持 stdin 打开，允许同一会话多轮输入
 	ConfigFiles []ConfigFile
 }
