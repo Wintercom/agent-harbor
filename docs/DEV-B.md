@@ -171,8 +171,6 @@ go test ./internal/desktop ./internal/secrets
 | `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
 | 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
 
-**仍未完**：OAuth 授权码+`client_secret` 换票；扩权后**自动跟随**重定向；DNS·IP 校验全量。
-
 ## 2026-10-25 再续：Prefs 落盘 + Keychain + once 消费
 
 | 项 | 状态 |
@@ -181,9 +179,19 @@ go test ./internal/desktop ./internal/secrets
 | 凭据持久 | Darwin：优先 Keychain `com.liyufei916.agent-harbor`（探测失败则回退文件）；非 Darwin / 回退：`accounts/keys/*.key`（0600）+ `accounts.json` 元信息 |
 | 退出 | 持久化 Store **不清空**凭据（仅纯内存 `NewApp` 退出时 `Clear`） |
 | `once` 扩权 | `Harbor.HasExtraHost` 命中后删除；跨主机重定向本请求授权后立即消费 |
-| 重定向 | 仍**不自动跟随**（防 SSRF）；已扩权时审计 `allowed` 并返回「permitted but not followed」 |
+
+## 2026-10-25 三续：OAuth 换票 + 安全跟随重定向 + DNS/IP
+
+| 项 | 状态 |
+|---|---|
+| OAuth | 默认 `response_type=code`；回调用 `code` 向 `{origin}/oauth/token` 换票；`HARBOR_MCP_OAUTH_CLIENT_ID`（默认 `agent-harbor`）/`HARBOR_MCP_OAUTH_CLIENT_SECRET`/`HARBOR_MCP_OAUTH_TOKEN_PATH`；仍兼容 `access_token` 查询/fragment |
+| 跨主机重定向 | 用户 `once`/`project` 后 **跟随一跳**；不携带 Authorization/API Key；多跳拒绝 |
+| DNS/IP | `ValidatePublicHostname`：拒绝回环/私网/链路本地/组播/CGNAT；解析结果任一违规即拒 |
+
+**仍未完**：真实 IdP live 证据；MCP 网关侧同等跟随（若需要）；Connect 探测阶段强制公网 DNS（当前固定 profile/回环测试除外）。
 
 ```sh
 go test ./internal/desktop ./internal/gate ./internal/policy ./internal/orchestrator ./internal/secrets
 ```
+
 

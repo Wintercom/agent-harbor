@@ -2,6 +2,7 @@ package gate
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -51,6 +52,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rt.active.Done()
+	originAuth := authorityOfOrigin(rt.spec.Policy.Model.Origin)
 	host := hostOfOrigin(rt.spec.Policy.Model.Origin)
 	if !policy.PathAllowed(rt.spec.Policy.Model, r.URL.Path) {
 		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
@@ -96,41 +98,91 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", streamTimeoutStatus(err))
 		return
 	}
-	if blockedRedirect(resp, host) {
-		locHost := redirectHostname(resp)
-		allowedExtra := locHost != "" && p.h.HasExtraHost(p.sid, locHost)
-		if !allowedExtra && locHost != "" && rt.spec.RequestPermission != nil {
-			decision, perr := rt.spec.RequestPermission(r.Context(), contracts.PermissionNeeded{
-				Target: locHost,
-				Action: "请求跟随跨主机重定向",
-			})
-			if perr == nil && (decision == "once" || decision == "project") {
-				_ = p.h.AllowExtraHost(p.sid, locHost, decision)
-				allowedExtra = true
-				// once：本请求已使用扩权（即便 V1 不跟随重定向），立即消费。
-				if decision == "once" {
-					_ = p.h.HasExtraHost(p.sid, locHost)
-				}
+	if blockedRedirect(resp, originAuth) {
+		followed, locHost, ferr := p.followCrossHostRedirect(r.Context(), rt, resp, originAuth)
+		if ferr != nil || followed == nil {
+			if locHost == "" {
+				locHost = host
 			}
-		}
-		resp.Body.Close()
-		if allowedExtra {
-			// V1 仍不自动跟随重定向（防 SSRF）；仅记录允许并审计，Agent 需换非重定向路径。
-			p.h.emitAudit(rt, contracts.AuditData{Target: locHost, Tool: auditToolModel, Result: "allowed"})
-			http.Error(w, "redirect host permitted but not followed", http.StatusBadGateway)
+			p.h.emitAudit(rt, contracts.AuditData{Target: locHost, Tool: auditToolModel, Result: "denied"})
+			http.Error(w, "redirect blocked", http.StatusBadGateway)
 			return
 		}
-		p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "denied"})
-		http.Error(w, "redirect blocked", http.StatusBadGateway)
-		return
+		resp = followed
+		host = locHost
+		originAuth = locHost
+		// 跨主机跟随不得携带原账号凭据；脱敏仍抹 Sentinel。
+		key = nil
 	}
 	p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "allowed"})
 	idle, total := p.h.streamTimeouts()
-	if err := writeRelay(w, resp, []string{rt.sentinel, string(key)}, idle, total); err != nil {
+	secretsToRedact := []string{rt.sentinel}
+	if len(key) > 0 {
+		secretsToRedact = append(secretsToRedact, string(key))
+	}
+	if err := writeRelay(w, resp, secretsToRedact, idle, total); err != nil {
 		if streamTimeoutStatus(err) == http.StatusGatewayTimeout {
 			p.h.emitAudit(rt, contracts.AuditData{Target: host, Tool: auditToolModel, Result: "failed"})
 		}
 	}
+}
+
+// followCrossHostRedirect 在用户扩权且 DNS/IP 通过后跟随一跳；不注入原账号凭据。
+func (p *modelProxy) followCrossHostRedirect(ctx context.Context, rt *sessionRuntime, resp *http.Response, originAuth string) (*http.Response, string, error) {
+	locURL, err := redirectAbsoluteURL(resp)
+	defer resp.Body.Close()
+	if err != nil || locURL == nil || locURL.Host == "" {
+		return nil, "", fmt.Errorf("gate: bad redirect")
+	}
+	locAuth := strings.ToLower(locURL.Host)
+	locHost := strings.ToLower(locURL.Hostname())
+	if strings.EqualFold(locAuth, originAuth) {
+		return nil, locHost, fmt.Errorf("gate: same-origin redirect not blocked")
+	}
+
+	allowed := p.h.HasExtraHost(p.sid, locHost)
+	if !allowed && rt.spec.RequestPermission != nil {
+		decision, perr := rt.spec.RequestPermission(ctx, contracts.PermissionNeeded{
+			Target: locHost,
+			Action: "请求跟随跨主机重定向",
+		})
+		if perr == nil && (decision == "once" || decision == "project") {
+			_ = p.h.AllowExtraHost(p.sid, locHost, decision)
+			allowed = true
+			if decision == "once" {
+				_ = p.h.HasExtraHost(p.sid, locHost) // 本请求消费
+			}
+		}
+	}
+	if !allowed {
+		return nil, locHost, fmt.Errorf("gate: redirect not permitted")
+	}
+	if err := ValidatePublicHostname(locHost); err != nil {
+		return nil, locHost, err
+	}
+	if locURL.Scheme != "https" && !(locURL.Scheme == "http" && egressAllowLoopback) {
+		return nil, locHost, fmt.Errorf("gate: redirect scheme denied")
+	}
+
+	followReq, err := http.NewRequestWithContext(ctx, redirectFollowMethod(resp.StatusCode, resp.Request.Method), locURL.String(), nil)
+	if err != nil {
+		return nil, locHost, err
+	}
+	// 明确不复制 Authorization / API Key / Cookie，避免凭据跨主机。
+	followReq.Header.Set("Accept-Encoding", "identity")
+	if ua := resp.Request.Header.Get("User-Agent"); ua != "" {
+		followReq.Header.Set("User-Agent", ua)
+	}
+
+	next, err := p.h.client.Do(followReq)
+	if err != nil {
+		return nil, locHost, err
+	}
+	if blockedRedirect(next, locAuth) {
+		next.Body.Close()
+		return nil, locHost, fmt.Errorf("gate: multi-hop redirect denied")
+	}
+	return next, locHost, nil
 }
 
 func (p *modelProxy) authorize(r *http.Request, rt *sessionRuntime) bool {
@@ -159,27 +211,35 @@ func (p *modelProxy) applyModelKey(req *http.Request, keyStr string) {
 	}
 }
 
-func blockedRedirect(resp *http.Response, allowedHost string) bool {
+func blockedRedirect(resp *http.Response, allowedAuthority string) bool {
 	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 		return false
 	}
-	locHost := redirectHostname(resp)
-	if locHost == "" {
+	u, err := redirectAbsoluteURL(resp)
+	if err != nil || u == nil || u.Host == "" {
 		return false
 	}
-	return !strings.EqualFold(locHost, allowedHost)
+	return !strings.EqualFold(u.Host, allowedAuthority)
 }
 
-func redirectHostname(resp *http.Response) string {
+func redirectAbsoluteURL(resp *http.Response) (*url.URL, error) {
 	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return ""
+	if loc == "" || resp.Request == nil || resp.Request.URL == nil {
+		return nil, fmt.Errorf("missing location")
 	}
-	u, err := url.Parse(loc)
-	if err != nil || u.Host == "" {
-		return ""
+	return resp.Request.URL.Parse(loc)
+}
+
+func redirectFollowMethod(status int, original string) string {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther:
+		return http.MethodGet
+	default:
+		if original == "" {
+			return http.MethodGet
+		}
+		return original
 	}
-	return strings.ToLower(u.Hostname())
 }
 
 func hostOfOrigin(origin string) string {
@@ -188,6 +248,14 @@ func hostOfOrigin(origin string) string {
 		return origin
 	}
 	return u.Hostname()
+}
+
+func authorityOfOrigin(origin string) string {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(origin))
+	}
+	return strings.ToLower(u.Host)
 }
 
 func joinOrigin(origin string, u *url.URL) (string, error) {
