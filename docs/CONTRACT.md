@@ -244,6 +244,7 @@ type SessionService interface {
     List(context.Context) ([]SessionSummary, error)
     Destroy(context.Context, string) (SessionSnapshot, error)
     ResolvePermission(context.Context, ResolvePermissionInput) error
+    SwitchModel(context.Context, SwitchModelInput) (SessionSnapshot, error)
     WritePty(context.Context, PtyInput) error
     ResizePty(context.Context, PtyInput) error
     Shutdown(context.Context) error
@@ -381,7 +382,7 @@ type Runtime interface {
 | ListAccounts | 返回已保存账号元信息（无 Key） | kind 过滤；空列表 `[]` |
 | RemoveAccount | 删除账号与密钥 | 会话仍引用该账号 → `SESSION_BUSY`；未知 → `ACCOUNT_NOT_FOUND` |
 | CreateSession | 占会话槽，返回 provisioning | running+preparing 总数 **≤2**，否则 `SESSION_LIMIT`；同规范化工作区已有非终态 → `WORKSPACE_BUSY`；mountMode∈direct\|clone；mcpIds 0..8 |
-| SwitchModel | 仅影响之后模型出站 | 未知会话/账号 → 对应错误；不改工作区/Agent |
+| SwitchModel | 仅影响之后模型出站 | 仅 running 可切换；未知会话/账号 → 对应错误；必须为相同 profile 与 Host 的模型账号，不兼容 → INVALID_ARGUMENT；不改工作区/Agent |
 | StartMcpOAuth / CancelMcpOAuth | 打开浏览器完成 MCP 登录 | 回调成功后出现在 ListAccounts；取消清 pending |
 | WritePty / ResizePty | 向焦点会话 PTY 写输入/改尺寸 | 无 PTY 或未 running → `INVALID_ARGUMENT` |
 | GetSession | 最新快照与 seq | 未知 → `SESSION_NOT_FOUND`；无任务正文/凭据 |

@@ -204,10 +204,21 @@ func (d *DesktopAPI) SetUIPrefs(prefs contracts.UIPrefs) contracts.UIPrefsRespon
 	return contracts.UIPrefsResponse{Prefs: &prefs, Error: unimplemented()}
 }
 
-// SwitchModel 切换会话模型（全量 PAGE 占位）。
+// SwitchModel 将运行中模型账号切换转交编排，不自行管理会话状态。
 func (d *DesktopAPI) SwitchModel(in contracts.SwitchModelInput) contracts.SessionResponse {
-	_ = in
-	return contracts.SessionResponse{Error: unimplemented()}
+	switcher, ok := d.app.sessionRef().(interface {
+		SwitchModel(context.Context, contracts.SwitchModelInput) (contracts.SessionSnapshot, error)
+	})
+	if !ok {
+		return contracts.SessionResponse{Error: unimplemented()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	snapshot, err := switcher.SwitchModel(ctx, in)
+	if err != nil {
+		return contracts.SessionResponse{Error: mapError(err)}
+	}
+	return contracts.SessionResponse{Session: &snapshot}
 }
 
 // StartMcpOAuth 启动 MCP OAuth（占位）。

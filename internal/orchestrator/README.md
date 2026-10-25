@@ -4,6 +4,8 @@
 
 ## 当前实现
 
+`model.go` 实现运行中兼容模型账号切换：新旧账号 profile/host 必须一致，Gate 更新成功后才提交会话引用；不重启 Agent、不改变工作区或 Sentinel。当前不支持修改 CLI 固定模型名或跨协议切换。
+
 `permission.go` 提供会话级 `RequestPermission` 等待和 `ResolvePermission` 决策：保持 running、按目标去重、最多 8 个挂起请求，停止和请求取消解除等待。回调随 GateSpec 注入；Gate 触发、Policy 应用决策与重新求值由 B 接入，当前不自动新增出站授权。
 
 - `session.go`：会话状态、最多两个并发会话、规范化工作区冲突、Create/Get/List/Stop/Destroy、同会话多轮输入和 Shutdown。

@@ -45,7 +45,7 @@ func (p *modelProxy) serve(ctx context.Context) {
 }
 
 func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
-	rt, ok := p.h.acquireSession(p.sid)
+	rt, modelAccountID, ok := p.h.acquireModelSession(p.sid)
 	if !ok {
 		http.Error(w, "session gone", http.StatusServiceUnavailable)
 		return
@@ -83,7 +83,7 @@ func (p *modelProxy) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	copyHeaders(outReq.Header, r.Header)
 	outReq.Header.Set("Accept-Encoding", "identity")
-	key, err := p.h.secrets.Resolve(r.Context(), rt.spec.ModelAccountID)
+	key, err := p.h.secrets.Resolve(r.Context(), modelAccountID)
 	if err != nil {
 		http.Error(w, "credential missing", http.StatusBadGateway)
 		return

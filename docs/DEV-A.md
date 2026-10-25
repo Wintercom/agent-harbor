@@ -1,5 +1,13 @@
 # 研发 A 开发记录
 
+## 运行中切换模型账号
+
+Orchestrator.SwitchModel 校验会话仍 running、账号存在且为 model，并要求新旧账号 ProfileID/Host 一致。Gate.SwitchModel 只在宿主内存中原子更新模型账号引用，不调用上游或回调编排；每个请求先捕获自己的账号，因此在途请求继续使用旧账号，后续请求使用新账号。工作区、Agent、Sentinel、隔离进程和固定模型路由均不变。失败不会改写编排中的当前账号。桌面 SwitchModel 已转发编排。
+
+目前是兼容 profile 内的账号切换，不支持跨协议、跨 profile 或修改 CLI 固定模型名。后续若支持不同模型名，需增加明确的 Kit/Gate 消息重写契约，不能仅替换 Key 冒充模型切换。
+
+测试验证正常切换、错误账号/种类、非 running 拒绝、Gate 更新失败保留原账号、桌面转发；内存 HTTP transport 验证在途旧请求与后续新请求的凭据不混用、撤销后拒绝切换。此验证不调用真实模型服务。
+
 ## 扩权等待与决策生命周期
 
 A 已实现 `RequestPermission`/`ResolvePermission`，等待期间保持 running；用 `permission_needed` 告知 UI，允许 deny/once/project，重复决策和无挂起请求返回 INVALID_ARGUMENT。按会话及精确主机隔离等待，最多 8 个，同一目标不重复挂起；请求取消、超时、Stop、Shutdown 均通过 context 解除等待。Sentinel、URL、通配符、本机地址不能进入扩权载荷。

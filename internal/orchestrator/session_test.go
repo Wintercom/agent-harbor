@@ -19,21 +19,22 @@ const sentinel = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 
 // 替身只存在于测试包，不启动宿主机任务，也不进入生产装配。
 type fixture struct {
-	mu           sync.Mutex
-	calls        []string
-	failAt       string
-	destroyFails bool
-	revokeFails  bool
-	blockAt      string
-	entered      chan struct{}
-	release      chan struct{}
-	exit         chan runtime.Exit
-	onOutput     func(contracts.OutputData)
-	onFatal      func(error)
-	onAudit      func(contracts.AuditData)
-	beforeExec   func(func(contracts.OutputData))
-	interactive  bool
-	events       []contracts.Event
+	mu            sync.Mutex
+	calls         []string
+	failAt        string
+	destroyFails  bool
+	revokeFails   bool
+	blockAt       string
+	entered       chan struct{}
+	release       chan struct{}
+	exit          chan runtime.Exit
+	onOutput      func(contracts.OutputData)
+	onFatal       func(error)
+	onAudit       func(contracts.AuditData)
+	beforeExec    func(func(contracts.OutputData))
+	interactive   bool
+	switchedModel string
+	events        []contracts.Event
 }
 
 func newFixture() *fixture {
@@ -151,13 +152,23 @@ func (f *fixture) Lookup(_ context.Context, id string) (contracts.AccountInfo, e
 		return contracts.AccountInfo{}, err
 	}
 	switch id {
-	case "model":
+	case "model", "model-next":
 		return contracts.AccountInfo{ID: id, Kind: "model"}, nil
 	case "mcp":
 		return contracts.AccountInfo{ID: id, Kind: "mcp"}, nil
 	default:
 		return contracts.AccountInfo{}, publicError("ACCOUNT_NOT_FOUND")
 	}
+}
+
+func (f *fixture) SwitchModel(_ context.Context, _ string, account string) error {
+	if err := f.step("switch-model"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	f.switchedModel = account
+	f.mu.Unlock()
+	return nil
 }
 func (f *fixture) Start(_ context.Context, _ gate.GateSpec, audit func(contracts.AuditData), fatal func(error)) (gate.GateBinding, error) {
 	if err := f.step("start"); err != nil {
