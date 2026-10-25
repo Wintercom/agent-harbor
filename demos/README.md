@@ -4,14 +4,25 @@
 
 | 模式 | 顶栏徽章 | 怎么开 | 能否记 I1–I11 |
 |---|---|---|---|
-| mock / D4 | **模拟模式** | `frontend` 下静态 HTTP / `npm run dev` | **否** |
-| 桌面 live | **真实绑定** | 仓库根 `wails3 dev`（须先 bindings + env） | 可以记，须有脱敏证据 |
+| mock / D4 | **模拟模式** | `frontend` 下 `npm run dev` → http://127.0.0.1:5173/ | **否** |
+| 桌面 live | **真实绑定** | 仓库根 `./scripts/dev-desktop.sh` 或 `wails3 dev` | 可以记，须有脱敏证据 |
+
+### 桌面一打开就「无法安全启动」？
+
+**正常现象（当前）**：live 的 `GetRuntimeHealth` 仍返回「健康检查尚未接线」（B 占位）。产品按 PAGE 禁止无隔离开 Agent，故全页阻断、无「仍要继续」。
+
+| 要演示… | 请用 |
+|---|---|
+| 全量 PAGE / 扩权 / 双会话 / 阻断页本身 | **浏览器 mock**（下节三分钟话术） |
+| I1–I11 真闭环 | 等 B 接 Health/Accounts 后再 live；阻断时记 DOC-3「阻断」勿改口 mock 通过 |
+
+设置里切场景 `isolation` 也可在 **mock** 下复现同款阻断页（文案不同：模拟隔离不可用）。
 
 ---
 
 ## 三分钟 mock 话术（全量 PAGE / D4）
 
-前置：`cd frontend && npm run dev`，打开提示的本地地址。顶栏 **模拟模式**；侧栏 **HOME / 模型 / 工具 / 设置**。
+前置：`cd frontend && npm run dev`，打开 **http://127.0.0.1:5173/**（勿用 localhost）。顶栏 **模拟模式**；侧栏 **HOME / 模型 / 工具 / 设置**。
 
 | 时间 | 操作 | 期望观众看到 |
 |---|---|---|
@@ -19,9 +30,10 @@
 | 0:20 | 「模型」→ 添加（名+地址+Key，可点 DeepSeek 填地址） | 列表出现一行；Key 提交后清空 |
 | 0:40 | 「工具」→ Token 或 OAuth 轨加一条 | 列表 ● 已连接；无 Key 回显 |
 | 1:00 | HOME → 新会话：工作区（可点演示路径 B）→ Agent → 模型 → 工具可跳过 → 开始 | 默认 clone；进工作台 |
-| 1:30 | 指边界条 / 输出 / PTY 回显 | 全量壳能力，仍是 mock |
-| 1:50 | 再开一条不同路径；同路径应 WORKSPACE_BUSY；第三条 SESSION_LIMIT | HOME 显示 运行中 x/2 |
-| 2:20 | 设置里切场景「认证失败」看模型列表 ▲；或隔离不可用禁新会话 | 失败路径有产品文案 |
+| 1:20 | 扩权 Modal 弹出（mock 自动）→ 三选一 | 边界琥珀；标会话；无「全网」；状态仍 running |
+| 1:40 | 指 PTY：再输入一行 Enter | 同会话多轮入口（mock 回显） |
+| 2:00 | 再开一条不同路径；同路径应 WORKSPACE_BUSY；第三条 SESSION_LIMIT | HOME 显示 运行中 x/2 |
+| 2:20 | 设置里切「认证失败」看模型 ▲；或 `?scenario=isolation` 看阻断页 | 失败路径有产品文案 |
 | 2:40 | 收尾 | **mock ≠ I1–I11**；live 见下节 |
 
 收尾：这是全量 PAGE 的 UI/契约演示；**不是**真实闭环。
@@ -30,7 +42,7 @@
 
 ## 十分钟 live 话术（I1/I2 评审向 · P0-C-DOC-2）
 
-**前置（B/A 已备好）**：本机 Claude **2.1.292** 或已装 dsh；已 export 上游 env；`wails3 generate bindings` 后 `wails3 dev`；顶栏 **真实绑定**。
+**前置（B/A 已备好）**：本机 Claude **2.1.292** 或已装 dsh；已 export 上游 env；`wails3 generate bindings` 后 `./scripts/dev-desktop.sh`；顶栏 **真实绑定**；**侧栏须为「隔离就绪」**（若仍「健康检查尚未接线」→ 中止本话术，改 mock 或记阻断）。
 
 | 时间 | 说什么 / 做什么 | 观众应看到 |
 |---|---|---|
