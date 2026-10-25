@@ -198,7 +198,8 @@ func (o *Service) Stop(ctx context.Context, id string) (contracts.SessionSnapsho
 	return snapshot(s), nil
 }
 
-// WithConnection 与 Create 共用同一原子准入；回调仅由桌面连接服务提供。
+// WithConnection 供 ConnectModel/ConnectMcp：与并发 Connect、以及进行中的 Create 互斥。
+// 已有 running 会话不拦截——新增账号只进本机列表，不改写当前会话已挂载的 MCP/模型。
 func (o *Service) WithConnection(ctx context.Context, action func(context.Context) error) error {
 	if ctx.Err() != nil {
 		return publicError("CANCELLED")
@@ -208,9 +209,16 @@ func (o *Service) WithConnection(ctx context.Context, action func(context.Contex
 		o.mu.Unlock()
 		return publicError("CANCELLED")
 	}
-	if hasActiveSessionLocked(o) || o.connectionDone != nil {
+	if o.connectionDone != nil {
 		o.mu.Unlock()
 		return publicError("SESSION_BUSY")
+	}
+	// Create 刚占槽、尚在 provisioning 时也互斥，避免探测与创建竞态写账号表。
+	for _, s := range o.sessions {
+		if s.snapshot.State == contracts.StateProvisioning {
+			o.mu.Unlock()
+			return publicError("SESSION_BUSY")
+		}
 	}
 	call, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})

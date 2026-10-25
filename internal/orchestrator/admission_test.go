@@ -25,8 +25,11 @@ func TestConnectionAndSessionAdmissionIsAtomic(t *testing.T) {
 	_, _ = o.Stop(context.Background(), old.SessionID)
 	await(t, o, old.SessionID, func(s contracts.SessionSnapshot) bool { return s.CleanupComplete })
 	current := create(t, o)
+	awaitState(t, o, current.SessionID, contracts.StateRunning)
 	_, _ = o.Get(context.Background(), old.SessionID)
-	err = o.WithConnection(context.Background(), func(context.Context) error { t.Error("活动会话期间连接获准"); return nil })
-	assertCode(t, err, "SESSION_BUSY")
+	// running 期间允许新增账号（不影响已挂载工具）
+	if err = o.WithConnection(context.Background(), func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("running 时应允许 Connect：%v", err)
+	}
 	_, _ = o.Stop(context.Background(), current.SessionID)
 }

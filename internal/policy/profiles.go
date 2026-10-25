@@ -193,7 +193,85 @@ func (p FixedProfile) ValidConnection() bool {
 	if p.Kind == "model" {
 		return (p.Protocol == "anthropic" || p.Protocol == "openai-responses") && strings.TrimSpace(p.Model) != "" && len(p.Model) <= 256 && !strings.ContainsAny(p.Model, "\x00\r\n")
 	}
-	return p.Kind == "mcp" && p.Protocol == "streamable-http" && len(p.Tools) > 0
+	if p.Kind != "mcp" || p.Protocol != "streamable-http" {
+		return false
+	}
+	// 自定义 MCP：工具名在 Connect 探测后写入账号；固定 profile 仍须预登记白名单。
+	if p.ID == ProfileCustom {
+		return true
+	}
+	return len(p.Tools) > 0
+}
+
+// CustomMCPProfile 由用户 Origin 构造 MCP 临时 profile（不进 DefaultProfiles）。
+// 无 path：探测 https://host/mcp；有 path：探测该 path（如 https://host/v1/mcp）。
+func CustomMCPProfile(origin string) (FixedProfile, error) {
+	cands, err := CustomMCPProbeCandidates(origin)
+	if err != nil || len(cands) == 0 {
+		return FixedProfile{}, err
+	}
+	return cands[0], nil
+}
+
+// CustomMCPProbeCandidates 返回探测路径候选：用户 path → path+/mcp → /mcp。
+func CustomMCPProbeCandidates(origin string) ([]FixedProfile, error) {
+	raw := strings.TrimSpace(origin)
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, errors.New("policy: invalid custom mcp origin")
+	}
+	path := strings.TrimRight(u.Path, "/")
+	if path == "/" {
+		path = ""
+	}
+	if path != "" && !ValidBasePath(path) {
+		return nil, errors.New("policy: invalid custom mcp path")
+	}
+	host := strings.ToLower(u.Hostname())
+	cleanOrigin := u.Scheme + "://" + u.Host
+	var tryPaths []string
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		for _, x := range tryPaths {
+			if x == p {
+				return
+			}
+		}
+		tryPaths = append(tryPaths, p)
+	}
+	if path != "" {
+		add(path)
+		if !strings.Contains(strings.ToLower(path), "mcp") {
+			add(path + "/mcp")
+		}
+	}
+	add("/mcp")
+	loopback := false
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		loopback = true
+	}
+	var out []FixedProfile
+	for _, tp := range tryPaths {
+		p := FixedProfile{
+			ID:                    ProfileCustom,
+			Kind:                  "mcp",
+			Protocol:              "streamable-http",
+			Origin:                cleanOrigin,
+			Host:                  host,
+			Paths:                 []string{tp},
+			TestPath:              tp,
+			AllowInsecureLoopback: loopback && strings.EqualFold(u.Scheme, "http"),
+		}
+		if p.ValidConnection() {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("policy: no custom mcp probe candidates")
+	}
+	return out, nil
 }
 
 // 路径前缀只能来自宿主配置，拒绝编码、路径穿越或 URL 组成部分。

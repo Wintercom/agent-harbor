@@ -143,12 +143,31 @@ func (b *Builder) Build(_ context.Context, req PolicyRequest) (PolicySnapshot, e
 			return PolicySnapshot{}, ErrMissingMCP
 		}
 		seen[account.ID] = true
-		prof, ok := b.profiles[account.ProfileID]
-		if !ok || prof.Kind != "mcp" {
-			return PolicySnapshot{}, ErrUnknownProfile
-		}
-		if !sameHost(account.Host, prof.Host) {
-			return PolicySnapshot{}, ErrHostMismatch
+		var prof FixedProfile
+		if account.ProfileID == ProfileCustom {
+			origin := "https://" + strings.TrimSpace(account.Host)
+			if bp := strings.TrimRight(strings.TrimSpace(account.BasePath), "/"); bp != "" {
+				origin = origin + bp
+			}
+			custom, err := CustomMCPProfile(origin)
+			if err != nil || !custom.ValidConnection() {
+				return PolicySnapshot{}, ErrUnknownProfile
+			}
+			if len(account.Tools) == 0 {
+				// 旧版连接未落盘 tools/list；须在「工具」页删除后重新保存 MCP。
+				return PolicySnapshot{}, ErrMissingMCP
+			}
+			custom.Tools = append([]string(nil), account.Tools...)
+			prof = custom
+		} else {
+			var ok bool
+			prof, ok = b.profiles[account.ProfileID]
+			if !ok || prof.Kind != "mcp" {
+				return PolicySnapshot{}, ErrUnknownProfile
+			}
+			if !sameHost(account.Host, prof.Host) {
+				return PolicySnapshot{}, ErrHostMismatch
+			}
 		}
 		mounts = append(mounts, MCPMount{AccountID: account.ID, Endpoint: EndpointRule{Origin: prof.Origin, Paths: append([]string{}, prof.Paths...)}, Tools: append([]string{}, prof.Tools...)})
 	}

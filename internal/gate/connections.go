@@ -76,6 +76,26 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		customCandidates = cands
 		prof = cands[0]
 		profileID = policy.ProfileCustom
+	} else if kind == "mcp" && origin != "" && (profileID == "" || profileID == policy.ProfileCustom || profileID == policy.ProfileDemoMCP) {
+		// 填了服务地址：按自定义 MCP 处理（demo-mcp + 异主机不再误报「输入不合法」）。
+		cands, err := policy.CustomMCPProbeCandidates(origin)
+		if err != nil || len(cands) == 0 {
+			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "服务地址须为 https://主机[/路径]，无查询串。", false)
+		}
+		custom := cands[0]
+		if profileID == policy.ProfileDemoMCP {
+			if fixed, ok := c.policy.Profile(policy.ProfileDemoMCP); ok && strings.EqualFold(fixed.Host, custom.Host) && fixed.ValidConnection() {
+				prof = fixed
+			} else {
+				customCandidates = cands
+				prof = custom
+				profileID = policy.ProfileCustom
+			}
+		} else {
+			customCandidates = cands
+			prof = custom
+			profileID = policy.ProfileCustom
+		}
 	} else {
 		if profileID == "" {
 			return contracts.AccountInfo{}, ErrInvalidConnectInput
@@ -86,7 +106,7 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 			return contracts.AccountInfo{}, ErrInvalidConnectInput
 		}
 		if origin != "" && !strings.EqualFold(hostOfOrigin(origin), prof.Host) {
-			return contracts.AccountInfo{}, ErrInvalidConnectInput
+			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "服务地址与 profile 主机不一致；自定义 MCP 请改用服务地址并可将 profileId 留空或填 custom。", false)
 		}
 		if !prof.ValidConnection() {
 			return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrInvalidArgument, "后端接入配置尚未完整登记或不受支持。", false)
@@ -113,7 +133,47 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	defer c.client.CloseIdleConnections()
-	if len(customCandidates) > 0 {
+	if kind == "mcp" {
+		// MCP 必须走 probeMCP，才能把 tools/list 写入账号；勿复用模型的 customCandidates 探测环。
+		var tools []string
+		var err error
+		if len(customCandidates) > 0 {
+			var last error
+			ok := false
+			for _, cand := range customCandidates {
+				tools, err = c.probeMCP(ctx, cand, key)
+				if err == nil {
+					prof = cand
+					ok = true
+					break
+				}
+				last = err
+				if ctx.Err() != nil {
+					return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
+				}
+			}
+			if !ok {
+				if last != nil {
+					return contracts.AccountInfo{}, last
+				}
+				return contracts.AccountInfo{}, ErrUpstreamDown
+			}
+		} else {
+			tools, err = c.probeMCP(ctx, prof, key)
+			if err != nil {
+				if ctx.Err() != nil {
+					return contracts.AccountInfo{}, mapProbeErr(ctx, ctx.Err())
+				}
+				return contracts.AccountInfo{}, err
+			}
+		}
+		if profileID == policy.ProfileCustom {
+			if len(tools) == 0 {
+				return contracts.AccountInfo{}, contracts.NewAppError(contracts.ErrUpstreamUnavailable, "MCP 未返回可用工具。请确认地址是 Streamable HTTP MCP 端点（常见以 /mcp 结尾），不是模型 /v1 地址。", true)
+			}
+			prof.Tools = append([]string(nil), tools...)
+		}
+	} else if len(customCandidates) > 0 {
 		var probeErr error
 		sawAuth, sawOther := false, false
 		ok := false
@@ -135,7 +195,6 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 			break
 		}
 		if !ok {
-			// 全是 401 才报认证失败；夹杂 404/协议错误时优先「上游不可用」，避免把错 path/模型误报成 Key 无效。
 			if sawAuth && !sawOther {
 				if probeErr != nil {
 					return contracts.AccountInfo{}, probeErr
@@ -162,6 +221,12 @@ func (c *Connections) connect(ctx context.Context, in contracts.ConnectInput, ki
 		BasePath:  prof.BasePath,
 		Model:     prof.Model,
 	}
+	if kind == "mcp" && profileID == policy.ProfileCustom {
+		meta.Tools = append([]string(nil), prof.Tools...)
+		if len(prof.Paths) == 1 && prof.Paths[0] != "/mcp" {
+			meta.BasePath = prof.Paths[0]
+		}
+	}
 	id, err := c.secrets.Put(ctx, meta, []byte(key))
 	if err != nil {
 		return contracts.AccountInfo{}, err
@@ -174,7 +239,8 @@ const mcpProtocolVersion = "2025-03-26"
 
 func (c *Connections) probe(ctx context.Context, prof policy.FixedProfile, apiKey string) error {
 	if prof.Kind == "mcp" {
-		return c.probeMCP(ctx, prof, apiKey)
+		_, err := c.probeMCP(ctx, prof, apiKey)
+		return err
 	}
 	if prof.Protocol == "openai-responses" {
 		return c.probeOpenAIResponses(ctx, prof, apiKey)
@@ -471,11 +537,11 @@ func decodeRPC(resp *http.Response, id int, result any) error {
 	return nil
 }
 
-func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, key string) error {
+func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, key string) ([]string, error) {
 	initBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent-harbor","version":"0.1.0"}}}`)
 	resp, err := c.probeRequest(ctx, prof, key, "", http.MethodPost, initBody, modelAuthBearer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	session := resp.Header.Get("Mcp-Session-Id")
 	if session != "" {
@@ -497,24 +563,25 @@ func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, ke
 	err = decodeRPC(resp, 1, &initialized)
 	resp.Body.Close()
 	if err != nil || initialized.Protocol != mcpProtocolVersion || len(initialized.Capabilities.Tools) == 0 || string(initialized.Capabilities.Tools) == "null" {
-		return ErrUpstreamDown
+		return nil, ErrUpstreamDown
 	}
 	resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`), modelAuthBearer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
-		return ErrUpstreamDown
+		return nil, ErrUpstreamDown
 	}
 	found := map[string]bool{}
+	var discovered []string
 	cursor := ""
 	seen := map[string]bool{}
 	for page := 0; page < 20; page++ {
 		payload, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": map[string]string{"cursor": cursor}})
 		resp, err = c.probeRequest(ctx, prof, key, session, http.MethodPost, payload, modelAuthBearer)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var list struct {
 			Tools []struct {
@@ -525,26 +592,33 @@ func (c *Connections) probeMCP(ctx context.Context, prof policy.FixedProfile, ke
 		err = decodeRPC(resp, 2, &list)
 		resp.Body.Close()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, tool := range list.Tools {
+			if tool.Name == "" || found[tool.Name] {
+				continue
+			}
 			found[tool.Name] = true
+			discovered = append(discovered, tool.Name)
 		}
 		if list.NextCursor == "" {
 			for _, tool := range prof.Tools {
 				if !found[tool] {
-					return ErrUpstreamDown
+					return nil, ErrUpstreamDown
 				}
 			}
-			return ctx.Err()
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return discovered, nil
 		}
 		if seen[list.NextCursor] {
-			return ErrUpstreamDown
+			return nil, ErrUpstreamDown
 		}
 		seen[list.NextCursor] = true
 		cursor = list.NextCursor
 	}
-	return ErrUpstreamDown
+	return nil, ErrUpstreamDown
 }
 
 func mapProbeErr(ctx context.Context, err error) error {

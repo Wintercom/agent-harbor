@@ -171,6 +171,15 @@ go test ./internal/desktop ./internal/secrets
 | `StartMcpOAuth` / `CancelMcpOAuth` | 本机 `127.0.0.1` 回调；`?access_token=`/`code=` 写入 MCP 账号；隐式 fragment 有落地页脚本 |
 | 扩权 | 跨主机重定向时调 `RequestPermission`；`project`/`once` 写入 `AllowExtraHost` + 记住表 |
 
+## 2026-10-26：自定义 MCP + 会话期可连账号
+
+| 项 | 状态 |
+|---|---|
+| 自定义 MCP | `ConnectMcp` + Origin；path 候选用户 path → +`/mcp` → `/mcp`；`probeMCP` 返回并落盘 `tools` |
+| 开会话 | Policy 用账号 `tools` 作白名单；空 tools → `INVALID_ARGUMENT`（提示删后重连） |
+| `WithConnection` | running 会话**不**拦 Connect；仅与并发 Connect / provisioning Create 互斥（覆盖上文「忙碌拒连」旧记） |
+| 错误映射 | Policy 的 profile/MCP/Agent 错误 → `INVALID_ARGUMENT`，勿打成 `WORKSPACE_DENIED` |
+
 ## 2026-10-25 再续：Prefs 落盘 + Keychain + once 消费
 
 | 项 | 状态 |

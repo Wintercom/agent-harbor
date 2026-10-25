@@ -39,3 +39,21 @@ func TestBuildOptionalAndMultipleMCP(t *testing.T) {
 		t.Fatal("接受不匹配主机")
 	}
 }
+
+func TestBuildRejectsCustomMCPWithoutTools(t *testing.T) {
+	b := NewBuilder(map[string]FixedProfile{
+		ProfileDemoModel: {Kind: "model", Host: "model.test", Origin: "https://model.test"},
+	})
+	_, err := b.Build(context.Background(), PolicyRequest{
+		Workspace: t.TempDir(),
+		AgentID:   "claude",
+		Model:     contracts.AccountInfo{ID: "model", Kind: "model", ProfileID: ProfileDemoModel, Host: "model.test"},
+		MCPs: []contracts.AccountInfo{{
+			ID: "ctx7", Kind: "mcp", ProfileID: ProfileCustom, Host: "mcp.context7.com",
+			// Tools 故意为空：旧版连接探测未落盘
+		}},
+	})
+	if err != ErrMissingMCP {
+		t.Fatalf("want ErrMissingMCP, got %v", err)
+	}
+}

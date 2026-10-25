@@ -295,10 +295,20 @@ export function mountWizard(root, ctx, opts = {}) {
             hint =
               "该文件夹已有会话在跑。打开已有工作台，或上一步改选「演示路径 B」。";
             cta = `<button type="button" class="btn" id="wz-to-home">回 HOME 打开会话</button>`;
+          } else if (res.error.code === "WORKSPACE_DENIED") {
+            hint =
+              "工作区须是已存在的普通目录；不要选 Home、.ssh、系统目录。演示可用 demos/workspace 的绝对路径。";
+          } else if (res.error.code === "INVALID_ARGUMENT") {
+            hint =
+              "若勾了自定义 MCP：到「工具」删除该账号后重新添加（须保存成功并带上工具列表）。也检查 Agent 与模型是否匹配。";
+            cta = `<button type="button" class="btn" id="wz-to-tools">去工具</button>`;
           }
           msg.innerHTML = `<span class="bad">${res.error.code}: ${res.error.message}</span>${hint ? `<p class="meta">${hint}</p>` : ""}${cta ? `<div class="actions">${cta}</div>` : ""}`;
           msg.querySelector("#wz-to-home")?.addEventListener("click", () =>
             ctx.navigate("home"),
+          );
+          msg.querySelector("#wz-to-tools")?.addEventListener("click", () =>
+            ctx.navigate("tools"),
           );
           return;
         }

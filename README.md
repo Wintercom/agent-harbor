@@ -65,11 +65,9 @@ wails3 task darwin:package   # macOS .app
 
 | 内容 | 链接 |
 |---|---|
-| 产品演示（全量 PAGE / 工作台） | _待补充正式链接_ |
+| 产品演示（全量 PAGE / 工作台） | [agent-harbor-demo.mov](https://winterbd251225.qbox.net/agent-harbor-demo.mov) |
 | mock 三分钟话术（可对照操作） | [demos/README.md · 三分钟 mock](demos/README.md#三分钟-mock-话术全量-page--d4) |
 | live 十分钟话术（I1/I2） | [demos/README.md · 十分钟 live](demos/README.md#十分钟-live-话术i1i2-评审向--p0-c-doc-2) |
-
-> 录屏发布后，把上表「待补充」换成 Bilibili / YouTube / 网盘等可公开 URL，并注明对应 commit。
 
 ---
 

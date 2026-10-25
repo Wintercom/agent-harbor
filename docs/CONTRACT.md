@@ -48,12 +48,15 @@ type AgentInfo struct {
     ModelProfileID string `json:"modelProfileId,omitempty"`
 }
 // ConnectInput：固定 profile 时 ProfileID 必填、Origin 空；
-// 自定义 OpenAPI 模型时 Origin 为 https://host[:port]（仅 scheme+host[:port]），ProfileID 可为 "custom" 或空。
+// 自定义模型：Origin=https://host[:port][/basePath]，ProfileID 空或 custom；
+// 自定义 MCP：Origin=https://host[/path]，ProfileID 空/custom（或 demo-mcp+异主机时升为 custom）。
 type ConnectInput struct {
     ProfileID string `json:"profileId"`
     Name string `json:"name"`
     APIKey string `json:"apiKey"`
     Origin string `json:"origin,omitempty"`
+    Model string `json:"model,omitempty"`
+    SkipProbe bool `json:"skipProbe,omitempty"`
 }
 type AccountInfo struct {
     ID string `json:"id"`
@@ -61,6 +64,10 @@ type AccountInfo struct {
     Name string `json:"name"`
     ProfileID string `json:"profileId"`
     Host string `json:"host"`
+    BasePath string `json:"basePath,omitempty"`
+    Model string `json:"model,omitempty"`
+    KeyHint string `json:"keyHint,omitempty"`
+    Tools []string `json:"tools,omitempty"` // 自定义 MCP：Connect 时 tools/list 快照；开会话白名单
 }
 // SessionSpec.MountMode："direct"（缺省）| "clone"。
 // MCPIDs 长度 0..8；0 表示本会话不挂 MCP。
@@ -385,8 +392,8 @@ type Runtime interface {
 |---|---|---|
 | ListAgents | 返回实际检测的列表；不依赖 Gate 可用 | CLI 未装属于 available=false；检测内部故障才返回 error |
 | SelectWorkspace | 系统目录面板，绝对路径 | 取消：cancelled=true、path=""、error=null |
-| ConnectModel | 10s 内测上游，成功才存账号 | **固定 profile**：Origin 空，ProfileID∈已登记；**自定义**：Origin 必填 HTTPS host，ProfileID 空或 `custom`；禁止任意 path/query；失败清候选，account=null |
-| ConnectMcp | Token 轨测试并保存 | OAuth 轨走 StartMcpOAuth；失败同上 |
+| ConnectModel | 10s 内测上游，成功才存账号 | **固定 profile**：Origin 空，ProfileID∈已登记；**自定义**：Origin 必填 HTTPS（可带 BasePath），ProfileID 空或 `custom`；禁止 query/fragment；失败清候选，account=null |
+| ConnectMcp | Token 轨探测并保存；自定义 Origin 见下 | **固定**：Origin 空，ProfileID∈已登记；**自定义**：填 Origin（HTTPS，可带 path），ProfileID 空/`custom`（`demo-mcp`+异主机亦升为 custom）；探测候选 path→path+/mcp→/mcp；成功须 `tools/list` 非空并写入 `AccountInfo.tools`；空工具 → `UPSTREAM_UNAVAILABLE`；OAuth 轨走 StartMcpOAuth |
 | ListAccounts | 返回已保存账号元信息（无 Key） | kind 过滤；空列表 `[]` |
 | RemoveAccount | 删除账号与密钥 | 会话仍引用该账号 → `SESSION_BUSY`；未知 → `ACCOUNT_NOT_FOUND` |
 | CreateSession | 占会话槽，返回 provisioning | running+preparing 总数 **≤2**，否则 `SESSION_LIMIT`；同规范化工作区已有非终态 → `WORKSPACE_BUSY`；mountMode∈direct\|clone；mcpIds 0..8 |
@@ -405,7 +412,9 @@ type Runtime interface {
 | ResolvePermission | 处理扩权挂起 | decision∈deny\|once\|project；无挂起 → `INVALID_ARGUMENT`；**禁止**全网允许 |
 | GetUIPrefs / SetUIPrefs | 读写本机 UI 偏好 | **不得**存 Key；缺文件返回默认值 |
 
-AgentID 仅允许已验证项；Task 限 1–32768 UTF-8 字节。ConnectInput 的 Name/APIKey 必填；Name≤100 Unicode；APIKey≤16384 字节。固定 profile 路径下 ProfileID 必填。重连创建新账号 ID。活动会话存在时拒绝会改写该会话所用账号的 Remove；Connect 在连接准入锁下执行（见既有 WithConnection）。工具白名单来自登记 profile 或自定义 origin 首次确认后的 host 规则，不得把上游 tools/list 新工具自动授权。
+AgentID 仅允许已验证项；Task 限 1–32768 UTF-8 字节。ConnectInput 的 Name/APIKey 必填；Name≤100 Unicode；APIKey≤16384 字节。固定 profile 路径下 ProfileID 必填。重连创建新账号 ID。活动会话仍引用某账号时 `RemoveAccount` → `SESSION_BUSY`。`ConnectModel`/`ConnectMcp` 经 `WithConnection`：与并发 Connect、以及 `provisioning` 中的 Create 互斥；**已有 running 会话不拦截新增账号**（新账号仅进本机列表，不自动挂到当前会话）。
+
+工具白名单：**固定 MCP profile** 用登记 `Tools`；**自定义 MCP** 用连接探测写入的 `AccountInfo.tools`（会话期不再自动并入上游新工具）。自定义 MCP 账号缺 `tools`（旧版连接未落盘）时 `CreateSession` → `INVALID_ARGUMENT`（Policy `ErrMissingMCP`），须在「工具」删除后重新连接。Policy 失败勿一律映为 `WORKSPACE_DENIED`。
 
 SessionSnapshot.state：`provisioning`|`running`|`stopping`|`stopped`|`failed`（扩权等待 **不** 新增 state；用 `permission_needed` 事件表示挂起，会话保持 `running`）。cleanupComplete 语义同 v1。AccountInfo.kind 仅 model/mcp。
 
@@ -499,10 +508,10 @@ policy 的固定 profile 来自 B 管理的后端配置，不从前端或 Agent 
 
 公开 Event 须满足 `contracts.Event.Validate`。本文是并行实现的唯一方法/字段来源；变更先改本文与 `internal/contracts`，再 sync mock/bindings。
 
-既有约定仍有效：WithConnection 准入锁；Connect 探测语义。自定义 Origin 须 HTTPS；OAuth 仅工具页。
+既有约定仍有效：WithConnection 准入锁；Connect 探测语义。自定义 Origin 须 HTTPS（本机回环测试可 http+AllowInsecureLoopback）；OAuth 仅工具页。
 
-### 多 MCP 的 Go 内部交接（2026-10-25）
+### 多 MCP 的 Go 内部交接（2026-10-25；自定义 MCP 2026-10-26）
 
 `SessionSpec.mcpIds` 为 0–8 个不重复的已连接账号 ID；空列表表示不挂载工具。PolicyRequest.MCPs 按该顺序构造 PolicySnapshot.MCPMounts（AccountID、Endpoint、Tools），GateBinding.MCPURLs 按同一顺序交给 Kit。每个挂载有独立 Gateway 路径，按挂载解析宿主凭据及工具白名单，不合并同名工具。Kit 将其映射为 harbor、harbor-2 等独立服务器；0 个挂载生成空 MCP 配置，不连接占位服务。
 
-旧单 MCP 字段仅兼容内部单挂载调用：MCP/MCPID/Tools、MCPAccountID、MCPURL；新列表与旧字段同时提供且有歧义时拒绝。多挂载路径仅用于选定授权项，上游仍使用固定 `/mcp`，不得把路径或账号由执行面替换为任意目标。公开 Wails DTO 和绑定签名不变。
+旧单 MCP 字段仅兼容内部单挂载调用：MCP/MCPID/Tools、MCPAccountID、MCPURL；新列表与旧字段同时提供且有歧义时拒绝。多挂载路径仅用于选定授权项。**固定 demo-mcp** 上游 path 仍为登记值（通常 `/mcp`）；**自定义 MCP** 以上游探测成功的 path 为准（用户 path 或自动补 `/mcp`），不得由执行面改写为任意目标。公开 Wails DTO 和绑定签名不变（`AccountInfo.tools` 为新增可选字段）。

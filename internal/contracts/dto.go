@@ -35,14 +35,15 @@ type ConnectInput struct {
 
 // AccountInfo 是脱敏后的账号元信息。
 type AccountInfo struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"` // model 或 mcp
-	Name      string `json:"name"`
-	ProfileID string `json:"profileId"`
-	Host      string `json:"host"`
-	BasePath  string `json:"basePath,omitempty"` // 自定义模型 Anthropic 前缀，如 /anthropic
-	Model     string `json:"model,omitempty"`    // 探测成功时的模型名
-	KeyHint   string `json:"keyHint,omitempty"`  // 仅末四位提示，如 …a1b2；永不含完整 Key
+	ID        string   `json:"id"`
+	Kind      string   `json:"kind"` // model 或 mcp
+	Name      string   `json:"name"`
+	ProfileID string   `json:"profileId"`
+	Host      string   `json:"host"`
+	BasePath  string   `json:"basePath,omitempty"` // 自定义模型 Anthropic 前缀，如 /anthropic
+	Model     string   `json:"model,omitempty"`    // 探测成功时的模型名
+	KeyHint   string   `json:"keyHint,omitempty"`  // 仅末四位提示，如 …a1b2；永不含完整 Key
+	Tools     []string `json:"tools,omitempty"`    // 自定义 MCP：连接探测时 tools/list 快照，供会话白名单
 }
 
 // SessionSpec 是创建会话的前端请求。

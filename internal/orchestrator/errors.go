@@ -4,11 +4,12 @@ import (
 	"errors"
 
 	"github.com/liyufei916/agent-harbor/internal/contracts"
+	"github.com/liyufei916/agent-harbor/internal/policy"
 )
 
 // 即使提供方错误含敏感文本，也只向页面发送固定模板。
 var messages = map[string]string{
-	"INVALID_ARGUMENT":      "会话参数不合法。",
+	"INVALID_ARGUMENT":      "会话参数不合法（常见：自定义 MCP 未保存工具列表，请到「工具」删除后重新添加；或 Agent 与模型不匹配）。",
 	"ACCOUNT_NOT_FOUND":     "账号尚未连接或不存在。",
 	"SESSION_BUSY":          "已有会话正在准备、运行或等待清理。",
 	"SESSION_LIMIT":         "已达到同时运行的会话上限。",
@@ -43,6 +44,17 @@ func safeError(err error, fallback string) *contracts.AppError {
 		if _, ok := messages[app.Code]; ok {
 			return publicError(app.Code)
 		}
+	}
+	// Policy.Build 失败勿一律打成 WORKSPACE_DENIED（易与「选了 Home/敏感目录」混淆）。
+	switch {
+	case errors.Is(err, policy.ErrInvalidWorkspace):
+		return publicError("WORKSPACE_DENIED")
+	case errors.Is(err, policy.ErrUnknownProfile),
+		errors.Is(err, policy.ErrHostMismatch),
+		errors.Is(err, policy.ErrKindMismatch),
+		errors.Is(err, policy.ErrMissingMCP),
+		errors.Is(err, policy.ErrInvalidAgent):
+		return publicError("INVALID_ARGUMENT")
 	}
 	return publicError(fallback)
 }

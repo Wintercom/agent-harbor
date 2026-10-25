@@ -111,6 +111,61 @@ func TestMCPConnectRequiresHandshakeAndSelectedTools(t *testing.T) {
 	}
 }
 
+// 回归：自定义 MCP（填 Origin）必须落盘 tools/list；否则开会话 Policy.Build → INVALID_ARGUMENT。
+func TestCustomMCPConnectPersistsDiscoveredTools(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			w.WriteHeader(204)
+			return
+		}
+		var req struct {
+			Method string `json:"method"`
+			ID     int    `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Method == "notifications/initialized" {
+			w.WriteHeader(202)
+			return
+		}
+		var result any
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "custom-session")
+			result = map[string]any{"protocolVersion": mcpProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "custom", "version": "1"}}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]string{"name": "resolve-library-id"}, map[string]string{"name": "query-docs"}}}
+		default:
+			t.Fatalf("unexpected method %s", req.Method)
+		}
+		raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(raw)
+	}))
+	defer up.Close()
+
+	store := secrets.NewStore()
+	conn := NewConnections(store, policy.NewBuilder(map[string]policy.FixedProfile{}))
+	account, err := conn.ConnectMcp(context.Background(), contracts.ConnectInput{
+		ProfileID: policy.ProfileCustom,
+		Name:      "CTX7",
+		Origin:    up.URL + "/mcp",
+		APIKey:    "fixture-token",
+	})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if account.ProfileID != policy.ProfileCustom {
+		t.Fatalf("profile=%s", account.ProfileID)
+	}
+	if len(account.Tools) != 2 || account.Tools[0] != "resolve-library-id" {
+		t.Fatalf("tools not persisted: %+v", account.Tools)
+	}
+	got, err := store.Lookup(context.Background(), account.ID)
+	if err != nil || len(got.Tools) != 2 {
+		t.Fatalf("store tools=%v err=%v", got.Tools, err)
+	}
+}
+
 func TestModelRejectsHTMLAndWrongProtocol(t *testing.T) {
 	for _, body := range []string{"<html>ok</html>", `{"ok":true}`, `{"type":"message","content":[]}`} {
 		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))

@@ -28,6 +28,15 @@
 | client_id | `HARBOR_MCP_OAUTH_CLIENT_ID`，默认 `agent-harbor` |
 | 成功 | `access_token` 写入 Secrets；UI 轮询 `ListAccounts` |
 
+### 自定义 MCP Token 轨（B，2026-10-26）
+
+| 项 | 约定 |
+|---|---|
+| 入口 | 工具页填 HTTPS Origin + API Key；`profileId` 空/`custom`（`demo-mcp`+异主机升为 custom） |
+| 探测 path | 用户 path → path+`/mcp` → `/mcp`；须 Streamable HTTP，勿填模型 `/v1` |
+| 白名单 | Connect 成功写入 `AccountInfo.tools`；会话 Gate 只用该快照，不自动授权新工具 |
+| 旧账号 | 无 `tools` 时开会话 `INVALID_ARGUMENT`；删除后重连 |
+
 ## 2026-10-24 开发环境观测
 
 A 在 macOS 26.7 arm64、Go 1.27.2 下完成契约与编排测试，检测到 Claude Code 2.1.292 原生安装。为独立编译加入最小 go.mod（module 沿用上文建议值，暂定 go 1.23.0，尚未在该最低版本运行验证）；B 已在本分支完成 Wails v3 初始化与版本登记。Seatbelt 初探有正/负例，但生产限制与进程树清理仍待实现。观测不等于团队环境冻结或真实 Agent 兼容性通过，详细证据见 [研发 A 开发记录](DEV-A.md)。

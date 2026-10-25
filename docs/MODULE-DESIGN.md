@@ -129,6 +129,10 @@ Go 的 fake 同样覆盖成功、Start/Create/Exec 失败、Stop 与 provisionin
 
 2026-10-25 修复：连接测试由 SessionService.WithConnection 与 Create 原子互斥，桌面不再维护 busy 副本。退出在 ShouldQuit/窗口关闭钩子中异步确认 Shutdown；失败保留窗口，成功后才清空凭据并退出。修复与证据见 [ABC 审查](ABC-INTEGRATION-REVIEW.md#修复进展)。
 
+2026-10-26：`WithConnection` 不再因已有 running 会话拒绝 Connect——新增模型/MCP 只写本机账号表；仅与并发 Connect、以及 provisioning 中的 Create 互斥。
+
+2026-10-26：自定义 MCP（填 Origin）经 `CustomMCPProbeCandidates` 探测；成功须落盘 `AccountInfo.tools`；Policy.Build 用该列表作白名单。缺 tools 或误填模型 `/v1` 地址分别对应 `INVALID_ARGUMENT` / `UPSTREAM_UNAVAILABLE`。Policy 校验失败不再一律映成 `WORKSPACE_DENIED`。
+
 ## dsh 范围增量（2026-10-25）
 
 A 新增 `internal/kits/dsh` 与 Runtime 专用安装目录校验；B 装配双 Kit、独立 dsh-model 和受信模型路径前缀；C 页面选择 Agent 并清空旧模型引用。DTO 新增可选 modelProfileId，真实桌面与 mock 均消费，状态机与资源所有权不变。版本、安装与证据见 [dsh 适配](DSH-INTEGRATION.md)。

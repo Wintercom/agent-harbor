@@ -78,6 +78,7 @@ func (s *Store) Put(ctx context.Context, info contracts.AccountInfo, key []byte)
 		BasePath:  strings.TrimRight(strings.TrimSpace(info.BasePath), "/"),
 		Model:     strings.TrimSpace(info.Model),
 		KeyHint:   keyHint(key),
+		Tools:     append([]string(nil), info.Tools...),
 	}
 	keyCopy := append([]byte(nil), key...)
 	s.mu.Lock()
