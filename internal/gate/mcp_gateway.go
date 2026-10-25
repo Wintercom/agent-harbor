@@ -147,14 +147,39 @@ func (g *mcpGateway) writeFilteredList(w http.ResponseWriter, resp *http.Respons
 		return err
 	}
 	filtered := filterToolsPayload(raw, allow)
+	contentType := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "text/event-stream") {
+		if jsonBody, ok := toolsSSEToJSON(filtered); ok {
+			filtered = jsonBody
+			contentType = "application/json"
+		}
+	}
 	red := newSecretRedactor(secrets)
 	out := append(red.Push(filtered), red.Flush()...)
 	copyHeaders(w.Header(), resp.Header)
 	scrubHeaders(w.Header(), secrets)
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(resp.StatusCode)
 	_, werr := w.Write(out)
 	return werr
+}
+
+// toolsSSEToJSON converts the completed tools/list event to one JSON-RPC
+// response. The gateway has already applied the allowlist; returning a finite
+// response avoids making dsh consume an upstream notification stream.
+func toolsSSEToJSON(body []byte) ([]byte, bool) {
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		var value map[string]any
+		if json.Unmarshal(payload, &value) == nil && value["jsonrpc"] == "2.0" {
+			return payload, true
+		}
+	}
+	return nil, false
 }
 
 // readToolsList 只读取完整的 tools/list 事件。Streamable HTTP 的 SSE 响应可能
