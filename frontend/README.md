@@ -1,5 +1,7 @@
 # Wails 桌面前端
 
+**产品形态是桌面应用**（Wails WebView），不是网站。浏览器只用于 **mock 看页面效果 / 走 UI 流程**；真实隔离、Gate、凭据只在桌面 live（`wails3 dev`）里发生。mock ≠ I 通过。
+
 负责人：产品 C 开发页面，研发 B 提供 Wails v3 绑定、事件和构建环境。C 实现与 D4 说明见 [DEV-C.md](../docs/DEV-C.md)。
 
 ## 目录
@@ -11,17 +13,19 @@
 | `bindings/` | 生成 | Wails v3 绑定，**不手改** | B |
 | `dist/` | 构建产物 | 供 Go embed | 构建生成 |
 
-## 本地预览（mock / D4）
+## 浏览器看效果（mock，不启沙箱）
 
 ```bash
 cd frontend
 npm ci
 npm run dev
-# 或：python3 -m http.server 5173
-# 打开提示的本地地址；可选 ?scenario=auth
+# 打开提示的本地地址（如 http://127.0.0.1:5173/）
+# 可选 ?scenario=auth|busy|isolation|cleanup
 ```
 
-配置页场景：正常 / 认证失败 / SESSION_BUSY / ISOLATION_UNAVAILABLE / cleanupComplete=false。
+走的是同一套 PAGE 壳与 `mock-api.js`，适合对导航、向导、模型/工具、工作台/PTY 区、扩权 Modal。**不要**把浏览器会话记成真实联调。
+
+静态预览也可用：`python3 -m http.server`（mock 不依赖已生成 bindings）。
 
 ## 生成绑定与桌面开发（B）
 

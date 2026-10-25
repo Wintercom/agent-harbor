@@ -8,6 +8,7 @@
 | 可浏览原型 | `../prototype/index.html` |
 | 关联 | [SYSTEM-DESIGN](SYSTEM-DESIGN.md) v2、[CONTRACT](CONTRACT.md) v1.2、[PAGE-API-MAP](PAGE-API-MAP.md)、`DESIGN.md` |
 | 范围 | **含** OAuth / clone / PTY / 双会话≤2；与 MVP-2D3P「两天裁剪」冲突时 **以本文为准** |
+| 交付形态 | **桌面应用**（Wails）；浏览器仅 mock 预览同套页面，见 [frontend/README](../frontend/README.md) |
 
 ---
 

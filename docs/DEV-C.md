@@ -128,6 +128,8 @@ python3 -m http.server 5173
 
 **目标**：不按交付裁剪；导航与各屏对齐 [PAGE-DESIGN](PAGE-DESIGN.md)。总纲 [SYSTEM-DESIGN v2](SYSTEM-DESIGN.md)；契约 [CONTRACT v1.2](CONTRACT.md)。
 
+**怎么看效果**：设计目标是 **桌面 App**；日常用浏览器 `cd frontend && npm run dev` 看全量 PAGE（mock）。真连 / 隔离 / Gate 用 `wails3 dev`（真实绑定）。浏览器 mock 不计 I1–I11。
+
 ### 本分支已推进（C / mock）
 
 - 顶栏会话切换；侧栏仅 HOME/模型/工具/设置（工作台不强占）
