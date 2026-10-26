@@ -2,6 +2,8 @@
 
 @AGENTS.md
 
+Runtime 平台测试仅在隔离能力可用时执行真实闭环；环境返回 `ISOLATION_UNAVAILABLE` 时明确跳过，纯校验测试继续执行。生产启动仍失败关闭；Go 回归使用 `go test -race ./...`。
+
 研发 A 当前交付状态、可复现证据及尚未关闭的 Codex、扩权和真实验收项见[研发 A 交付状态](docs/A-DELIVERY-STATUS.md)。
 
 已接入运行中兼容 profile 的模型账号切换；在途请求保持旧账号，后续请求使用新账号。跨协议/固定模型名切换仍不支持，见 [研发 A 记录](docs/DEV-A.md)。
