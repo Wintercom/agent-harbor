@@ -173,6 +173,7 @@ export function mountModels(root, ctx, opts = {}) {
         <label class="field">Agent profile
           <select id="m-profile" ${editing !== "new" ? "disabled" : ""}>
             <option value="custom" ${acc.profileId === "custom" ? "selected" : ""}>自定义模型（Claude）</option>
+            <option value="demo-model" ${acc.profileId === "demo-model" ? "selected" : ""}>Claude Code（预置上游）</option>
             <option value="dsh-model" ${acc.profileId === "dsh-model" ? "selected" : ""}>DeepSeek dsh</option>
             <option value="codex-model" ${acc.profileId === "codex-model" ? "selected" : ""}>OpenAI Codex</option>
           </select>
