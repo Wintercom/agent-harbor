@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,9 +42,6 @@ func TestMacOSHealthCancellationAndLookup(t *testing.T) {
 	if _, err := ProbeExecutable(context.Background(), "/definitely/missing", nil); err == nil {
 		t.Fatal("missing executable probe succeeded")
 	}
-	if output, err := ProbeExecutable(context.Background(), "/usr/bin/true", nil); err != nil || output != "" {
-		t.Fatalf("true probe: %q %v", output, err)
-	}
 	workspace := t.TempDir()
 	for _, spec := range []RuntimeSpec{
 		{Workspace: workspace, MountMode: "direct", ReadOnlyPaths: []string{"/usr/bin/true"}},
@@ -63,6 +61,15 @@ func TestMacOSHealthCancellationAndLookup(t *testing.T) {
 		if _, err := r.create(context.Background(), spec, true); err == nil {
 			t.Fatalf("unsafe create spec accepted: %#v", spec)
 		}
+	}
+}
+
+func TestMacOSProbeExecutable(t *testing.T) {
+	if output, err := ProbeExecutable(context.Background(), "/usr/bin/true", nil); err != nil {
+		skipIfIsolationUnavailable(t, err)
+		t.Fatalf("true probe: %q %v", output, err)
+	} else if output != "" {
+		t.Fatalf("true probe output: %q", output)
 	}
 }
 
@@ -140,8 +147,14 @@ func TestMacOSCreateExecDestroyClosedLoop(t *testing.T) {
 		ReadOnlyPaths: []string{"/usr/bin/true"}, AllowDescendants: true,
 	}, true)
 	if err != nil {
+		skipIfIsolationUnavailable(t, err)
 		t.Fatalf("Create closed loop: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := r.Destroy(context.Background(), h); err != nil {
+			t.Errorf("清理 Runtime: %v", err)
+		}
+	})
 	process, err := r.Exec(context.Background(), h, LaunchSpec{Command: "/usr/bin/true"}, nil)
 	if err != nil {
 		_ = r.Destroy(context.Background(), h)
@@ -169,8 +182,14 @@ func TestMacOSCloneClosedLoop(t *testing.T) {
 	r := NewMacOS()
 	h, err := r.create(context.Background(), RuntimeSpec{SessionID: "clone-loop", Workspace: workspace, MountMode: "clone", ReadOnlyPaths: []string{"/usr/bin/true"}, AllowDescendants: true}, true)
 	if err != nil {
+		skipIfIsolationUnavailable(t, err)
 		t.Fatalf("clone Create: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := r.Destroy(context.Background(), h); err != nil {
+			t.Errorf("清理 Runtime: %v", err)
+		}
+	})
 	if h.Workspace == workspace {
 		_ = r.Destroy(context.Background(), h)
 		t.Fatal("clone workspace points to source")
@@ -202,23 +221,46 @@ func TestMacOSInteractiveClosedLoop(t *testing.T) {
 	r := NewMacOS()
 	h, err := r.create(context.Background(), RuntimeSpec{SessionID: "interactive-loop", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: []string{"/bin/cat"}, AllowDescendants: true}, true)
 	if err != nil {
+		skipIfIsolationUnavailable(t, err)
 		t.Fatalf("interactive Create: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := r.Destroy(context.Background(), h); err != nil {
+			t.Errorf("清理 Runtime: %v", err)
+		}
+	})
 	var output string
-	ctx, cancel := context.WithCancel(context.Background())
+	var outputMu sync.Mutex
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	outputReady := make(chan struct{}, 1)
 	p, err := r.Exec(ctx, h, LaunchSpec{Command: "/bin/cat", Interactive: true, Stdin: []byte("hello\n")}, func(data contracts.OutputData) {
+		outputMu.Lock()
 		output += data.Text
+		if strings.Contains(output, "hello") {
+			select {
+			case outputReady <- struct{}{}:
+			default:
+			}
+		}
+		outputMu.Unlock()
 	})
 	if err != nil {
 		_ = r.Destroy(context.Background(), h)
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-outputReady:
+	case <-ctx.Done():
+		t.Fatal("等待交互输出超时")
+	}
 	cancel()
 	if got := p.Wait(); !got.Cancelled {
 		_ = r.Destroy(context.Background(), h)
 		t.Fatalf("interactive exit: %+v", got)
 	}
+	outputMu.Lock()
+	defer outputMu.Unlock()
 	if !strings.Contains(output, "hello") {
 		t.Fatalf("interactive output: %q", output)
 	}
@@ -236,11 +278,20 @@ func TestMacOSTerminalClosedLoop(t *testing.T) {
 	r := NewMacOS()
 	h, err := r.create(context.Background(), RuntimeSpec{SessionID: "terminal-loop", Workspace: workspace, MountMode: "direct", ReadOnlyPaths: []string{"/bin/echo"}, AllowDescendants: true}, true)
 	if err != nil {
+		skipIfIsolationUnavailable(t, err)
 		t.Fatalf("terminal Create: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := r.Destroy(context.Background(), h); err != nil {
+			t.Errorf("清理 Runtime: %v", err)
+		}
+	})
 	var output string
+	var outputMu sync.Mutex
 	p, err := r.Exec(context.Background(), h, LaunchSpec{Command: "/bin/echo", Args: []string{"terminal-ok"}, Terminal: true}, func(data contracts.OutputData) {
+		outputMu.Lock()
 		output += data.Text
+		outputMu.Unlock()
 	})
 	if err != nil {
 		_ = r.Destroy(context.Background(), h)
@@ -250,10 +301,19 @@ func TestMacOSTerminalClosedLoop(t *testing.T) {
 		_ = r.Destroy(context.Background(), h)
 		t.Fatalf("terminal exit: %+v", got)
 	}
+	outputMu.Lock()
+	defer outputMu.Unlock()
 	if !strings.Contains(output, "terminal-ok") {
 		t.Fatalf("terminal output: %q", output)
 	}
 	if err := r.Destroy(context.Background(), h); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func skipIfIsolationUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if appErr, ok := err.(*contracts.AppError); ok && appErr.Code == "ISOLATION_UNAVAILABLE" {
+		t.Skipf("当前运行环境未提供 macOS Seatbelt 隔离能力: %v", err)
 	}
 }
